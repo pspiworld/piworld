@@ -1,5 +1,4 @@
-#ifndef _map_h_
-#define _map_h_
+#pragma once
 
 #define EMPTY_ENTRY(entry) ((entry)->value == 0)
 
@@ -22,7 +21,7 @@ typedef union {
         unsigned char x;
         unsigned char y;
         unsigned char z;
-        char w;
+        int w;
     } e;
 } MapEntry;
 
@@ -42,4 +41,3 @@ void map_grow(Map *map);
 int map_set(Map *map, int x, int y, int z, int w);
 int map_get(Map *map, int x, int y, int z);
 
-#endif

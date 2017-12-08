@@ -1,5 +1,4 @@
-#ifndef _sign_h_
-#define _sign_h_
+#pragma once
 
 #define MAX_SIGN_LENGTH 64
 
@@ -25,4 +24,3 @@ void sign_list_add(
 int sign_list_remove(SignList *list, int x, int y, int z, int face);
 int sign_list_remove_all(SignList *list, int x, int y, int z);
 
-#endif

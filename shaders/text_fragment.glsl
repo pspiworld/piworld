@@ -1,4 +1,4 @@
-#version 120
+precision highp float;
 
 uniform sampler2D sampler;
 uniform bool is_sign;

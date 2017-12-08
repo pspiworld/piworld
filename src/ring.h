@@ -1,5 +1,4 @@
-#ifndef _ring_h_
-#define _ring_h_
+#pragma once
 
 typedef enum {
     BLOCK,
@@ -41,4 +40,3 @@ void ring_put_commit(Ring *ring);
 void ring_put_exit(Ring *ring);
 int ring_get(Ring *ring, RingEntry *entry);
 
-#endif

@@ -1,10 +1,9 @@
-# This file allows you to programmatically create blocks in Craft.
+# This file allows you to programmatically create blocks in PiWorld.
 # Please use this wisely. Test on your own server first. Do not abuse it.
 
-import requests
 import socket
-import sqlite3
 import sys
+import time
 
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 4080
@@ -33,6 +32,7 @@ PURPLE_FLOWER = 20
 SUN_FLOWER = 21
 WHITE_FLOWER = 22
 BLUE_FLOWER = 23
+COLOR_11 = 43
 
 OFFSETS = [
     (-0.5, -0.5, -0.5),
@@ -129,36 +129,13 @@ def pyramid(x1, x2, y, z1, z2, fill=False):
         y, x1, x2, z1, z2 = y + 1, x1 + 1, x2 - 1, z1 + 1, z2 - 1
     return result
 
-def get_identity():
-    query = (
-        'select username, token from identity_token where selected = 1;'
-    )
-    conn = sqlite3.connect('auth.db')
-    rows = conn.execute(query)
-    for row in rows:
-        return row
-    raise Exception('No identities found.')
-
 class Client(object):
     def __init__(self, host, port):
         self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.conn.connect((host, port))
-        self.authenticate()
-    def authenticate(self):
-        username, identity_token = get_identity()
-        url = 'https://craft.michaelfogleman.com/api/1/identity'
-        payload = {
-            'username': username,
-            'identity_token': identity_token,
-        }
-        response = requests.post(url, data=payload)
-        if response.status_code == 200 and response.text.isalnum():
-            access_token = response.text
-            self.conn.sendall('A,%s,%s\n' % (username, access_token))
-        else:
-            raise Exception('Failed to authenticate.')
     def set_block(self, x, y, z, w):
         self.conn.sendall('B,%d,%d,%d,%d\n' % (x, y, z, w))
+        time.sleep(0.004)  # pause long enough for a pi0 server to update
     def set_blocks(self, blocks, w):
         key = lambda block: (block[1], block[0], block[2])
         for x, y, z in sorted(blocks, key=key):
@@ -222,27 +199,29 @@ def main():
     #     set_block(0, 32, z, CEMENT)
     #     set_block(0, 32, -z, CEMENT)
     # set_blocks(pyramid(32, 32+64-1, 12, 32, 32+64-1), COBBLE)
-    # outer = circle_y(0, 11, 0, 176 + 3, True)
-    # inner = circle_y(0, 11, 0, 176 - 3, True)
+    # outer = circle_y(0, 32, 0, 176 + 3, True)
+    # inner = circle_y(0, 32, 0, 176 - 3, True)
     # set_blocks(outer - inner, STONE)
     # a = sphere(-32, 48, -32, 24, True)
     # b = sphere(-24, 40, -24, 24, True)
     # set_blocks(a - b, PLANK)
     # set_blocks(cylinder_x(-64, 64, 32, 0, 8), STONE)
     # data = [
-    #     '...............................',
-    #     '..xxx..xxxx...xxx..xxxxx.xxxxx.',
-    #     '.x...x.x...x.x...x.x.......x...',
-    #     '.x.....xxxx..xxxxx.xxx.....x...',
-    #     '.x...x.x..x..x...x.x.......x...',
-    #     '..xxx..x...x.x...x.x.......x...',
-    #     '...............................',
+    #     '.......................................',
+    #     '..rrr..r..x...x..xxx..xxxx..x....xxxx..',
+    #     '.r...r.r..x...x.x...x.x...x.x....x...x.',
+    #     '.rrrr..r..x.x.x.x...x.xxxx..x....x...x.',
+    #     '.r.....r..x.x.x.x...x.x..x..x....x...x.',
+    #     '.r.....r...xxx...xxx..x...x.xxxx.xxxx..',
+    #     '.......................................',
     # ]
     # lookup = {
+    #     'r': COLOR_11,
     #     'x': STONE,
     #     '.': PLANK,
     # }
-    # client.bitmap(0, 32, 32, (1, 0, 0), (0, -1, 0), data, lookup)
+    # client.bitmap(2, 32, 32, (1, 0, 0), (0, -1, 0), data, lookup)
 
 if __name__ == '__main__':
     main()
+

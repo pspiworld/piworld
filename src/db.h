@@ -1,5 +1,4 @@
-#ifndef _db_h_
-#define _db_h_
+#pragma once
 
 #include "map.h"
 #include "sign.h"
@@ -10,15 +9,6 @@ int get_db_enabled();
 int db_init(char *path);
 void db_close();
 void db_commit();
-void db_auth_set(char *username, char *identity_token);
-int db_auth_select(char *username);
-void db_auth_select_none();
-int db_auth_get(
-    char *username,
-    char *identity_token, int identity_token_length);
-int db_auth_get_selected(
-    char *username, int username_length,
-    char *identity_token, int identity_token_length);
 void db_save_state(float x, float y, float z, float rx, float ry);
 int db_load_state(float *x, float *y, float *z, float *rx, float *ry);
 void db_insert_block(int p, int q, int x, int y, int z, int w);
@@ -37,4 +27,3 @@ void db_worker_start();
 void db_worker_stop();
 int db_worker_run(void *arg);
 
-#endif

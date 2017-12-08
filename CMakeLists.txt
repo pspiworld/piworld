@@ -1,49 +1,52 @@
 cmake_minimum_required(VERSION 2.8)
+add_definitions(-D_GNU_SOURCE=1 -std=gnu11)
 
-project(craft)
+project(piworld)
 
-FILE(GLOB SOURCE_FILES src/*.c)
+set(CMAKE_VERBOSE_MAKEFILE TRUE)
 
-add_executable(
-    craft
-    ${SOURCE_FILES}
-    deps/glew/src/glew.c
+FILE(GLOB SOURCE_FILES
+    src/*.c
     deps/lodepng/lodepng.c
     deps/noise/noise.c
-    deps/sqlite/sqlite3.c
-    deps/tinycthread/tinycthread.c)
+    deps/pg/*.c
+    deps/tinycthread/tinycthread.c
+    )
 
-add_definitions(-std=c99 -O3)
+set(COMMON_LIBS dl m pthread sqlite3 X11 Xcursor)
 
-add_subdirectory(deps/glfw)
-include_directories(deps/glew/include)
-include_directories(deps/glfw/include)
+if(MESA)
+    # The MESA driver is only for the pi2/3.
+    add_definitions(-DMESA=1)
+    add_executable(piworld ${SOURCE_FILES})
+    target_link_libraries(piworld ${COMMON_LIBS} EGL GLESv2)
+else()
+    include_directories(/opt/vc/include)
+    link_directories(/opt/vc/lib)
+    add_executable(piworld ${SOURCE_FILES})
+    target_link_libraries(piworld ${COMMON_LIBS} brcmEGL brcmGLESv2
+        bcm_host openmaxil vcos vchiq_arm)
+endif()
+
+if(RASPI EQUAL 1)
+    add_definitions(-mtune=arm1176jzf-s -mfpu=vfp -mfloat-abi=hard)
+elseif(RASPI EQUAL 2)
+    add_definitions(-march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard)
+endif()
+
+if(PROFILE)
+    add_definitions(-pg)
+    set(CMAKE_EXE_LINKER_FLAGS -pg)
+endif()
+
+if(DEBUG)
+    add_definitions(-DDEBUG=1 -Og -g)
+else()
+    add_definitions(-O3)
+endif()
+
 include_directories(deps/lodepng)
 include_directories(deps/noise)
-include_directories(deps/sqlite)
+include_directories(deps/pg)
 include_directories(deps/tinycthread)
 
-if(MINGW)
-    set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH}
-        "C:/Program Files/CURL/lib" "C:/Program Files (x86)/CURL/lib")
-    set(CMAKE_INCLUDE_PATH ${CMAKE_INCLUDE_PATH}
-        "C:/Program Files/CURL/include" "C:/Program Files (x86)/CURL/include")
-endif()
-
-find_package(CURL REQUIRED)
-include_directories(${CURL_INCLUDE_DIR})
-
-if(APPLE)
-    target_link_libraries(craft glfw
-        ${GLFW_LIBRARIES} ${CURL_LIBRARIES})
-endif()
-
-if(UNIX)
-    target_link_libraries(craft dl glfw
-        ${GLFW_LIBRARIES} ${CURL_LIBRARIES})
-endif()
-
-if(MINGW)
-    target_link_libraries(craft ws2_32.lib glfw
-        ${GLFW_LIBRARIES} ${CURL_LIBRARIES})
-endif()

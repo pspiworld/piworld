@@ -1,12 +1,12 @@
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <curl/curl.h>
+
+#include <assert.h>
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <GLES2/gl2.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
-#include "auth.h"
 #include "client.h"
 #include "config.h"
 #include "cube.h"
@@ -15,14 +15,16 @@
 #include "map.h"
 #include "matrix.h"
 #include "noise.h"
+#include "pg.h"
 #include "sign.h"
 #include "tinycthread.h"
 #include "util.h"
 #include "world.h"
+#include "x11_event_handler.h"
 
 #define MAX_CHUNKS 8192
 #define MAX_PLAYERS 128
-#define WORKERS 4
+#define WORKERS 1
 #define MAX_TEXT_LENGTH 256
 #define MAX_NAME_LENGTH 32
 #define MAX_PATH_LENGTH 256
@@ -38,6 +40,24 @@
 #define WORKER_IDLE 0
 #define WORKER_BUSY 1
 #define WORKER_DONE 2
+
+#define WINDOW_TITLE "PiWorld (Esc to exit)"
+
+static int terminate;
+
+int forward_is_pressed;
+int back_is_pressed;
+int left_is_pressed;
+int right_is_pressed;
+int jump_is_pressed;
+int crouch_is_pressed;
+int view_left_is_pressed;
+int view_right_is_pressed;
+int view_up_is_pressed;
+int view_down_is_pressed;
+int ortho_is_pressed;
+int zoom_is_pressed;
+
 
 typedef struct {
     Map map;
@@ -73,6 +93,7 @@ typedef struct {
     mtx_t mtx;
     cnd_t cnd;
     WorkerItem item;
+    int exit_requested;
 } Worker;
 
 typedef struct {
@@ -116,7 +137,6 @@ typedef struct {
 } Attrib;
 
 typedef struct {
-    GLFWwindow *window;
     Worker workers[WORKERS];
     Chunk chunks[MAX_CHUNKS];
     int chunk_count;
@@ -136,7 +156,7 @@ typedef struct {
     int observe2;
     int flying;
     int item_index;
-    int scale;
+    float scale;
     int ortho;
     float fov;
     int suppress_char;
@@ -156,6 +176,30 @@ typedef struct {
 static Model model;
 static Model *g = &model;
 
+/*
+ * Return a draw radius that will fit into the current size of GPU RAM.
+ */
+int get_starting_draw_radius()
+{
+    int gpu_mb = pg_get_gpu_mem_size();
+    if (gpu_mb < 48) {
+        // A draw distance of 1 is not enough for the game to be usable, but
+        // this does at least show something on screen (for low resolutions
+        // only - higher ones will crash the game with low GPU RAM).
+        return 1;
+    } else if (gpu_mb < 64) {
+        return 2;
+    } else if (gpu_mb < 128) {
+        // A GPU RAM size of 64M will result in rendering issues for draw
+        // distances greater than 3 (with a chunk size of 16).
+        return 3;
+    } else {
+        // For the Raspberry Pi reduce amount to draw to both fit into 128MiB
+        // of GPU RAM and keep the render speed at a reasonable smoothness.
+        return 5;
+    }
+}
+
 int chunked(float x) {
     return floorf(roundf(x) / CHUNK_SIZE);
 }
@@ -165,7 +209,7 @@ float time_of_day() {
         return 0.5;
     }
     float t;
-    t = glfwGetTime();
+    t = pg_get_time();
     t = t / g->day_length;
     t = t - (int)t;
     return t;
@@ -183,15 +227,8 @@ float get_daylight() {
     }
 }
 
-int get_scale_factor() {
-    int window_width, window_height;
-    int buffer_width, buffer_height;
-    glfwGetWindowSize(g->window, &window_width, &window_height);
-    glfwGetFramebufferSize(g->window, &buffer_width, &buffer_height);
-    int result = buffer_width / window_width;
-    result = MAX(1, result);
-    result = MIN(2, result);
-    return result;
+float get_scale_factor() {
+    return 1.0;
 }
 
 void get_sight_vector(float rx, float ry, float *vx, float *vy, float *vz) {
@@ -426,7 +463,7 @@ void update_player(Player *player,
         State *s2 = &player->state2;
         memcpy(s1, s2, sizeof(State));
         s2->x = x; s2->y = y; s2->z = z; s2->rx = rx; s2->ry = ry;
-        s2->t = glfwGetTime();
+        s2->t = pg_get_time();
         if (s2->rx - s1->rx > PI) {
             s1->rx += 2 * PI;
         }
@@ -446,7 +483,7 @@ void interpolate_player(Player *player) {
     State *s1 = &player->state1;
     State *s2 = &player->state2;
     float t1 = s2->t - s1->t;
-    float t2 = glfwGetTime() - s2->t;
+    float t2 = pg_get_time() - s2->t;
     t1 = MIN(t1, 1);
     t1 = MAX(t1, 0.1);
     float p = MIN(t2 / t1, 1);
@@ -1430,11 +1467,13 @@ void ensure_chunks(Player *player) {
 
 int worker_run(void *arg) {
     Worker *worker = (Worker *)arg;
-    int running = 1;
-    while (running) {
+    while (!worker->exit_requested) {
         mtx_lock(&worker->mtx);
         while (worker->state != WORKER_BUSY) {
             cnd_wait(&worker->cnd, &worker->mtx);
+            if (worker->exit_requested) {
+                thrd_exit(1);
+            }
         }
         mtx_unlock(&worker->mtx);
         WorkerItem *item = &worker->item;
@@ -1742,12 +1781,10 @@ void render_wireframe(Attrib *attrib, Player *player) {
     if (is_obstacle(hw)) {
         glUseProgram(attrib->program);
         glLineWidth(1);
-        glEnable(GL_COLOR_LOGIC_OP);
         glUniformMatrix4fv(attrib->matrix, 1, GL_FALSE, matrix);
         GLuint wireframe_buffer = gen_wireframe_buffer(hx, hy, hz, 0.53);
         draw_lines(attrib, wireframe_buffer, 3, 24);
         del_buffer(wireframe_buffer);
-        glDisable(GL_COLOR_LOGIC_OP);
     }
 }
 
@@ -1756,12 +1793,10 @@ void render_crosshairs(Attrib *attrib) {
     set_matrix_2d(matrix, g->width, g->height);
     glUseProgram(attrib->program);
     glLineWidth(4 * g->scale);
-    glEnable(GL_COLOR_LOGIC_OP);
     glUniformMatrix4fv(attrib->matrix, 1, GL_FALSE, matrix);
     GLuint crosshair_buffer = gen_crosshair_buffer();
     draw_lines(attrib, crosshair_buffer, 2, 4);
     del_buffer(crosshair_buffer);
-    glDisable(GL_COLOR_LOGIC_OP);
 }
 
 void render_item(Attrib *attrib) {
@@ -1809,26 +1844,8 @@ void add_message(const char *text) {
 }
 
 void login() {
-    char username[128] = {0};
-    char identity_token[128] = {0};
-    char access_token[128] = {0};
-    if (db_auth_get_selected(username, 128, identity_token, 128)) {
-        printf("Contacting login server for username: %s\n", username);
-        if (get_access_token(
-            access_token, 128, username, identity_token))
-        {
-            printf("Successfully authenticated with the login server\n");
-            client_login(username, access_token);
-        }
-        else {
-            printf("Failed to authenticate with the login server\n");
-            client_login("", "");
-        }
-    }
-    else {
-        printf("Logging in anonymously\n");
-        client_login("", "");
-    }
+    printf("Logging in anonymously\n");
+    client_login("", "");
 }
 
 void copy() {
@@ -2019,30 +2036,11 @@ void tree(Block *block) {
 }
 
 void parse_command(const char *buffer, int forward) {
-    char username[128] = {0};
-    char token[128] = {0};
     char server_addr[MAX_ADDR_LENGTH];
     int server_port = DEFAULT_PORT;
     char filename[MAX_PATH_LENGTH];
     int radius, count, xc, yc, zc;
-    if (sscanf(buffer, "/identity %128s %128s", username, token) == 2) {
-        db_auth_set(username, token);
-        add_message("Successfully imported identity token!");
-        login();
-    }
-    else if (strcmp(buffer, "/logout") == 0) {
-        db_auth_select_none();
-        login();
-    }
-    else if (sscanf(buffer, "/login %128s", username) == 1) {
-        if (db_auth_select(username)) {
-            login();
-        }
-        else {
-            add_message("Unknown username.");
-        }
-    }
-    else if (sscanf(buffer,
+    if (sscanf(buffer,
         "/online %128s %d", server_addr, &server_port) >= 1)
     {
         g->mode_changed = 1;
@@ -2055,7 +2053,7 @@ void parse_command(const char *buffer, int forward) {
     else if (sscanf(buffer, "/offline %128s", filename) == 1) {
         g->mode_changed = 1;
         g->mode = MODE_OFFLINE;
-        snprintf(g->db_path, MAX_PATH_LENGTH, "%s.db", filename);
+        snprintf(g->db_path, MAX_PATH_LENGTH, "%s.piworld", filename);
     }
     else if (strcmp(buffer, "/offline") == 0) {
         g->mode_changed = 1;
@@ -2071,6 +2069,12 @@ void parse_command(const char *buffer, int forward) {
         else {
             add_message("Viewing distance must be between 1 and 24.");
         }
+    }
+    else if (sscanf(buffer, "/position %d %d %d", &xc, &yc, &zc) == 3) {
+        State *s = &g->players->state;
+        s->x = xc;
+        s->y = yc;
+        s->z = zc;
     }
     else if (strcmp(buffer, "/copy") == 0) {
         copy();
@@ -2174,224 +2178,19 @@ void on_middle_click() {
     }
 }
 
-void on_key(GLFWwindow *window, int key, int scancode, int action, int mods) {
-    int control = mods & (GLFW_MOD_CONTROL | GLFW_MOD_SUPER);
-    int exclusive =
-        glfwGetInputMode(window, GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
-    if (action == GLFW_RELEASE) {
-        return;
-    }
-    if (key == GLFW_KEY_BACKSPACE) {
-        if (g->typing) {
-            int n = strlen(g->typing_buffer);
-            if (n > 0) {
-                g->typing_buffer[n - 1] = '\0';
-            }
-        }
-    }
-    if (action != GLFW_PRESS) {
-        return;
-    }
-    if (key == GLFW_KEY_ESCAPE) {
-        if (g->typing) {
-            g->typing = 0;
-        }
-        else if (exclusive) {
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-        }
-    }
-    if (key == GLFW_KEY_ENTER) {
-        if (g->typing) {
-            if (mods & GLFW_MOD_SHIFT) {
-                int n = strlen(g->typing_buffer);
-                if (n < MAX_TEXT_LENGTH - 1) {
-                    g->typing_buffer[n] = '\r';
-                    g->typing_buffer[n + 1] = '\0';
-                }
-            }
-            else {
-                g->typing = 0;
-                if (g->typing_buffer[0] == CRAFT_KEY_SIGN) {
-                    Player *player = g->players;
-                    int x, y, z, face;
-                    if (hit_test_face(player, &x, &y, &z, &face)) {
-                        set_sign(x, y, z, face, g->typing_buffer + 1);
-                    }
-                }
-                else if (g->typing_buffer[0] == '/') {
-                    parse_command(g->typing_buffer, 1);
-                }
-                else {
-                    client_talk(g->typing_buffer);
-                }
-            }
-        }
-        else {
-            if (control) {
-                on_right_click();
-            }
-            else {
-                on_left_click();
-            }
-        }
-    }
-    if (control && key == 'V') {
-        const char *buffer = glfwGetClipboardString(window);
-        if (g->typing) {
-            g->suppress_char = 1;
-            strncat(g->typing_buffer, buffer,
-                MAX_TEXT_LENGTH - strlen(g->typing_buffer) - 1);
-        }
-        else {
-            parse_command(buffer, 0);
-        }
-    }
-    if (!g->typing) {
-        if (key == CRAFT_KEY_FLY) {
-            g->flying = !g->flying;
-        }
-        if (key >= '1' && key <= '9') {
-            g->item_index = key - '1';
-        }
-        if (key == '0') {
-            g->item_index = 9;
-        }
-        if (key == CRAFT_KEY_ITEM_NEXT) {
-            g->item_index = (g->item_index + 1) % item_count;
-        }
-        if (key == CRAFT_KEY_ITEM_PREV) {
-            g->item_index--;
-            if (g->item_index < 0) {
-                g->item_index = item_count - 1;
-            }
-        }
-        if (key == CRAFT_KEY_OBSERVE) {
-            g->observe1 = (g->observe1 + 1) % g->player_count;
-        }
-        if (key == CRAFT_KEY_OBSERVE_INSET) {
-            g->observe2 = (g->observe2 + 1) % g->player_count;
-        }
-    }
-}
-
-void on_char(GLFWwindow *window, unsigned int u) {
-    if (g->suppress_char) {
-        g->suppress_char = 0;
-        return;
-    }
-    if (g->typing) {
-        if (u >= 32 && u < 128) {
-            char c = (char)u;
-            int n = strlen(g->typing_buffer);
-            if (n < MAX_TEXT_LENGTH - 1) {
-                g->typing_buffer[n] = c;
-                g->typing_buffer[n + 1] = '\0';
-            }
-        }
-    }
-    else {
-        if (u == CRAFT_KEY_CHAT) {
-            g->typing = 1;
-            g->typing_buffer[0] = '\0';
-        }
-        if (u == CRAFT_KEY_COMMAND) {
-            g->typing = 1;
-            g->typing_buffer[0] = '/';
-            g->typing_buffer[1] = '\0';
-        }
-        if (u == CRAFT_KEY_SIGN) {
-            g->typing = 1;
-            g->typing_buffer[0] = CRAFT_KEY_SIGN;
-            g->typing_buffer[1] = '\0';
-        }
-    }
-}
-
-void on_scroll(GLFWwindow *window, double xdelta, double ydelta) {
-    static double ypos = 0;
-    ypos += ydelta;
-    if (ypos < -SCROLL_THRESHOLD) {
-        g->item_index = (g->item_index + 1) % item_count;
-        ypos = 0;
-    }
-    if (ypos > SCROLL_THRESHOLD) {
-        g->item_index--;
-        if (g->item_index < 0) {
-            g->item_index = item_count - 1;
-        }
-        ypos = 0;
-    }
-}
-
-void on_mouse_button(GLFWwindow *window, int button, int action, int mods) {
-    int control = mods & (GLFW_MOD_CONTROL | GLFW_MOD_SUPER);
-    int exclusive =
-        glfwGetInputMode(window, GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
-    if (action != GLFW_PRESS) {
-        return;
-    }
-    if (button == GLFW_MOUSE_BUTTON_LEFT) {
-        if (exclusive) {
-            if (control) {
-                on_right_click();
-            }
-            else {
-                on_left_click();
-            }
-        }
-        else {
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        }
-    }
-    if (button == GLFW_MOUSE_BUTTON_RIGHT) {
-        if (exclusive) {
-            if (control) {
-                on_light();
-            }
-            else {
-                on_right_click();
-            }
-        }
-    }
-    if (button == GLFW_MOUSE_BUTTON_MIDDLE) {
-        if (exclusive) {
-            on_middle_click();
-        }
-    }
-}
-
-void create_window() {
-    int window_width = WINDOW_WIDTH;
-    int window_height = WINDOW_HEIGHT;
-    GLFWmonitor *monitor = NULL;
-    if (FULLSCREEN) {
-        int mode_count;
-        monitor = glfwGetPrimaryMonitor();
-        const GLFWvidmode *modes = glfwGetVideoModes(monitor, &mode_count);
-        window_width = modes[mode_count - 1].width;
-        window_height = modes[mode_count - 1].height;
-    }
-    g->window = glfwCreateWindow(
-        window_width, window_height, "Craft", monitor, NULL);
-}
-
 void handle_mouse_input() {
-    int exclusive =
-        glfwGetInputMode(g->window, GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
     static double px = 0;
     static double py = 0;
     State *s = &g->players->state;
-    if (exclusive && (px || py)) {
+    if ((px || py)) {
         double mx, my;
-        glfwGetCursorPos(g->window, &mx, &my);
+        int mix, miy;
+        get_x11_accumulative_mouse_motion(&mix, &miy);
+        mx = (float)mix;
+        my = (float)miy;
         float m = 0.0025;
-        s->rx += (mx - px) * m;
-        if (INVERT_MOUSE) {
+        s->rx -= (mx - px) * m;
             s->ry += (my - py) * m;
-        }
-        else {
-            s->ry -= (my - py) * m;
-        }
         if (s->rx < 0) {
             s->rx += RADIANS(360);
         }
@@ -2404,7 +2203,10 @@ void handle_mouse_input() {
         py = my;
     }
     else {
-        glfwGetCursorPos(g->window, &px, &py);
+        int pix, piy;
+        get_x11_accumulative_mouse_motion(&pix, &piy);
+        px = (float)pix;
+        py = (float)piy;
     }
 }
 
@@ -2415,30 +2217,55 @@ void handle_movement(double dt) {
     int sx = 0;
     if (!g->typing) {
         float m = dt * 1.0;
-        g->ortho = glfwGetKey(g->window, CRAFT_KEY_ORTHO) ? 64 : 0;
-        g->fov = glfwGetKey(g->window, CRAFT_KEY_ZOOM) ? 15 : 65;
-        if (glfwGetKey(g->window, CRAFT_KEY_FORWARD)) sz--;
-        if (glfwGetKey(g->window, CRAFT_KEY_BACKWARD)) sz++;
-        if (glfwGetKey(g->window, CRAFT_KEY_LEFT)) sx--;
-        if (glfwGetKey(g->window, CRAFT_KEY_RIGHT)) sx++;
-        if (glfwGetKey(g->window, GLFW_KEY_LEFT)) s->rx -= m;
-        if (glfwGetKey(g->window, GLFW_KEY_RIGHT)) s->rx += m;
-        if (glfwGetKey(g->window, GLFW_KEY_UP)) s->ry += m;
-        if (glfwGetKey(g->window, GLFW_KEY_DOWN)) s->ry -= m;
+
+        // View distance
+        g->ortho = ortho_is_pressed ? 64 : 0;
+        g->fov = zoom_is_pressed ? 15 : 65;
+
+        // Walking
+        if (forward_is_pressed) sz--;
+        if (back_is_pressed) sz++;
+        if (left_is_pressed) sx--;
+        if (right_is_pressed) sx++;
+
+        // View direction
+        if (view_left_is_pressed) s->rx -= m;
+        if (view_right_is_pressed) s->rx += m;
+        if (view_up_is_pressed) s->ry += m;
+        if (view_down_is_pressed) s->ry -= m;
     }
     float vx, vy, vz;
     get_motion_vector(g->flying, sz, sx, s->rx, s->ry, &vx, &vy, &vz);
     if (!g->typing) {
-        if (glfwGetKey(g->window, CRAFT_KEY_JUMP)) {
+        if (jump_is_pressed) {
             if (g->flying) {
                 vy = 1;
             }
             else if (dy == 0) {
                 dy = 8;
             }
+        } else if (crouch_is_pressed) {
+            if (g->flying) {
+                vy = -1;
+            }
+            else if (dy == 0) {
+                dy = -4;
+            }
+        } else {
+            // If previously in a crouch, move to standing position
+            int block_under_player_head = get_block(roundf(s->x), s->y,
+                                                    roundf(s->z));
+            if (is_obstacle(block_under_player_head)) {
+                dy = 8;
+            }
         }
     }
-    float speed = g->flying ? 20 : 5;
+    float speed = 5;  // walking speed
+    if (g->flying) {
+        speed = 20;
+    } else if (crouch_is_pressed) {
+        speed = 2;
+    }
     int estimate = roundf(sqrtf(
         powf(vx * speed, 2) +
         powf(vy * speed + ABS(dy) * 2, 2) +
@@ -2459,7 +2286,13 @@ void handle_movement(double dt) {
         s->x += vx;
         s->y += vy + dy * ut;
         s->z += vz;
-        if (collide(2, &s->x, &s->y, &s->z)) {
+        int player_standing_height = 2;
+        int player_couching_height = 1;
+        int player_min_height = player_standing_height;
+        if (crouch_is_pressed) {
+            player_min_height = player_couching_height;
+        }
+        if (collide(player_min_height, &s->x, &s->y, &s->z)) {
             dy = 0;
         }
     }
@@ -2533,7 +2366,7 @@ void parse_buffer(char *buffer) {
         double elapsed;
         int day_length;
         if (sscanf(line, "E,%lf,%d", &elapsed, &day_length) == 2) {
-            glfwSetTime(fmod(elapsed, day_length));
+            pg_set_time(fmod(elapsed, day_length));
             g->day_length = day_length;
             g->time_changed = 1;
         }
@@ -2579,41 +2412,196 @@ void reset_model() {
     memset(g->messages, 0, sizeof(char) * MAX_MESSAGES * MAX_TEXT_LENGTH);
     g->message_index = 0;
     g->day_length = DAY_LENGTH;
-    glfwSetTime(g->day_length / 3.0);
+    pg_set_time(g->day_length / 3.0);
     g->time_changed = 1;
+}
+
+void handle_key_press(unsigned char c, int mods, int keysym)
+{
+    if (!g->typing) {
+        if (c == CRAFT_KEY_FORWARD) {
+            forward_is_pressed = 1;
+        } else if (c == CRAFT_KEY_BACKWARD) {
+            back_is_pressed = 1;
+        } else if (c == CRAFT_KEY_LEFT) {
+            left_is_pressed = 1;
+        } else if (c == CRAFT_KEY_RIGHT) {
+            right_is_pressed = 1;
+        } else if (keysym == XK_Escape) {
+            terminate = True;
+        } else if (keysym == XK_F1) {
+            set_mouse_absolute();
+        } else if (keysym == XK_F2) {
+            set_mouse_relative();
+        } else if (keysym == XK_Up) {
+            view_up_is_pressed = 1;
+        } else if (keysym == XK_Down) {
+            view_down_is_pressed = 1;
+        } else if (keysym == XK_Left) {
+            view_left_is_pressed = 1;
+        } else if (keysym == XK_Right) {
+            view_right_is_pressed = 1;
+        } else if (c == ' ') {
+            jump_is_pressed = 1;
+        } else if (c == 'c') {
+            crouch_is_pressed = 1;
+        } else if (c == 'z') {
+            zoom_is_pressed = 1;
+        } else if (c == 'f') {
+            ortho_is_pressed = 1;
+        } else if (keysym == XK_Tab) {  // CRAFT_KEY_FLY
+            g->flying = !g->flying;
+        } else if (c >= '1' && c <= '9') {
+            g->item_index = c - '1';
+        } else if (c == '0' && c <= '9') {
+            g->item_index = 9;
+        } else if (c == CRAFT_KEY_ITEM_NEXT) {
+            g->item_index = (g->item_index + 1) % item_count;
+        } else if (c == CRAFT_KEY_ITEM_PREV) {
+            g->item_index--;
+            if (g->item_index < 0) {
+                g->item_index = item_count - 1;
+            }
+        } else if (c == CRAFT_KEY_OBSERVE) {
+            g->observe1 = (g->observe1 + 1) % g->player_count;
+        } else if (c == CRAFT_KEY_OBSERVE_INSET) {
+            g->observe2 = (g->observe2 + 1) % g->player_count;
+        } else if (c == CRAFT_KEY_CHAT) {
+            g->typing = 1;
+            g->typing_buffer[0] = '\0';
+        } else if (c == CRAFT_KEY_COMMAND) {
+            g->typing = 1;
+            g->typing_buffer[0] = '/';
+            g->typing_buffer[1] = '\0';
+        } else if (c == CRAFT_KEY_SIGN) {
+            g->typing = 1;
+            g->typing_buffer[0] = CRAFT_KEY_SIGN;
+            g->typing_buffer[1] = '\0';
+        } else if (c == 13) {  // return
+            printf("mods: %d\n", mods);
+            if (mods & ControlMask) {
+                on_right_click();
+            } else {
+                on_left_click();
+            }
+        }
+    } else {
+        if (keysym == XK_Escape) {
+            g->typing = 0;
+        } else if (c == 8) {  // backspace
+            int n = strlen(g->typing_buffer);
+            if (n > 0) {
+                g->typing_buffer[n - 1] = '\0';
+            }
+        } else if (c == 13) {  // return
+            if (mods & ShiftMask) {
+                int n = strlen(g->typing_buffer);
+                if (n < MAX_TEXT_LENGTH - 1) {
+                    g->typing_buffer[n] = '\r';
+                    g->typing_buffer[n + 1] = '\0';
+                }
+            } else {
+                g->typing = 0;
+                if (g->typing_buffer[0] == CRAFT_KEY_SIGN) {
+                    Player *player = g->players;
+                    int x, y, z, face;
+                    if (hit_test_face(player, &x, &y, &z, &face)) {
+                        set_sign(x, y, z, face, g->typing_buffer + 1);
+                    }
+                } else if (g->typing_buffer[0] == CRAFT_KEY_COMMAND) {
+                    parse_command(g->typing_buffer, 1);
+                } else {
+                    client_talk(g->typing_buffer);
+                }
+            }
+        } else {
+            if (c >= 32 && c < 128) {
+                int n = strlen(g->typing_buffer);
+                if (n < MAX_TEXT_LENGTH - 1) {
+                    g->typing_buffer[n] = c;
+                    g->typing_buffer[n + 1] = '\0';
+                }
+            }
+        }
+    }
+}
+
+void handle_key_release(unsigned char c, int keysym)
+{
+    if (c == CRAFT_KEY_FORWARD) {
+        forward_is_pressed = 0;
+    } else if (c == CRAFT_KEY_BACKWARD) {
+        back_is_pressed = 0;
+    } else if (c == CRAFT_KEY_LEFT) {
+        left_is_pressed = 0;
+    } else if (c == CRAFT_KEY_RIGHT) {
+        right_is_pressed = 0;
+    } else if (c == ' ') {
+        jump_is_pressed = 0;
+    } else if (c == 'c') {
+        crouch_is_pressed = 0;
+    } else if (c == 'z') {
+        zoom_is_pressed = 0;
+    } else if (c == 'f') {
+        ortho_is_pressed = 0;
+    } else if (keysym == XK_Up) {
+        view_up_is_pressed = 0;
+    } else if (keysym == XK_Down) {
+        view_down_is_pressed = 0;
+    } else if (keysym == XK_Left) {
+        view_left_is_pressed = 0;
+    } else if (keysym == XK_Right) {
+        view_right_is_pressed = 0;
+    }
+}
+
+void handle_mouse_release(int b, int mods)
+{
+    if (b == 1) {
+        if (mods & ControlMask) {
+            on_right_click();
+        } else {
+            on_left_click();
+        }
+    } else if (b == 2) {
+        on_middle_click();
+    } else if (b == 3) {
+        if (mods & ControlMask) {
+            on_light();
+        } else {
+            on_right_click();
+        }
+    } else if (b == 4) {
+        g->item_index = (g->item_index + 1) % item_count;
+    } else if (b == 5) {
+        g->item_index--;
+        if (g->item_index < 0) {
+            g->item_index = item_count - 1;
+        }
+    }
+}
+
+void handle_window_close()
+{
+    terminate = True;
 }
 
 int main(int argc, char **argv) {
     // INITIALIZATION //
-    curl_global_init(CURL_GLOBAL_DEFAULT);
     srand(time(NULL));
     rand();
 
     // WINDOW INITIALIZATION //
-    if (!glfwInit()) {
-        return -1;
-    }
-    create_window();
-    if (!g->window) {
-        glfwTerminate();
-        return -1;
-    }
-
-    glfwMakeContextCurrent(g->window);
-    glfwSwapInterval(VSYNC);
-    glfwSetInputMode(g->window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-    glfwSetKeyCallback(g->window, on_key);
-    glfwSetCharCallback(g->window, on_char);
-    glfwSetMouseButtonCallback(g->window, on_mouse_button);
-    glfwSetScrollCallback(g->window, on_scroll);
-
-    if (glewInit() != GLEW_OK) {
-        return -1;
-    }
+    g->width = WINDOW_WIDTH;
+    g->height = WINDOW_HEIGHT;
+    pg_start(WINDOW_TITLE, g->width, g->height);
+    set_key_press_handler(*handle_key_press);
+    set_key_release_handler(*handle_key_release);
+    set_mouse_release_handler(*handle_mouse_release);
+    set_window_close_handler(*handle_window_close);
 
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
-    glLogicOp(GL_INVERT);
     glClearColor(0, 0, 0, 1);
 
     // LOAD TEXTURES //
@@ -2711,24 +2699,27 @@ int main(int argc, char **argv) {
         snprintf(g->db_path, MAX_PATH_LENGTH, "%s", DB_PATH);
     }
 
-    g->create_radius = CREATE_CHUNK_RADIUS;
-    g->render_radius = RENDER_CHUNK_RADIUS;
-    g->delete_radius = DELETE_CHUNK_RADIUS;
-    g->sign_radius = RENDER_SIGN_RADIUS;
-
-    // INITIALIZE WORKER THREADS
-    for (int i = 0; i < WORKERS; i++) {
-        Worker *worker = g->workers + i;
-        worker->index = i;
-        worker->state = WORKER_IDLE;
-        mtx_init(&worker->mtx, mtx_plain);
-        cnd_init(&worker->cnd);
-        thrd_create(&worker->thrd, worker_run, worker);
-    }
+    int draw_radius = get_starting_draw_radius();
+    g->create_radius = draw_radius;
+    g->render_radius = draw_radius;
+    g->delete_radius = draw_radius + 4;
+    g->sign_radius = draw_radius;
 
     // OUTER LOOP //
     int running = 1;
     while (running) {
+
+        // INITIALIZE WORKER THREADS
+        for (int i = 0; i < WORKERS; i++) {
+            Worker *worker = g->workers + i;
+            worker->index = i;
+            worker->state = WORKER_IDLE;
+            worker->exit_requested = False;
+            mtx_init(&worker->mtx, mtx_plain);
+            cnd_init(&worker->cnd);
+            thrd_create(&worker->thrd, worker_run, worker);
+        }
+
         // DATABASE INITIALIZATION //
         if (g->mode == MODE_OFFLINE || USE_CACHE) {
             db_enable();
@@ -2753,8 +2744,8 @@ int main(int argc, char **argv) {
         // LOCAL VARIABLES //
         reset_model();
         FPS fps = {0, 0, 0};
-        double last_commit = glfwGetTime();
-        double last_update = glfwGetTime();
+        double last_commit = pg_get_time();
+        double last_update = pg_get_time();
         GLuint sky_buffer = gen_sky_buffer();
 
         Player *me = g->players;
@@ -2771,23 +2762,26 @@ int main(int argc, char **argv) {
             s->y = highest_block(s->x, s->z) + 2;
         }
 
+        // VIEW SETUP //
+        g->ortho = 0;
+        g->fov = 65;
+
         // BEGIN MAIN LOOP //
-        double previous = glfwGetTime();
-        while (1) {
+        double previous = pg_get_time();
+        while (!terminate) {
             // WINDOW SIZE AND SCALE //
             g->scale = get_scale_factor();
-            glfwGetFramebufferSize(g->window, &g->width, &g->height);
             glViewport(0, 0, g->width, g->height);
 
             // FRAME RATE //
             if (g->time_changed) {
                 g->time_changed = 0;
-                last_commit = glfwGetTime();
-                last_update = glfwGetTime();
+                last_commit = pg_get_time();
+                last_update = pg_get_time();
                 memset(&fps, 0, sizeof(fps));
             }
             update_fps(&fps);
-            double now = glfwGetTime();
+            double now = pg_get_time();
             double dt = now - previous;
             dt = MIN(dt, 0.2);
             dt = MAX(dt, 0.0);
@@ -2863,12 +2857,19 @@ int main(int argc, char **argv) {
                 hour = hour ? hour : 12;
                 snprintf(
                     text_buffer, 1024,
-                    "(%d, %d) (%.2f, %.2f, %.2f) [%d, %d, %d] %d%cm %dfps",
+                    "(%d, %d) (%.2f, %.2f, %.2f) [%d, %d, %d] %d%cm",
                     chunked(s->x), chunked(s->z), s->x, s->y, s->z,
                     g->player_count, g->chunk_count,
-                    face_count * 2, hour, am_pm, fps.fps);
+                    face_count * 2, hour, am_pm);
                 render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts, text_buffer);
                 ty -= ts * 2;
+
+                // FPS counter in lower right corner
+                float bottom_bar_y = 0 + ts * 2;
+                float right_side = g->width - ts;
+                snprintf(text_buffer, 1024, "%dfps", fps.fps);
+                render_text(&text_attrib, ALIGN_RIGHT, right_side, bottom_bar_y,
+                            ts, text_buffer);
             }
             if (SHOW_CHAT_TEXT) {
                 for (int i = 0; i < MAX_MESSAGES; i++) {
@@ -2934,16 +2935,30 @@ int main(int argc, char **argv) {
             }
 
             // SWAP AND POLL //
-            glfwSwapBuffers(g->window);
-            glfwPollEvents();
-            if (glfwWindowShouldClose(g->window)) {
-                running = 0;
-                break;
-            }
+            pg_swap_buffers();
+            pg_next_event();
             if (g->mode_changed) {
                 g->mode_changed = 0;
                 break;
             }
+        }
+        if (terminate) {
+            running = 0;
+        }
+
+        // DEINITIALIZE WORKER THREADS
+        // Stop thread processing
+        for (int i = 0; i < WORKERS; i++) {
+            Worker *worker = g->workers + i;
+            worker->exit_requested = True;
+            cnd_signal(&worker->cnd);
+        }
+        // Wait for worker threads to exit
+        for (int i = 0; i < WORKERS; i++) {
+            Worker *worker = g->workers + i;
+            thrd_join(worker->thrd, NULL);
+            cnd_destroy(&worker->cnd);
+            mtx_destroy(&worker->mtx);
         }
 
         // SHUTDOWN //
@@ -2957,7 +2972,7 @@ int main(int argc, char **argv) {
         delete_all_players();
     }
 
-    glfwTerminate();
-    curl_global_cleanup();
+    pg_end();
     return 0;
 }
+

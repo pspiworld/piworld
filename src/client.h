@@ -1,5 +1,4 @@
-#ifndef _client_h_
-#define _client_h_
+#pragma once
 
 #define DEFAULT_PORT 4080
 
@@ -20,4 +19,3 @@ void client_light(int x, int y, int z, int w);
 void client_sign(int x, int y, int z, int face, const char *text);
 void client_talk(const char *text);
 
-#endif

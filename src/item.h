@@ -1,5 +1,4 @@
-#ifndef _item_h_
-#define _item_h_
+#pragma once
 
 #define EMPTY 0
 #define GRASS 1
@@ -68,4 +67,3 @@ int is_obstacle(int w);
 int is_transparent(int w);
 int is_destructable(int w);
 
-#endif

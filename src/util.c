@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include "lodepng.h"
+#include "pg.h"
 #include "matrix.h"
 #include "util.h"
 
@@ -18,7 +19,7 @@ double rand_double() {
 
 void update_fps(FPS *fps) {
     fps->frames++;
-    double now = glfwGetTime();
+    double now = pg_get_time();
     double elapsed = now - fps->since;
     if (elapsed >= 1) {
         fps->fps = round(fps->frames / elapsed);
@@ -37,7 +38,10 @@ char *load_file(const char *path) {
     int length = ftell(file);
     rewind(file);
     char *data = calloc(length + 1, sizeof(char));
-    fread(data, 1, length, file);
+    if (fread(data, 1, length, file) != length) {
+        fprintf(stderr, "fread failed: %s\n", path);
+        exit(-1);
+    }
     fclose(file);
     return data;
 }

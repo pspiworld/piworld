@@ -1,3 +1,4 @@
+#!/usr/bin/env python2
 from math import floor
 from world import World
 import Queue
@@ -15,15 +16,14 @@ import traceback
 DEFAULT_HOST = '0.0.0.0'
 DEFAULT_PORT = 4080
 
-DB_PATH = 'craft.db'
+DB_PATH = 'my.piworld'
 LOG_PATH = 'log.txt'
 
-CHUNK_SIZE = 32
+CHUNK_SIZE = 16
 BUFFER_SIZE = 4096
 COMMIT_INTERVAL = 5
 
-AUTH_REQUIRED = True
-AUTH_URL = 'https://craft.michaelfogleman.com/api/1/access'
+AUTH_REQUIRED = False
 
 DAY_LENGTH = 600
 SPAWN_POINT = (0, 0, 0, 0, 0)
@@ -59,7 +59,7 @@ except ImportError:
 def log(*args):
     now = datetime.datetime.utcnow()
     line = ' '.join(map(str, (now,) + args))
-    print line
+    print(line)
     with open(LOG_PATH, 'a') as fp:
         fp.write('%s\n' % line)
 
@@ -290,7 +290,7 @@ class Model(object):
         self.clients.append(client)
         client.send(YOU, client.client_id, *client.position)
         client.send(TIME, time.time(), DAY_LENGTH)
-        client.send(TALK, 'Welcome to Craft!')
+        client.send(TALK, 'Welcome to PiWorld!')
         client.send(TALK, 'Type "/help" for a list of commands.')
         self.send_position(client)
         self.send_positions(client)
@@ -330,7 +330,6 @@ class Model(object):
         client.user_id = user_id
         if user_id is None:
             client.nick = 'guest%d' % client.client_id
-            client.send(TALK, 'Visit craft.michaelfogleman.com to register!')
         else:
             client.nick = username
         self.send_nick(client)
@@ -636,7 +635,7 @@ def cleanup():
     count = 0
     total = 0
     delete_query = 'delete from block where x = %d and y = %d and z = %d;'
-    print 'begin;'
+    print('begin;')
     for p, q in chunks:
         chunk = world.create_chunk(p, q)
         query = 'select x, y, z, w from block where p = :p and q = :q;'
@@ -650,9 +649,9 @@ def cleanup():
             original = chunk.get((x, y, z), 0)
             if w == original or original in INDESTRUCTIBLE_ITEMS:
                 count += 1
-                print delete_query % (x, y, z)
+                print(delete_query % (x, y, z))
     conn.close()
-    print 'commit;'
+    print('commit;')
     print >> sys.stderr, '%d of %d blocks will be cleaned up' % (count, total)
 
 def main():

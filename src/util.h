@@ -1,8 +1,8 @@
-#ifndef _util_h_
-#define _util_h_
+#pragma once
 
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
+#include <GLES2/gl2.h>
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include "config.h"
 
 #define PI 3.14159265359
@@ -43,4 +43,3 @@ int char_width(char input);
 int string_width(const char *input);
 int wrap(const char *input, int max_width, char *output, int max_length);
 
-#endif

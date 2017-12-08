@@ -1,6 +1,9 @@
 #include "config.h"
+#include "item.h"
 #include "noise.h"
 #include "world.h"
+
+#define BEDROCK COLOR_11  // A Raspberry base
 
 void create_world(int p, int q, world_func func, void *arg) {
     int pad = 1;
@@ -16,21 +19,24 @@ void create_world(int p, int q, world_func func, void *arg) {
             float g = simplex2(-x * 0.01, -z * 0.01, 2, 0.9, 2);
             int mh = g * 32 + 16;
             int h = f * mh;
-            int w = 1;
+            int w = GRASS;
             int t = 12;
             if (h <= t) {
                 h = t;
-                w = 2;
+                w = SAND;
             }
+
+            func(x, 0, z, BEDROCK, arg);
+
             // sand and grass terrain
-            for (int y = 0; y < h; y++) {
+            for (int y = 1; y < h; y++) {
                 func(x, y, z, w * flag, arg);
             }
             if (w == 1) {
                 if (SHOW_PLANTS) {
                     // grass
                     if (simplex2(-x * 0.1, z * 0.1, 4, 0.8, 2) > 0.6) {
-                        func(x, h, z, 17 * flag, arg);
+                        func(x, h, z, TALL_GRASS * flag, arg);
                     }
                     // flowers
                     if (simplex2(x * 0.05, -z * 0.05, 4, 0.8, 2) > 0.7) {
@@ -46,19 +52,21 @@ void create_world(int p, int q, world_func func, void *arg) {
                     ok = 0;
                 }
                 if (ok && simplex2(x, z, 6, 0.5, 2) > 0.84) {
+                    // leaves
                     for (int y = h + 3; y < h + 8; y++) {
                         for (int ox = -3; ox <= 3; ox++) {
                             for (int oz = -3; oz <= 3; oz++) {
                                 int d = (ox * ox) + (oz * oz) +
                                     (y - (h + 4)) * (y - (h + 4));
                                 if (d < 11) {
-                                    func(x + ox, y, z + oz, 15, arg);
+                                    func(x + ox, y, z + oz, LEAVES, arg);
                                 }
                             }
                         }
                     }
+                    // tree trunk
                     for (int y = h; y < h + 7; y++) {
-                        func(x, y, z, 5, arg);
+                        func(x, y, z, WOOD, arg);
                     }
                 }
             }
