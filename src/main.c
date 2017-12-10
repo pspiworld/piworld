@@ -43,6 +43,9 @@
 
 #define WINDOW_TITLE "PiWorld (Esc to exit)"
 
+const float GREEN[4] = {0.0, 1.0, 0.0, 1.0};
+const float BLACK[4] = {0.0, 0.0, 0.0, 1.0};
+
 static int terminate;
 
 int forward_is_pressed;
@@ -148,6 +151,8 @@ typedef struct {
     int player_count;
     int typing;
     char typing_buffer[MAX_TEXT_LENGTH];
+    int text_cursor;
+    int typing_start;
     int message_index;
     char messages[MAX_MESSAGES][MAX_TEXT_LENGTH];
     int width;
@@ -1782,6 +1787,7 @@ void render_wireframe(Attrib *attrib, Player *player) {
         glUseProgram(attrib->program);
         glLineWidth(1);
         glUniformMatrix4fv(attrib->matrix, 1, GL_FALSE, matrix);
+        glUniform4fv(attrib->extra1, 1, BLACK);
         GLuint wireframe_buffer = gen_wireframe_buffer(hx, hy, hz, 0.53);
         draw_lines(attrib, wireframe_buffer, 3, 24);
         del_buffer(wireframe_buffer);
@@ -1794,6 +1800,7 @@ void render_crosshairs(Attrib *attrib) {
     glUseProgram(attrib->program);
     glLineWidth(4 * g->scale);
     glUniformMatrix4fv(attrib->matrix, 1, GL_FALSE, matrix);
+    glUniform4fv(attrib->extra1, 1, BLACK);
     GLuint crosshair_buffer = gen_crosshair_buffer();
     draw_lines(attrib, crosshair_buffer, 2, 4);
     del_buffer(crosshair_buffer);
@@ -1834,6 +1841,27 @@ void render_text(
     GLuint buffer = gen_text_buffer(x, y, n, text);
     draw_text(attrib, buffer, length);
     del_buffer(buffer);
+}
+
+GLuint gen_text_cursor_buffer(float x, float y) {
+    int p = 10 * g->scale;
+    float data[] = {
+        x, y - p, x, y + p,
+    };
+    return gen_buffer(sizeof(data), data);
+}
+
+void render_text_cursor(Attrib *attrib, float x, float y)
+{
+    float matrix[16];
+    set_matrix_2d(matrix, g->width, g->height);
+    glUseProgram(attrib->program);
+    glLineWidth(2 * g->scale);
+    glUniformMatrix4fv(attrib->matrix, 1, GL_FALSE, matrix);
+    glUniform4fv(attrib->extra1, 1, GREEN);
+    GLuint text_cursor_buffer = gen_text_cursor_buffer(x, y);
+    draw_lines(attrib, text_cursor_buffer, 2, 2);
+    del_buffer(text_cursor_buffer);
 }
 
 void add_message(const char *text) {
@@ -2469,14 +2497,20 @@ void handle_key_press(unsigned char c, int mods, int keysym)
         } else if (c == CRAFT_KEY_CHAT) {
             g->typing = 1;
             g->typing_buffer[0] = '\0';
+            g->typing_start = 0;
+            g->text_cursor = g->typing_start;
         } else if (c == CRAFT_KEY_COMMAND) {
             g->typing = 1;
             g->typing_buffer[0] = '/';
             g->typing_buffer[1] = '\0';
+            g->typing_start = 1;
+            g->text_cursor = g->typing_start;
         } else if (c == CRAFT_KEY_SIGN) {
             g->typing = 1;
             g->typing_buffer[0] = CRAFT_KEY_SIGN;
             g->typing_buffer[1] = '\0';
+            g->typing_start = 1;
+            g->text_cursor = g->typing_start;
         } else if (c == 13) {  // return
             printf("mods: %d\n", mods);
             if (mods & ControlMask) {
@@ -2490,8 +2524,14 @@ void handle_key_press(unsigned char c, int mods, int keysym)
             g->typing = 0;
         } else if (c == 8) {  // backspace
             int n = strlen(g->typing_buffer);
-            if (n > 0) {
+            if (n > 0 && g->text_cursor > g->typing_start) {
+                if (g->text_cursor < n) {
+                    memmove(g->typing_buffer + g->text_cursor - 1,
+                            g->typing_buffer + g->text_cursor,
+                            n - g->text_cursor);
+                }
                 g->typing_buffer[n - 1] = '\0';
+                g->text_cursor -= 1;
             }
         } else if (c == 13) {  // return
             if (mods & ShiftMask) {
@@ -2514,12 +2554,39 @@ void handle_key_press(unsigned char c, int mods, int keysym)
                     client_talk(g->typing_buffer);
                 }
             }
+        } else if (keysym == XK_Delete) {
+            int n = strlen(g->typing_buffer);
+            if (n > 0 && g->text_cursor < n) {
+                memmove(g->typing_buffer + g->text_cursor,
+                        g->typing_buffer + g->text_cursor + 1,
+                        n - g->text_cursor);
+                g->typing_buffer[n - 1] = '\0';
+            }
+        } else if (keysym == XK_Left) {
+            if (g->text_cursor > g->typing_start) {
+                g->text_cursor -= 1;
+            }
+        } else if (keysym == XK_Right) {
+            if (g->text_cursor < strlen(g->typing_buffer)) {
+                g->text_cursor += 1;
+            }
+        } else if (keysym == XK_Home) {
+            g->text_cursor = g->typing_start;
+        } else if (keysym == XK_End) {
+            g->text_cursor = strlen(g->typing_buffer);
         } else {
             if (c >= 32 && c < 128) {
                 int n = strlen(g->typing_buffer);
                 if (n < MAX_TEXT_LENGTH - 1) {
-                    g->typing_buffer[n] = c;
+                    if (g->text_cursor != n) {
+                        // Shift text before the text cursor to the right
+                        memmove(g->typing_buffer + g->text_cursor + 1,
+                                g->typing_buffer + g->text_cursor,
+                                n - g->text_cursor);
+                    }
+                    g->typing_buffer[g->text_cursor] = c;
                     g->typing_buffer[n + 1] = '\0';
+                    g->text_cursor += 1;
                 }
             }
         }
@@ -2666,6 +2733,7 @@ int main(int argc, char **argv) {
     line_attrib.program = program;
     line_attrib.position = glGetAttribLocation(program, "position");
     line_attrib.matrix = glGetUniformLocation(program, "matrix");
+    line_attrib.extra1 = glGetUniformLocation(program, "color");
 
     program = load_program(
         "shaders/text_vertex.glsl", "shaders/text_fragment.glsl");
@@ -2884,6 +2952,8 @@ int main(int argc, char **argv) {
             if (g->typing) {
                 snprintf(text_buffer, 1024, "> %s", g->typing_buffer);
                 render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts, text_buffer);
+                glClear(GL_DEPTH_BUFFER_BIT);
+                render_text_cursor(&line_attrib, tx + ts * (g->text_cursor+1) + ts/2, ty);
                 ty -= ts * 2;
             }
             if (SHOW_PLAYER_NAMES) {
