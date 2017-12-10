@@ -2579,7 +2579,7 @@ void handle_key_press(unsigned char c, int mods, int keysym)
                 int n = strlen(g->typing_buffer);
                 if (n < MAX_TEXT_LENGTH - 1) {
                     if (g->text_cursor != n) {
-                        // Shift text before the text cursor to the right
+                        // Shift text after the text cursor to the right
                         memmove(g->typing_buffer + g->text_cursor + 1,
                                 g->typing_buffer + g->text_cursor,
                                 n - g->text_cursor);
