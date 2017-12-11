@@ -39,6 +39,7 @@ MotionHandler _motion_handler;
 MousePressHandler _mouse_press_handler;
 MouseReleaseHandler _mouse_release_handler;
 WindowCloseHandler _window_close_handler;
+FocusOutHandler _focus_out_handler;
 
 static Cursor createInvisibleCursor(void);
 void move_mouse_to_window_centre();
@@ -146,6 +147,9 @@ void pg_next_event()
             if (x11_event_state->mouse_is_relative) {
                 // release the mouse pointer when switching to another window
                 XUngrabPointer(x11_event_state->display, CurrentTime);
+            }
+            if (_focus_out_handler) {
+                _focus_out_handler();
             }
             break;
         }
@@ -259,6 +263,10 @@ void set_window_close_handler(WindowCloseHandler window_close_handler)
     _window_close_handler = window_close_handler;
 }
 
+void set_focus_out_handler(FocusOutHandler focus_out_handler)
+{
+    _focus_out_handler = focus_out_handler;
+}
 
 void get_x11_accumulative_mouse_motion(int *x, int *y)
 {

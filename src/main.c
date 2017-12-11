@@ -2653,6 +2653,21 @@ void handle_window_close()
     terminate = True;
 }
 
+void handle_focus_out() {
+    forward_is_pressed = 0;
+    back_is_pressed = 0;
+    left_is_pressed = 0;
+    right_is_pressed = 0;
+    jump_is_pressed = 0;
+    crouch_is_pressed = 0;
+    view_left_is_pressed = 0;
+    view_right_is_pressed = 0;
+    view_up_is_pressed = 0;
+    view_down_is_pressed = 0;
+    ortho_is_pressed = 0;
+    zoom_is_pressed = 0;
+}
+
 int main(int argc, char **argv) {
     // INITIALIZATION //
     srand(time(NULL));
@@ -2666,6 +2681,7 @@ int main(int argc, char **argv) {
     set_key_release_handler(*handle_key_release);
     set_mouse_release_handler(*handle_mouse_release);
     set_window_close_handler(*handle_window_close);
+    set_focus_out_handler(*handle_focus_out);
 
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);

@@ -38,6 +38,7 @@ typedef void (*MotionHandler)(int diff_x, int diff_y);
 typedef void (*MousePressHandler)(int button, int mods);
 typedef void (*MouseReleaseHandler)(int button, int mods);
 typedef void (*WindowCloseHandler)();
+typedef void (*FocusOutHandler)();
 
 void set_key_press_handler(KeyPressHandler key_press_handler);
 void set_key_release_handler(KeyReleaseHandler key_release_handler);
@@ -45,6 +46,7 @@ void set_motion_handler(MotionHandler motion_handler);
 void set_mouse_press_handler(MousePressHandler mouse_press_handler);
 void set_mouse_release_handler(MouseReleaseHandler mouse_release_handler);
 void set_window_close_handler(WindowCloseHandler window_close_handler);
+void set_focus_out_handler(FocusOutHandler focus_out_handler);
 
 void get_x11_accumulative_mouse_motion(int *x, int *y);
 
