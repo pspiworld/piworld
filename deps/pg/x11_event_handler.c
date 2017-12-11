@@ -94,6 +94,10 @@ void set_mouse_absolute()
     x11_event_state->mouse_is_relative = False;
 }
 
+int relative_mouse_in_use() {
+    return x11_event_state->mouse_is_relative && x11_event_state->has_focus;
+}
+
 void pg_next_event()
 {
     XEvent event;
@@ -108,8 +112,10 @@ void pg_next_event()
         switch (event.type) {
         case ConfigureNotify:
         {
-            if (x11_event_state->mouse_is_relative) {
-                move_mouse_to_window_centre();
+            if (relative_mouse_in_use()) {
+                // Reset mouse cursor as window manager may of changed it when
+                // moving the window.
+                set_mouse_relative();
             }
             break;
         }
@@ -123,6 +129,23 @@ void pg_next_event()
                         _window_close_handler();
                     }
                 }
+            }
+            break;
+        }
+        case FocusIn:
+        {
+            x11_event_state->has_focus = 1;
+            if (x11_event_state->mouse_is_relative) {
+                set_mouse_relative();
+            }
+            break;
+        }
+        case FocusOut:
+        {
+            x11_event_state->has_focus = 0;
+            if (x11_event_state->mouse_is_relative) {
+                // release the mouse pointer when switching to another window
+                XUngrabPointer(x11_event_state->display, CurrentTime);
             }
             break;
         }
@@ -168,7 +191,7 @@ void pg_next_event()
         }
         case MotionNotify:
         {
-            if (x11_event_state->mouse_is_relative) {
+            if (relative_mouse_in_use()) {
                 XWindowAttributes window_attrs;
                 XGetWindowAttributes(x11_event_state->display,
                                      x11_event_state->window, &window_attrs);

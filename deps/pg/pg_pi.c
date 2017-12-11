@@ -117,7 +117,7 @@ void _open_x11_window(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
     attr.border_pixel = 0;
     attr.event_mask = StructureNotifyMask | ExposureMask | KeyPressMask |
                       KeyReleaseMask | ButtonPressMask | ButtonReleaseMask |
-                      PointerMotionMask;
+                      PointerMotionMask | FocusChangeMask;
     mask = CWBackPixel | CWBorderPixel | CWEventMask;
 
     xwin = XCreateWindow(pi_state->x11_display, root, x, y, w, h, 0,

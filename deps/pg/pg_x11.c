@@ -52,7 +52,7 @@ get_egl_window_id(EGLConfig config, EGLDisplay display, uint32_t *w,
                                     root, visInfo->visual, AllocNone);
     attr.event_mask = StructureNotifyMask | ExposureMask | KeyPressMask |
                       KeyReleaseMask | ButtonPressMask | ButtonReleaseMask |
-                      PointerMotionMask;
+                      PointerMotionMask | FocusChangeMask;
     mask = CWBackPixel | CWBorderPixel | CWColormap | CWEventMask;
 
     xwin = XCreateWindow(x11_state->native_dpy, root, x, y, *w, *h,

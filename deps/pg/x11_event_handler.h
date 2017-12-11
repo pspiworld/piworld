@@ -21,6 +21,7 @@ typedef struct
     int ignore_next_motion_event;
     int accumulative_mouse_motion_x;
     int accumulative_mouse_motion_y;
+    int has_focus;
     Atom WM_PROTOCOLS;
     Atom WM_DELETE_WINDOW;
 } X11_EVENT_STATE_T;
