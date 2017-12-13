@@ -5,6 +5,7 @@
 
 #define RASPBIAN_X11_WINDOW_OFFSET_X -2
 #define RASPBIAN_X11_WINDOW_OFFSET_Y -30
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 static PI_STATE_T _pi_state, *pi_state=&_pi_state;
 
@@ -29,14 +30,13 @@ EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
 {
     int32_t success = 0;
     static EGL_DISPMANX_WINDOW_T nativewindow;
-    int screen_w, screen_h;
     int cx, cy;
 
     DISPMANX_UPDATE_HANDLE_T dispman_update;
-    VC_RECT_T dst_rect;
     VC_RECT_T src_rect;
 
-    success = graphics_get_display_size(0 /* LCD */, &screen_w, &screen_h);
+    success = graphics_get_display_size(0 /* LCD */, &pi_state->screen_w,
+                                        &pi_state->screen_h);
     assert( success >= 0 );
 
     // Centre output area inside screen area
@@ -51,13 +51,13 @@ EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
     XGetWindowAttributes(pi_state->x11_display, root, &window_attrs);
     x11_cx = (window_attrs.width/2) - (*w/2) + RASPBIAN_X11_WINDOW_OFFSET_X;
     x11_cy = (window_attrs.height/2) - (*h/2) + RASPBIAN_X11_WINDOW_OFFSET_Y;
-    cx = (screen_w/2) - (*w/2);
-    cy = (screen_h/2) - (*h/2);
+    cx = (pi_state->screen_w/2) - (*w/2);
+    cy = (pi_state->screen_h/2) - (*h/2);
 
-    dst_rect.x = cx;
-    dst_rect.y = cy;
-    dst_rect.width = *w;
-    dst_rect.height = *h;
+    pi_state->dst_rect.x = cx;
+    pi_state->dst_rect.y = cy;
+    pi_state->dst_rect.width = *w;
+    pi_state->dst_rect.height = *h;
 
     src_rect.x = 0;
     src_rect.y = 0;
@@ -69,7 +69,7 @@ EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
 
     pi_state->dispman_element = vc_dispmanx_element_add ( dispman_update,
                                 pi_state->dispman_display,
-                                0/*layer*/, &dst_rect, 0/*src*/,
+                                0/*layer*/, &pi_state->dst_rect, 0/*src*/,
                                 &src_rect, DISPMANX_PROTECTION_NONE,
                                 0 /*alpha*/, 0/*clamp*/, 0/*transform*/);
 
@@ -141,7 +141,7 @@ void _open_x11_window(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
 
     XMapWindow(pi_state->x11_display, xwin);
 
-    x11_event_init(pi_state->x11_display, xwin);
+    x11_event_init(pi_state->x11_display, xwin, x, y, w, h);
 }
 
 EGLNativeDisplayType get_x11_display()
@@ -156,6 +156,31 @@ int pg_get_gpu_mem_size()
     if (vc_gencmd(response, sizeof response, "get_mem gpu") == 0)
         vc_gencmd_number_property(response, "gpu", &gpu_mem);
     return gpu_mem;
+}
+
+void pi_set_window_position(int x, int y)
+{
+    int wx;
+    int wy;
+    uint32_t width, height;
+    DISPMANX_UPDATE_HANDLE_T dispman_update;
+    int failure;
+
+    width = pi_state->dst_rect.width;
+    height = pi_state->dst_rect.height;
+
+    // Keep the ES2 window on-screen - brcmGLES does not like going off-screen
+    x = MAX(0, x);
+    y = MAX(0, y);
+    wx = (x + width > pi_state->screen_w) ? pi_state->screen_w - width : x;
+    wy = (y + height > pi_state->screen_h) ? pi_state->screen_h - height : y;
+
+    vc_dispmanx_rect_set(&pi_state->dst_rect, wx, wy, width, height);
+    dispman_update = vc_dispmanx_update_start(0);
+    failure = vc_dispmanx_element_change_attributes(dispman_update,
+        pi_state->dispman_element, 0, 0, 0, &pi_state->dst_rect, 0, 0,
+        DISPMANX_NO_ROTATE);
+    vc_dispmanx_update_submit_sync(dispman_update);
 }
 
 #endif

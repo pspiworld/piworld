@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <X11/Xcursor/Xcursor.h>
+#include "pg.h"
 #include "x11_event_handler.h"
 
 static X11_EVENT_STATE_T _x11_event_state, *x11_event_state=&_x11_event_state;
@@ -45,12 +46,16 @@ static Cursor createInvisibleCursor(void);
 void move_mouse_to_window_centre();
 
 
-void x11_event_init(Display *display, Window window)
+void x11_event_init(Display *display, Window window, int x, int y, int w, int h)
 {
     x11_event_state->display = display;
     x11_event_state->window = window;
     x11_event_state->invisible_cursor = createInvisibleCursor();
     x11_event_state->ignore_next_motion_event = False;
+    x11_event_state->x = x;
+    x11_event_state->y = y;
+    x11_event_state->width = w;
+    x11_event_state->height = h;
 
     // Declare the WM protocols supported by pg
     x11_event_state->WM_PROTOCOLS = XInternAtom(x11_event_state->display,
@@ -113,6 +118,19 @@ void pg_next_event()
         switch (event.type) {
         case ConfigureNotify:
         {
+            if ((event.xconfigure.x != x11_event_state->x ||
+                event.xconfigure.y != x11_event_state->y) &&
+                !event.xconfigure.above) {
+                x11_event_state->x = event.xconfigure.x;
+                x11_event_state->y = event.xconfigure.y;
+                pg_set_window_position(x11_event_state->x, x11_event_state->y);
+            }
+            if (event.xconfigure.width != x11_event_state->width ||
+                event.xconfigure.height != x11_event_state->height) {
+                x11_event_state->width = event.xconfigure.width;
+                x11_event_state->height = event.xconfigure.height;
+                pg_set_window_size(x11_event_state->width, x11_event_state->height);
+            }
             if (relative_mouse_in_use()) {
                 // Reset mouse cursor as window manager may of changed it when
                 // moving the window.

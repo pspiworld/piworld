@@ -2855,6 +2855,7 @@ int main(int argc, char **argv) {
         while (!terminate) {
             // WINDOW SIZE AND SCALE //
             g->scale = get_scale_factor();
+            pg_get_window_size(&g->width, &g->height);
             glViewport(0, 0, g->width, g->height);
 
             // FRAME RATE //

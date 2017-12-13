@@ -7,10 +7,11 @@
 
 void pg_start();
 void pg_end();
-uint32_t pg_get_screen_width();
-uint32_t pg_get_screen_height();
 void pg_swap_buffers();
 int pg_get_gpu_mem_size();
 double pg_get_time(void);
 void pg_set_time(double time);
+void pg_get_window_size(int *width, int *height);
+void pg_set_window_size(int width, int height);
+void pg_set_window_position(int x, int y);
 

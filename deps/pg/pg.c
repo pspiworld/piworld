@@ -105,18 +105,31 @@ void pg_start(char *title, int width, int height)
     init_gles2(pg_state, title);
 }
 
-uint32_t pg_get_screen_width()
-{
-    return pg_state->screen_width;
-}
-
-uint32_t pg_get_screen_height()
-{
-    return pg_state->screen_height;
-}
-
 void pg_swap_buffers()
 {
     eglSwapBuffers(pg_state->display, pg_state->surface);
+}
+
+void pg_set_window_position(int x, int y)
+{
+    #ifndef MESA
+    // Call extra setup function for brcm driver
+    pi_set_window_position(x, y);
+    #endif
+}
+
+void pg_get_window_size(int *width, int *height)
+{
+    *width = pg_state->screen_width;
+    *height = pg_state->screen_height;
+}
+
+void pg_set_window_size(int width, int height)
+{
+    #ifdef MESA
+    // Window resizing not supported under bcrm driver yet
+    pg_state->screen_width = width;
+    pg_state->screen_height = height;
+    #endif
 }
 

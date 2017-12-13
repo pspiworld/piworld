@@ -24,9 +24,11 @@ typedef struct
     int has_focus;
     Atom WM_PROTOCOLS;
     Atom WM_DELETE_WINDOW;
+    int width, height;
+    int x, y;
 } X11_EVENT_STATE_T;
 
-void x11_event_init(Display *display, Window window);
+void x11_event_init(Display *display, Window window, int x, int y, int w, int h);
 void set_mouse_relative();
 void set_mouse_absolute();
 

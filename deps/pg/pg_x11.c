@@ -78,7 +78,7 @@ get_egl_window_id(EGLConfig config, EGLDisplay display, uint32_t *w,
 
     XMapWindow(x11_state->native_dpy, xwin);
 
-    x11_event_init(x11_state->native_dpy, xwin);
+    x11_event_init(x11_state->native_dpy, xwin, x, y, *w, *h);
 
     return xwin;
 }
