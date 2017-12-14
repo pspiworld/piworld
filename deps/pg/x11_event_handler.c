@@ -123,13 +123,13 @@ void pg_next_event()
                 !event.xconfigure.above) {
                 x11_event_state->x = event.xconfigure.x;
                 x11_event_state->y = event.xconfigure.y;
-                pg_set_window_position(x11_event_state->x, x11_event_state->y);
+                pg_window_moved(x11_event_state->x, x11_event_state->y);
             }
             if (event.xconfigure.width != x11_event_state->width ||
                 event.xconfigure.height != x11_event_state->height) {
                 x11_event_state->width = event.xconfigure.width;
                 x11_event_state->height = event.xconfigure.height;
-                pg_set_window_size(x11_event_state->width, x11_event_state->height);
+                pg_window_resized(x11_event_state->width, x11_event_state->height);
             }
             if (relative_mouse_in_use()) {
                 // Reset mouse cursor as window manager may of changed it when
@@ -337,6 +337,16 @@ void move_mouse_to_window_centre()
     x11_event_state->ignore_next_motion_event++;
     XWarpPointer(x11_event_state->display, None, root, 0, 0, 0, 0, x, y);
     XSync(x11_event_state->display, False);
+}
+
+void pg_move_window(int x, int y)
+{
+    XMoveWindow(x11_event_state->display, x11_event_state->window, x, y);
+}
+
+void pg_resize_window(int width, int height)
+{
+    XResizeWindow(x11_event_state->display, x11_event_state->window, width, height);
 }
 
 void _pg_fatal(char *format, ...)

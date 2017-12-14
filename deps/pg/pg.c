@@ -110,7 +110,7 @@ void pg_swap_buffers()
     eglSwapBuffers(pg_state->display, pg_state->surface);
 }
 
-void pg_set_window_position(int x, int y)
+void pg_window_moved(int x, int y)
 {
     #ifndef MESA
     // Call extra setup function for brcm driver
@@ -124,7 +124,7 @@ void pg_get_window_size(int *width, int *height)
     *height = pg_state->screen_height;
 }
 
-void pg_set_window_size(int width, int height)
+void pg_window_resized(int width, int height)
 {
     #ifdef MESA
     // Window resizing not supported under bcrm driver yet

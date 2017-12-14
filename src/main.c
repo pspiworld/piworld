@@ -2104,6 +2104,12 @@ void parse_command(const char *buffer, int forward) {
         s->y = yc;
         s->z = zc;
     }
+    else if (sscanf(buffer, "/window-size %d %d", &xc, &yc) == 2) {
+        pg_resize_window(xc, yc);
+    }
+    else if (sscanf(buffer, "/window-xy %d %d", &xc, &yc) == 2) {
+        pg_move_window(xc, yc);
+    }
     else if (strcmp(buffer, "/copy") == 0) {
         copy();
     }
