@@ -5,7 +5,8 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 
-void pg_start();
+void pg_print_info();
+void pg_start(char *title, int x, int y, int width, int height);
 void pg_end();
 void pg_swap_buffers();
 int pg_get_gpu_mem_size();

@@ -27,8 +27,6 @@
 #define WORKERS 1
 #define MAX_TEXT_LENGTH 256
 #define MAX_NAME_LENGTH 32
-#define MAX_PATH_LENGTH 256
-#define MAX_ADDR_LENGTH 256
 
 #define ALIGN_LEFT 0
 #define ALIGN_CENTER 1
@@ -40,8 +38,6 @@
 #define WORKER_IDLE 0
 #define WORKER_BUSY 1
 #define WORKER_DONE 2
-
-#define WINDOW_TITLE "PiWorld (Esc to exit)"
 
 const float GREEN[4] = {0.0, 1.0, 0.0, 1.0};
 const float BLACK[4] = {0.0, 0.0, 0.0, 1.0};
@@ -168,8 +164,6 @@ typedef struct {
     int mode;
     int mode_changed;
     char db_path[MAX_PATH_LENGTH];
-    char server_addr[MAX_ADDR_LENGTH];
-    int server_port;
     int day_length;
     int time_changed;
     Block block0;
@@ -2073,10 +2067,10 @@ void parse_command(const char *buffer, int forward) {
     {
         g->mode_changed = 1;
         g->mode = MODE_ONLINE;
-        strncpy(g->server_addr, server_addr, MAX_ADDR_LENGTH);
-        g->server_port = server_port;
+        strncpy(config->server, server_addr, MAX_ADDR_LENGTH);
+        config->port = server_port;
         snprintf(g->db_path, MAX_PATH_LENGTH,
-            "cache.%s.%d.db", g->server_addr, g->server_port);
+            "cache.%s.%d.db", config->server, config->port);
     }
     else if (sscanf(buffer, "/offline %128s", filename) == 1) {
         g->mode_changed = 1;
@@ -2678,16 +2672,22 @@ int main(int argc, char **argv) {
     // INITIALIZATION //
     srand(time(NULL));
     rand();
+    reset_config();
+    parse_startup_config(argc, argv);
 
     // WINDOW INITIALIZATION //
-    g->width = WINDOW_WIDTH;
-    g->height = WINDOW_HEIGHT;
-    pg_start(WINDOW_TITLE, g->width, g->height);
+    g->width = config->window_width;
+    g->height = config->window_height;
+    pg_start(config->window_title, config->window_x, config->window_y,
+             g->width, g->height);
     set_key_press_handler(*handle_key_press);
     set_key_release_handler(*handle_key_release);
     set_mouse_release_handler(*handle_mouse_release);
     set_window_close_handler(*handle_window_close);
     set_focus_out_handler(*handle_focus_out);
+    if (config->verbose) {
+        pg_print_info();
+    }
 
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
@@ -2776,17 +2776,14 @@ int main(int argc, char **argv) {
     sky_attrib.sampler = glGetUniformLocation(program, "sampler");
     sky_attrib.timer = glGetUniformLocation(program, "timer");
 
-    // CHECK COMMAND LINE ARGUMENTS //
-    if (argc == 2 || argc == 3) {
+    // ONLINE STATUS //
+    if (strlen(config->server) > 0) {
         g->mode = MODE_ONLINE;
-        strncpy(g->server_addr, argv[1], MAX_ADDR_LENGTH);
-        g->server_port = argc == 3 ? atoi(argv[2]) : DEFAULT_PORT;
         snprintf(g->db_path, MAX_PATH_LENGTH,
-            "cache.%s.%d.db", g->server_addr, g->server_port);
-    }
-    else {
+                 "cache.%s.%d.db", config->server, config->port);
+    } else {
         g->mode = MODE_OFFLINE;
-        snprintf(g->db_path, MAX_PATH_LENGTH, "%s", DB_PATH);
+        snprintf(g->db_path, MAX_PATH_LENGTH, "%s", config->db_path);
     }
 
     int draw_radius = get_starting_draw_radius();
@@ -2825,7 +2822,7 @@ int main(int argc, char **argv) {
         // CLIENT INITIALIZATION //
         if (g->mode == MODE_ONLINE) {
             client_enable();
-            client_connect(g->server_addr, g->server_port);
+            client_connect(config->server, config->port);
             client_start();
             client_version(1);
             login();
@@ -2946,21 +2943,37 @@ int main(int argc, char **argv) {
                 char am_pm = hour < 12 ? 'a' : 'p';
                 hour = hour % 12;
                 hour = hour ? hour : 12;
-                snprintf(
-                    text_buffer, 1024,
-                    "(%d, %d) (%.2f, %.2f, %.2f) [%d, %d, %d] %d%cm",
-                    chunked(s->x), chunked(s->z), s->x, s->y, s->z,
-                    g->player_count, g->chunk_count,
-                    face_count * 2, hour, am_pm);
-                render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts, text_buffer);
-                ty -= ts * 2;
+                if (config->verbose) {
+                    snprintf(
+                        text_buffer, 1024,
+                        "(%d, %d) (%.2f, %.2f, %.2f) [%d, %d, %d] %d%cm",
+                        chunked(s->x), chunked(s->z), s->x, s->y, s->z,
+                        g->player_count, g->chunk_count,
+                        face_count * 2, hour, am_pm);
+                    render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts,
+                                text_buffer);
+                    ty -= ts * 2;
 
-                // FPS counter in lower right corner
-                float bottom_bar_y = 0 + ts * 2;
-                float right_side = g->width - ts;
-                snprintf(text_buffer, 1024, "%dfps", fps.fps);
-                render_text(&text_attrib, ALIGN_RIGHT, right_side, bottom_bar_y,
-                            ts, text_buffer);
+                    // FPS counter in lower right corner
+                    float bottom_bar_y = 0 + ts * 2;
+                    float right_side = g->width - ts;
+                    snprintf(text_buffer, 1024, "%dfps", fps.fps);
+                    render_text(&text_attrib, ALIGN_RIGHT, right_side,
+                                bottom_bar_y, ts, text_buffer);
+                } else {
+                    snprintf(text_buffer, 1024, "(%.2f, %.2f, %.2f)",
+                             s->x, s->y, s->z);
+                    render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts,
+                                text_buffer);
+
+                    // Game time in upper right corner
+                    float right_side = g->width - tx;
+                    snprintf(text_buffer, 1024, "%d%cm", hour, am_pm);
+                    render_text(&text_attrib, ALIGN_RIGHT, right_side, ty, ts,
+                                text_buffer);
+
+                    ty -= ts * 2;
+                }
             }
             if (SHOW_CHAT_TEXT) {
                 for (int i = 0; i < MAX_MESSAGES; i++) {

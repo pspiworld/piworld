@@ -19,18 +19,17 @@ EGLNativeDisplayType get_egl_display_id()
 
 
 EGLNativeWindowType
-get_egl_window_id(EGLConfig config, EGLDisplay display, uint32_t *w,
-                  uint32_t *h, char *title)
+get_egl_window_id(EGLConfig config, EGLDisplay display,
+                  uint32_t *x, uint32_t *y,
+                  uint32_t *w, uint32_t *h, char *title)
 {
-    int x = 50;
-    int y = 50;
-
     XVisualInfo *visInfo, visTemplate;
     int num_visuals;
     Window root, xwin;
     XSetWindowAttributes attr;
     unsigned long mask;
     EGLint vid;
+    Screen *screen;
 
     if (!eglGetConfigAttrib(display, config, EGL_NATIVE_VISUAL_ID, &vid))
         _pg_fatal("failed to get visual id");
@@ -42,6 +41,7 @@ get_egl_window_id(EGLConfig config, EGLDisplay display, uint32_t *w,
     if (!visInfo)
         _pg_fatal("failed to get an visual of id 0x%x", vid);
 
+    screen = DefaultScreenOfDisplay(x11_state->native_dpy);
     root = RootWindow(x11_state->native_dpy,
                       DefaultScreen(x11_state->native_dpy));
 
@@ -55,7 +55,14 @@ get_egl_window_id(EGLConfig config, EGLDisplay display, uint32_t *w,
                       PointerMotionMask | FocusChangeMask;
     mask = CWBackPixel | CWBorderPixel | CWColormap | CWEventMask;
 
-    xwin = XCreateWindow(x11_state->native_dpy, root, x, y, *w, *h,
+    if (*x == CENTRE_IN_SCREEN) {
+        *x = (WidthOfScreen(screen)/2) - (*w/2);
+    }
+    if (*y == CENTRE_IN_SCREEN) {
+        *y = (HeightOfScreen(screen)/2) - (*h/2);
+    }
+
+    xwin = XCreateWindow(x11_state->native_dpy, root, *x, *y, *w, *h,
                          0, visInfo->depth, InputOutput, visInfo->visual, mask,
                          &attr);
     if (!xwin)
@@ -66,8 +73,8 @@ get_egl_window_id(EGLConfig config, EGLDisplay display, uint32_t *w,
     /* set hints and properties */
     {
         XSizeHints sizehints;
-        sizehints.x = x;
-        sizehints.y = y;
+        sizehints.x = *x;
+        sizehints.y = *y;
         sizehints.width  = *w;
         sizehints.height = *h;
         sizehints.flags = USSize | USPosition;
@@ -78,7 +85,7 @@ get_egl_window_id(EGLConfig config, EGLDisplay display, uint32_t *w,
 
     XMapWindow(x11_state->native_dpy, xwin);
 
-    x11_event_init(x11_state->native_dpy, xwin, x, y, *w, *h);
+    x11_event_init(x11_state->native_dpy, xwin, *x, *y, *w, *h);
 
     return xwin;
 }

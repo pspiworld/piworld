@@ -6,6 +6,7 @@
 #define RASPBIAN_X11_WINDOW_OFFSET_X -2
 #define RASPBIAN_X11_WINDOW_OFFSET_Y -30
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 static PI_STATE_T _pi_state, *pi_state=&_pi_state;
 
@@ -26,11 +27,16 @@ EGLNativeDisplayType get_egl_display_id()
 
 
 EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
-                                      uint32_t *w, uint32_t *h, char *title)
+                                      uint32_t *x, uint32_t *y,
+                                      uint32_t *w, uint32_t *h,
+                                      char *title)
 {
     int32_t success = 0;
     static EGL_DISPMANX_WINDOW_T nativewindow;
-    int cx, cy;
+    int x11_x, x11_y;
+
+    x11_x = *x - RASPBIAN_X11_WINDOW_OFFSET_X;
+    x11_y = *y - RASPBIAN_X11_WINDOW_OFFSET_Y;
 
     DISPMANX_UPDATE_HANDLE_T dispman_update;
     VC_RECT_T src_rect;
@@ -38,24 +44,26 @@ EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
     success = graphics_get_display_size(0 /* LCD */, &pi_state->screen_w,
                                         &pi_state->screen_h);
     assert( success >= 0 );
+    *w = MIN(pi_state->screen_w, *w);
+    *h = MIN(pi_state->screen_h, *h);
 
     // Centre output area inside screen area
     Window root;
-    int x_offset;
-    int y_offset;
-    int x11_cx;
-    int x11_cy;
     root = RootWindow(pi_state->x11_display,
                       DefaultScreen(pi_state->x11_display));
     XWindowAttributes window_attrs;
     XGetWindowAttributes(pi_state->x11_display, root, &window_attrs);
-    x11_cx = (window_attrs.width/2) - (*w/2) + RASPBIAN_X11_WINDOW_OFFSET_X;
-    x11_cy = (window_attrs.height/2) - (*h/2) + RASPBIAN_X11_WINDOW_OFFSET_Y;
-    cx = (pi_state->screen_w/2) - (*w/2);
-    cy = (pi_state->screen_h/2) - (*h/2);
+    if (*x == CENTRE_IN_SCREEN) {
+        *x = (pi_state->screen_w/2) - (*w/2);
+        x11_x = (window_attrs.width/2) - (*w/2) + RASPBIAN_X11_WINDOW_OFFSET_X;
+    }
+    if (*y == CENTRE_IN_SCREEN) {
+        *y = (pi_state->screen_h/2) - (*h/2);
+        x11_y = (window_attrs.height/2) - (*h/2) + RASPBIAN_X11_WINDOW_OFFSET_Y;
+    }
 
-    pi_state->dst_rect.x = cx;
-    pi_state->dst_rect.y = cy;
+    pi_state->dst_rect.x = *x;
+    pi_state->dst_rect.y = *y;
     pi_state->dst_rect.width = *w;
     pi_state->dst_rect.height = *h;
 
@@ -78,7 +86,7 @@ EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
     nativewindow.height = *h;
     vc_dispmanx_update_submit_sync( dispman_update );
 
-    _open_x11_window(x11_cx, x11_cy, *w, *h, title);
+    _open_x11_window(x11_x, x11_y, *w, *h, title);
 
     return (EGLNativeWindowType)&nativewindow;
 }

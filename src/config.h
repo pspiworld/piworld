@@ -1,6 +1,7 @@
 #pragma once
 
 // app parameters
+#define WINDOW_TITLE "PiWorld (Esc to exit)"
 #define FULLSCREEN 0
 #define WINDOW_WIDTH 640
 #define WINDOW_HEIGHT 400
@@ -43,4 +44,25 @@
 // advanced parameters
 #define CHUNK_SIZE 16
 #define COMMIT_INTERVAL 5
+#define DEFAULT_PORT 4080
+#define MAX_ADDR_LENGTH 256
+#define MAX_PATH_LENGTH 256
+#define MAX_TITLE_LENGTH 256
+
+typedef struct {
+    char db_path[MAX_PATH_LENGTH];
+    int port;
+    char server[MAX_ADDR_LENGTH];
+    int verbose;
+    char window_title[MAX_TITLE_LENGTH];
+    int window_x;
+    int window_y;
+    int window_width;
+    int window_height;
+} Config;
+
+extern Config *config;
+
+void reset_config();
+void parse_startup_config(int argc, char **argv);
 

@@ -21,6 +21,7 @@ typedef struct
 
 EGLNativeDisplayType get_egl_display_id();
 EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
+                                      uint32_t *x, uint32_t *y,
                                       uint32_t *w, uint32_t *h, char *title);
 void platform_exit();
 EGLNativeDisplayType get_x11_display();

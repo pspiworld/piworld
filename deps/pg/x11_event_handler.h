@@ -11,6 +11,7 @@
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 
+#define CENTRE_IN_SCREEN -99999
 
 typedef struct
 {

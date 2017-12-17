@@ -11,8 +11,10 @@
 
 typedef struct
 {
-    uint32_t screen_width;
-    uint32_t screen_height;
+    uint32_t window_x;
+    uint32_t window_y;
+    uint32_t window_width;
+    uint32_t window_height;
     EGLDisplay display;
     EGLSurface surface;
     EGLContext context;
@@ -68,8 +70,9 @@ static void init_gles2(PG_STATE_T *state, char *title)
 
     // create an EGL window surface
     nativewindow = get_egl_window_id(config, state->display,
-                                     &state->screen_width,
-                                     &state->screen_height, title);
+                                     &state->window_x, &state->window_y,
+                                     &state->window_width,
+                                     &state->window_height, title);
 
     state->surface = eglCreateWindowSurface(state->display, config,
                                             nativewindow, NULL);
@@ -82,17 +85,29 @@ static void init_gles2(PG_STATE_T *state, char *title)
 
     // set background color
     glClearColor(0.15f, 0.25f, 0.35f, 1.0f);
-
-    // print EGL info
-    printf("EGL_VERSION = %s\n", eglQueryString(state->display, EGL_VERSION));
-    printf("EGL_VENDOR = %s\n", eglQueryString(state->display, EGL_VENDOR));
-    printf("EGL_EXTENSIONS = %s\n",
-           eglQueryString(state->display, EGL_EXTENSIONS));
-    printf("EGL_CLIENT_APIS = %s\n",
-           eglQueryString(state->display, EGL_CLIENT_APIS));
 }
 
-void pg_start(char *title, int width, int height)
+void pg_print_info()
+{
+    // print EGL info
+    printf("\n");
+    printf("EGL_VERSION = %s\n", eglQueryString(pg_state->display, EGL_VERSION));
+    printf("EGL_VENDOR = %s\n", eglQueryString(pg_state->display, EGL_VENDOR));
+    printf("EGL_EXTENSIONS = %s\n",
+           eglQueryString(pg_state->display, EGL_EXTENSIONS));
+    printf("EGL_CLIENT_APIS = %s\n",
+           eglQueryString(pg_state->display, EGL_CLIENT_APIS));
+
+    // print GL info
+    printf("\n");
+    printf("GL_VERSION = %s\n", glGetString(GL_VERSION));
+    printf("GL_VENDOR = %s\n", glGetString(GL_VENDOR));
+    printf("GL_RENDERER = %s\n", glGetString(GL_RENDERER));
+    printf("GL_SHADING_LANGUAGE_VERSION = %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
+    printf("GL_EXTENSIONS = %s\n", glGetString(GL_EXTENSIONS));
+}
+
+void pg_start(char *title, int x, int y, int width, int height)
 {
     pg_time_init();
 
@@ -100,8 +115,10 @@ void pg_start(char *title, int width, int height)
     memset(pg_state, 0, sizeof(*pg_state));
 
     // Start OGLES
-    pg_state->screen_width = width;
-    pg_state->screen_height = height;
+    pg_state->window_x = x;
+    pg_state->window_y = y;
+    pg_state->window_width = width;
+    pg_state->window_height = height;
     init_gles2(pg_state, title);
 }
 
@@ -120,16 +137,16 @@ void pg_window_moved(int x, int y)
 
 void pg_get_window_size(int *width, int *height)
 {
-    *width = pg_state->screen_width;
-    *height = pg_state->screen_height;
+    *width = pg_state->window_width;
+    *height = pg_state->window_height;
 }
 
 void pg_window_resized(int width, int height)
 {
     #ifdef MESA
-    // Window resizing not supported under bcrm driver yet
-    pg_state->screen_width = width;
-    pg_state->screen_height = height;
+    // Window resizing not supported under brcm driver yet
+    pg_state->window_width = width;
+    pg_state->window_height = height;
     #endif
 }
 
