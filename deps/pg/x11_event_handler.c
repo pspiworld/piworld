@@ -349,6 +349,11 @@ void pg_resize_window(int width, int height)
     XResizeWindow(x11_event_state->display, x11_event_state->window, width, height);
 }
 
+void pg_set_window_title(char *title)
+{
+    XStoreName(x11_event_state->display, x11_event_state->window, title);
+}
+
 void _pg_fatal(char *format, ...)
 {
     va_list args;

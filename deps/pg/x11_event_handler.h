@@ -54,6 +54,7 @@ void set_focus_out_handler(FocusOutHandler focus_out_handler);
 void get_x11_accumulative_mouse_motion(int *x, int *y);
 void pg_move_window(int x, int y);
 void pg_resize_window(int width, int height);
+void pg_set_window_title(char *title);
 
 void _pg_fatal(char *format, ...);
 

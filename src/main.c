@@ -2062,6 +2062,7 @@ void parse_command(const char *buffer, int forward) {
     int server_port = DEFAULT_PORT;
     char filename[MAX_PATH_LENGTH];
     int radius, count, xc, yc, zc;
+    char window_title[MAX_TITLE_LENGTH];
     if (sscanf(buffer,
         "/online %128s %d", server_addr, &server_port) >= 1)
     {
@@ -2100,6 +2101,11 @@ void parse_command(const char *buffer, int forward) {
     }
     else if (sscanf(buffer, "/window-size %d %d", &xc, &yc) == 2) {
         pg_resize_window(xc, yc);
+    }
+    else if (sscanf(buffer, "/window-title %128c", window_title) == 1) {
+        int prefix_length = strlen("/window-title ");;
+        window_title[strlen(buffer) - prefix_length] = '\0';
+        pg_set_window_title(window_title);
     }
     else if (sscanf(buffer, "/window-xy %d %d", &xc, &yc) == 2) {
         pg_move_window(xc, yc);
