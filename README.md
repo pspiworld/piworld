@@ -16,7 +16,7 @@ builder.py example script takes 30+ minutes on a Pi Zero to place just over
 126,000 blocks). But for basic building with small amounts of scripting a Pi
 Zero can be fast enough.
 
-![Screenshot](http://i.imgur.com/SH7wcas.png)
+![Screenshot](https://github.com/pspiworld/piworld/wiki/images/piworld-basic.png)
 
 ### Features
 
@@ -126,7 +126,7 @@ Teleport back to the spawn point.
 
 ### Screenshot
 
-![Screenshot](http://i.imgur.com/foYz3aN.png)
+![Screenshot](https://github.com/pspiworld/piworld/wiki/images/piworld-build.png)
 
 ### Implementation Details
 
