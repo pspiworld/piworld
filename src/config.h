@@ -7,7 +7,7 @@
 #define WINDOW_HEIGHT 400
 #define VSYNC 1
 #define MAX_MESSAGES 4
-#define DB_PATH "my.piworld"
+#define DB_FILENAME "my.piworld"
 #define USE_CACHE 1
 #define DAY_LENGTH 600
 #define INVERT_MOUSE 0
@@ -50,6 +50,7 @@
 #define MAX_TITLE_LENGTH 256
 
 typedef struct {
+    char path[MAX_PATH_LENGTH];
     char db_path[MAX_PATH_LENGTH];
     int port;
     char server[MAX_ADDR_LENGTH];
@@ -64,5 +65,8 @@ typedef struct {
 extern Config *config;
 
 void reset_config();
+void get_config_path(char *path);
+void get_default_db_path(char *path);
+void get_server_db_cache_path(char *path);
 void parse_startup_config(int argc, char **argv);
 

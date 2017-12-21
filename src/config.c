@@ -1,7 +1,10 @@
 
 #include <getopt.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include "x11_event_handler.h"
 #include "config.h"
@@ -10,7 +13,8 @@ Config _config;
 Config *config = &_config;
 
 void reset_config() {
-    strncpy(config->db_path, DB_PATH, strlen(DB_PATH));
+    get_config_path(config->path);
+    get_default_db_path(config->db_path);
     config->port = DEFAULT_PORT;
     config->server[0] = '\0';
     strncpy(config->window_title, WINDOW_TITLE, strlen(WINDOW_TITLE));
@@ -19,6 +23,28 @@ void reset_config() {
     config->window_y = CENTRE_IN_SCREEN;
     config->window_width = WINDOW_WIDTH;
     config->window_height = WINDOW_HEIGHT;
+}
+
+void get_config_path(char *path)
+{
+#ifdef RELEASE
+    snprintf(path, MAX_PATH_LENGTH, "%s/.piworld", getenv("HOME"));
+    mkdir(path, 0755);
+#else
+    // Keep the config and world database in the current dir for dev builds
+    snprintf(path, MAX_PATH_LENGTH, ".");
+#endif
+}
+
+void get_default_db_path(char *path)
+{
+    snprintf(path, MAX_PATH_LENGTH, "%s/%s", config->path, DB_FILENAME);
+}
+
+void get_server_db_cache_path(char *path)
+{
+    snprintf(path, MAX_PATH_LENGTH,
+        "%s/cache.%s.%d.db", config->path, config->server, config->port);
 }
 
 void parse_startup_config(int argc, char **argv) {

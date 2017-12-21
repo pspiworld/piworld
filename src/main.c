@@ -2070,18 +2070,18 @@ void parse_command(const char *buffer, int forward) {
         g->mode = MODE_ONLINE;
         strncpy(config->server, server_addr, MAX_ADDR_LENGTH);
         config->port = server_port;
-        snprintf(g->db_path, MAX_PATH_LENGTH,
-            "cache.%s.%d.db", config->server, config->port);
+        get_server_db_cache_path(g->db_path);
     }
     else if (sscanf(buffer, "/offline %128s", filename) == 1) {
         g->mode_changed = 1;
         g->mode = MODE_OFFLINE;
-        snprintf(g->db_path, MAX_PATH_LENGTH, "%s.piworld", filename);
+        snprintf(g->db_path, MAX_PATH_LENGTH, "%s/%s.piworld", config->path,
+            filename);
     }
     else if (strcmp(buffer, "/offline") == 0) {
         g->mode_changed = 1;
         g->mode = MODE_OFFLINE;
-        snprintf(g->db_path, MAX_PATH_LENGTH, "%s", DB_PATH);
+        get_default_db_path(g->db_path);
     }
     else if (sscanf(buffer, "/view %d", &radius) == 1) {
         if (radius >= 1 && radius <= 24) {
@@ -2785,8 +2785,7 @@ int main(int argc, char **argv) {
     // ONLINE STATUS //
     if (strlen(config->server) > 0) {
         g->mode = MODE_ONLINE;
-        snprintf(g->db_path, MAX_PATH_LENGTH,
-                 "cache.%s.%d.db", config->server, config->port);
+        get_server_db_cache_path(g->db_path);
     } else {
         g->mode = MODE_OFFLINE;
         snprintf(g->db_path, MAX_PATH_LENGTH, "%s", config->db_path);

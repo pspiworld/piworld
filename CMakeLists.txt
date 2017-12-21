@@ -45,6 +45,10 @@ else()
     add_definitions(-O3)
 endif()
 
+if(RELEASE)
+    add_definitions(-DRELEASE=1)
+endif()
+
 include_directories(deps/lodepng)
 include_directories(deps/noise)
 include_directories(deps/pg)
