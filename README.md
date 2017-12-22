@@ -55,13 +55,18 @@ can build PiWorld to use it:
     cmake -DMESA=1 -DRASPI=2 .
     make -j4
 
+#### Making a release build
+
+    cmake -DMESA=0 -DRASPI=1 -DRELEASE=1 .
+    make
+
 ### Multiplayer
 
 #### Client
 
 You can connect to a server with command line arguments...
 
-    ./piworld 192.168.1.64
+    ./piworld --server 192.168.1.64
 
 Or, with the "/online" command in the game itself.
 
