@@ -173,6 +173,12 @@ void pi_set_window_position(int x, int y)
     uint32_t width, height;
     DISPMANX_UPDATE_HANDLE_T dispman_update;
     int failure;
+    Screen *screen;
+
+    // Account for screen offset
+    screen = DefaultScreenOfDisplay(pi_state->x11_display);
+    x += (pi_state->screen_w - WidthOfScreen(screen)) / 2;
+    y += (pi_state->screen_h - HeightOfScreen(screen)) / 2;
 
     width = pi_state->dst_rect.width;
     height = pi_state->dst_rect.height;
