@@ -53,8 +53,20 @@ typedef struct {
     char path[MAX_PATH_LENGTH];
     char db_path[MAX_PATH_LENGTH];
     int port;
+    int show_chat_text;
+    int show_clouds;
+    int show_crosshairs;
+    int show_info_text;
+    int show_item;
+    int show_lights;
+    int show_plants;
+    int show_player_names;
+    int show_trees;
+    int show_wireframe;
     char server[MAX_ADDR_LENGTH];
     int verbose;
+    int view;
+    int vsync;
     char window_title[MAX_TITLE_LENGTH];
     int window_x;
     int window_y;
@@ -68,5 +80,6 @@ void reset_config();
 void get_config_path(char *path);
 void get_default_db_path(char *path);
 void get_server_db_cache_path(char *path);
+int get_starting_draw_radius();
 void parse_startup_config(int argc, char **argv);
 

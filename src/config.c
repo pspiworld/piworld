@@ -18,7 +18,19 @@ void reset_config() {
     get_default_db_path(config->db_path);
     config->port = DEFAULT_PORT;
     config->server[0] = '\0';
+    config->show_chat_text = SHOW_CHAT_TEXT;
+    config->show_clouds = SHOW_CLOUDS;
+    config->show_crosshairs = SHOW_CROSSHAIRS;
+    config->show_info_text = SHOW_INFO_TEXT;
+    config->show_item = SHOW_ITEM;
+    config->show_lights = SHOW_LIGHTS;
+    config->show_plants = SHOW_PLANTS;
+    config->show_player_names = SHOW_PLAYER_NAMES;
+    config->show_trees = SHOW_TREES;
+    config->show_wireframe = SHOW_WIREFRAME;
     config->verbose = 0;
+    config->view = get_starting_draw_radius();
+    config->vsync = VSYNC;
     strncpy(config->window_title, WINDOW_TITLE, strlen(WINDOW_TITLE));
     config->window_x = CENTRE_IN_SCREEN;
     config->window_y = CENTRE_IN_SCREEN;
@@ -48,6 +60,30 @@ void get_server_db_cache_path(char *path)
         "%s/cache.%s.%d.db", config->path, config->server, config->port);
 }
 
+/*
+ * Return a draw radius that will fit into the current size of GPU RAM.
+ */
+int get_starting_draw_radius()
+{
+    int gpu_mb = pg_get_gpu_mem_size();
+    if (gpu_mb < 48) {
+        // A draw distance of 1 is not enough for the game to be usable, but
+        // this does at least show something on screen (for low resolutions
+        // only - higher ones will crash the game with low GPU RAM).
+        return 1;
+    } else if (gpu_mb < 64) {
+        return 2;
+    } else if (gpu_mb < 128) {
+        // A GPU RAM size of 64M will result in rendering issues for draw
+        // distances greater than 3 (with a chunk size of 16).
+        return 3;
+    } else {
+        // For the Raspberry Pi reduce amount to draw to both fit into 128MiB
+        // of GPU RAM and keep the render speed at a reasonable smoothness.
+        return 5;
+    }
+}
+
 void parse_startup_config(int argc, char **argv) {
     int c;
     const char *opt_name;
@@ -55,13 +91,25 @@ void parse_startup_config(int argc, char **argv) {
     while (1) {
         int option_index = 0;
         static struct option long_options[] = {
-            {"port",         required_argument, 0,  0 },
-            {"server",       required_argument, 0,  0 },
-            {"verbose",      no_argument,       0,  0 },
-            {"window-size",  required_argument, 0,  0 },
-            {"window-title", required_argument, 0,  0 },
-            {"window-xy",    required_argument, 0,  0 },
-            {0,              0,                 0,  0 }
+            {"port",              required_argument, 0,  0 },
+            {"server",            required_argument, 0,  0 },
+            {"show-chat-text",    required_argument, 0,  0 },
+            {"show-crosshairs",   required_argument, 0,  0 },
+            {"show-clouds",       required_argument, 0,  0 },
+            {"show-info-text",    required_argument, 0,  0 },
+            {"show-item",         required_argument, 0,  0 },
+            {"show-lights",       required_argument, 0,  0 },
+            {"show-plants",       required_argument, 0,  0 },
+            {"show-player-names", required_argument, 0,  0 },
+            {"show-trees",        required_argument, 0,  0 },
+            {"show-wireframe",    required_argument, 0,  0 },
+            {"verbose",           no_argument,       0,  0 },
+            {"view",              required_argument, 0,  0 },
+            {"vsync",             required_argument, 0,  0 },
+            {"window-size",       required_argument, 0,  0 },
+            {"window-title",      required_argument, 0,  0 },
+            {"window-xy",         required_argument, 0,  0 },
+            {0,                   0,                 0,  0 }
         };
 
         c = getopt_long(argc, argv, "", long_options, &option_index);
@@ -73,8 +121,32 @@ void parse_startup_config(int argc, char **argv) {
             opt_name = long_options[option_index].name;
             if (strncmp(opt_name, "port", 4) == 0 &&
                 sscanf(optarg, "%d", &config->port) == 1) {
+            } else if (strncmp(opt_name, "show-chat-text", 15) == 0 &&
+                       sscanf(optarg, "%d", &config->show_chat_text) == 1) {
+            } else if (strncmp(opt_name, "show-crosshairs", 15) == 0 &&
+                       sscanf(optarg, "%d", &config->show_crosshairs) == 1) {
+            } else if (strncmp(opt_name, "show-clouds", 11) == 0 &&
+                       sscanf(optarg, "%d", &config->show_clouds) == 1) {
+            } else if (strncmp(opt_name, "show-info-text", 14) == 0 &&
+                       sscanf(optarg, "%d", &config->show_info_text) == 1) {
+            } else if (strncmp(opt_name, "show-item", 9) == 0 &&
+                       sscanf(optarg, "%d", &config->show_item) == 1) {
+            } else if (strncmp(opt_name, "show-lights", 11) == 0 &&
+                       sscanf(optarg, "%d", &config->show_lights) == 1) {
+            } else if (strncmp(opt_name, "show-plants", 11) == 0 &&
+                       sscanf(optarg, "%d", &config->show_plants) == 1) {
+            } else if (strncmp(opt_name, "show-player-names", 17) == 0 &&
+                       sscanf(optarg, "%d", &config->show_player_names) == 1) {
+            } else if (strncmp(opt_name, "show-trees", 10) == 0 &&
+                       sscanf(optarg, "%d", &config->show_trees) == 1) {
+            } else if (strncmp(opt_name, "show-wireframe", 14) == 0 &&
+                       sscanf(optarg, "%d", &config->show_wireframe) == 1) {
             } else if (strncmp(opt_name, "verbose", 7) == 0) {
                 config->verbose = 1;
+            } else if (strncmp(opt_name, "view", 4) == 0 &&
+                       sscanf(optarg, "%d", &config->view) == 1) {
+            } else if (strncmp(opt_name, "vsync", 5) == 0 &&
+                       sscanf(optarg, "%d", &config->vsync) == 1) {
             } else if (strncmp(opt_name, "window-size", 11) == 0 &&
                        sscanf(optarg, "%d,%d", &config->window_width,
                               &config->window_height) == 2) {

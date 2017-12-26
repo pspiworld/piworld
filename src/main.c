@@ -175,30 +175,6 @@ typedef struct {
 static Model model;
 static Model *g = &model;
 
-/*
- * Return a draw radius that will fit into the current size of GPU RAM.
- */
-int get_starting_draw_radius()
-{
-    int gpu_mb = pg_get_gpu_mem_size();
-    if (gpu_mb < 48) {
-        // A draw distance of 1 is not enough for the game to be usable, but
-        // this does at least show something on screen (for low resolutions
-        // only - higher ones will crash the game with low GPU RAM).
-        return 1;
-    } else if (gpu_mb < 64) {
-        return 2;
-    } else if (gpu_mb < 128) {
-        // A GPU RAM size of 64M will result in rendering issues for draw
-        // distances greater than 3 (with a chunk size of 16).
-        return 3;
-    } else {
-        // For the Raspberry Pi reduce amount to draw to both fit into 128MiB
-        // of GPU RAM and keep the render speed at a reasonable smoothness.
-        return 5;
-    }
-}
-
 int chunked(float x) {
     return floorf(roundf(x) / CHUNK_SIZE);
 }
@@ -877,7 +853,7 @@ void gen_sign_buffer(Chunk *chunk) {
 }
 
 int has_lights(Chunk *chunk) {
-    if (!SHOW_LIGHTS) {
+    if (!config->show_lights) {
         return 0;
     }
     for (int dp = -1; dp <= 1; dp++) {
@@ -1002,7 +978,7 @@ void compute_chunk(WorkerItem *item) {
 
     // check for lights
     int has_light = 0;
-    if (SHOW_LIGHTS) {
+    if (config->show_lights) {
         for (int a = 0; a < 3; a++) {
             for (int b = 0; b < 3; b++) {
                 Map *map = item->light_maps[a][b];
@@ -2686,7 +2662,7 @@ int main(int argc, char **argv) {
     g->height = config->window_height;
     pg_start(config->window_title, config->window_x, config->window_y,
              g->width, g->height);
-    pg_swap_interval(VSYNC);
+    pg_swap_interval(config->vsync);
     set_key_press_handler(*handle_key_press);
     set_key_release_handler(*handle_key_release);
     set_mouse_release_handler(*handle_mouse_release);
@@ -2792,7 +2768,7 @@ int main(int argc, char **argv) {
         snprintf(g->db_path, MAX_PATH_LENGTH, "%s", config->db_path);
     }
 
-    int draw_radius = get_starting_draw_radius();
+    int draw_radius = config->view;
     g->create_radius = draw_radius;
     g->render_radius = draw_radius;
     g->delete_radius = draw_radius + 4;
@@ -2926,16 +2902,16 @@ int main(int argc, char **argv) {
             render_signs(&text_attrib, player);
             render_sign(&text_attrib, player);
             render_players(&block_attrib, player);
-            if (SHOW_WIREFRAME) {
+            if (config->show_wireframe) {
                 render_wireframe(&line_attrib, player);
             }
 
             // RENDER HUD //
             glClear(GL_DEPTH_BUFFER_BIT);
-            if (SHOW_CROSSHAIRS) {
+            if (config->show_crosshairs) {
                 render_crosshairs(&line_attrib);
             }
-            if (SHOW_ITEM) {
+            if (config->show_item) {
                 render_item(&block_attrib);
             }
 
@@ -2944,7 +2920,7 @@ int main(int argc, char **argv) {
             float ts = 12 * g->scale;
             float tx = ts / 2;
             float ty = g->height - ts;
-            if (SHOW_INFO_TEXT) {
+            if (config->show_info_text) {
                 int hour = time_of_day() * 24;
                 char am_pm = hour < 12 ? 'a' : 'p';
                 hour = hour % 12;
@@ -2981,7 +2957,7 @@ int main(int argc, char **argv) {
                     ty -= ts * 2;
                 }
             }
-            if (SHOW_CHAT_TEXT) {
+            if (config->show_chat_text) {
                 for (int i = 0; i < MAX_MESSAGES; i++) {
                     int index = (g->message_index + i) % MAX_MESSAGES;
                     if (strlen(g->messages[index])) {
@@ -2998,7 +2974,7 @@ int main(int argc, char **argv) {
                 render_text_cursor(&line_attrib, tx + ts * (g->text_cursor+1) + ts/2, ty);
                 ty -= ts * 2;
             }
-            if (SHOW_PLAYER_NAMES) {
+            if (config->show_player_names) {
                 if (player != me) {
                     render_text(&text_attrib, ALIGN_CENTER,
                         g->width / 2, ts, ts, player->name);
@@ -3040,7 +3016,7 @@ int main(int argc, char **argv) {
                 render_signs(&text_attrib, player);
                 render_players(&block_attrib, player);
                 glClear(GL_DEPTH_BUFFER_BIT);
-                if (SHOW_PLAYER_NAMES) {
+                if (config->show_player_names) {
                     render_text(&text_attrib, ALIGN_CENTER,
                         pw / 2, ts, ts, player->name);
                 }
