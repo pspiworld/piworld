@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include "x11_event_handler.h"
 #include "config.h"
+#include "util.h"
 
 Config _config;
 Config *config = &_config;
@@ -17,8 +18,8 @@ void reset_config() {
     get_default_db_path(config->db_path);
     config->port = DEFAULT_PORT;
     config->server[0] = '\0';
-    strncpy(config->window_title, WINDOW_TITLE, strlen(WINDOW_TITLE));
     config->verbose = 0;
+    strncpy(config->window_title, WINDOW_TITLE, strlen(WINDOW_TITLE));
     config->window_x = CENTRE_IN_SCREEN;
     config->window_y = CENTRE_IN_SCREEN;
     config->window_width = WINDOW_WIDTH;
@@ -52,7 +53,6 @@ void parse_startup_config(int argc, char **argv) {
     const char *opt_name;
 
     while (1) {
-        int this_option_optind = optind ? optind : 1;
         int option_index = 0;
         static struct option long_options[] = {
             {"port",         required_argument, 0,  0 },
@@ -71,40 +71,51 @@ void parse_startup_config(int argc, char **argv) {
         switch (c) {
         case 0:
             opt_name = long_options[option_index].name;
-            if (opt_name == "port") {
-                sscanf(optarg, "%d", &config->port);
-            } else if (opt_name == "verbose") {
+            if (strncmp(opt_name, "port", 4) == 0 &&
+                sscanf(optarg, "%d", &config->port) == 1) {
+            } else if (strncmp(opt_name, "verbose", 7) == 0) {
                 config->verbose = 1;
-            } else if (opt_name == "window-size") {
-                sscanf(optarg, "%d,%d", &config->window_width,
-                       &config->window_height);
-            } else if (opt_name == "window-title") {
-                if (strlen(optarg) < MAX_TITLE_LENGTH) {
-                    strncpy(config->window_title, optarg, MAX_TITLE_LENGTH);
-                }
-            } else if (opt_name == "window-xy") {
-                sscanf(optarg, "%d,%d", &config->window_x, &config->window_y);
-            } else if (opt_name == "server") {
-                if (strlen(optarg) < MAX_ADDR_LENGTH) {
-                    strncpy(config->server, optarg, MAX_ADDR_LENGTH);
-                }
+            } else if (strncmp(opt_name, "window-size", 11) == 0 &&
+                       sscanf(optarg, "%d,%d", &config->window_width,
+                              &config->window_height) == 2) {
+            } else if (strncmp(opt_name, "window-title", 12) == 0 &&
+                       sscanf(optarg, "%256c", config->window_title) == 1) {
+                config->window_title[MIN(strlen(optarg),
+                                         MAX_TITLE_LENGTH - 1)] = '\0';
+            } else if (strncmp(opt_name, "window-xy", 9) == 0 &&
+                       sscanf(optarg, "%d,%d", &config->window_x,
+                              &config->window_y) == 2) {
+            } else if (strncmp(opt_name, "server", 6) == 0 &&
+                       sscanf(optarg, "%256c", config->server) == 1) {
+                config->server[MIN(strlen(optarg),
+                                   MAX_ADDR_LENGTH - 1)] = '\0';
+            } else {
+                printf("Bad argument for: --%s: %s\n", opt_name, optarg);
+                exit(1);
             }
             break;
 
         case '?':
+            // Exit on an unrecognised option
+            exit(1);
             break;
 
         default:
             printf("?? getopt returned character code 0%o ??\n", c);
+            exit(1);
         }
     }
 
     if (optind < argc) {
         strncpy(config->db_path, argv[optind++], MAX_PATH_LENGTH);
-        printf("unused ARGV-elements: ");
-        while (optind < argc)
-            printf("%s ", argv[optind++]);
-        printf("\n");
+        if (optind < argc) {
+            // Exit on extra unnamed arguments
+            printf("unused ARGV-elements: ");
+            while (optind < argc)
+                printf("%s ", argv[optind++]);
+            printf("\n");
+            exit(1);
+        }
     }
 }
 

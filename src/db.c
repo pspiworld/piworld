@@ -1,4 +1,6 @@
+#include <stdio.h>
 #include <string.h>
+#include "config.h"
 #include "db.h"
 #include "ring.h"
 #include "sqlite3.h"
@@ -39,6 +41,9 @@ int get_db_enabled() {
 int db_init(char *path) {
     if (!db_enabled) {
         return 0;
+    }
+    if (config->verbose) {
+        printf("\nLoading db from: %s\n", path);
     }
     static const char *create_query =
         "create table if not exists state ("
