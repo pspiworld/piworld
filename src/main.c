@@ -2686,6 +2686,7 @@ int main(int argc, char **argv) {
     g->height = config->window_height;
     pg_start(config->window_title, config->window_x, config->window_y,
              g->width, g->height);
+    pg_swap_interval(VSYNC);
     set_key_press_handler(*handle_key_press);
     set_key_release_handler(*handle_key_release);
     set_mouse_release_handler(*handle_mouse_release);

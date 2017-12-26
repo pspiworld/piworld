@@ -9,6 +9,7 @@ void pg_print_info();
 void pg_start(char *title, int x, int y, int width, int height);
 void pg_end();
 void pg_swap_buffers();
+void pg_swap_interval(int interval);
 int pg_get_gpu_mem_size();
 double pg_get_time(void);
 void pg_set_time(double time);

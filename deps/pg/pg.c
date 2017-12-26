@@ -127,6 +127,11 @@ void pg_swap_buffers()
     eglSwapBuffers(pg_state->display, pg_state->surface);
 }
 
+void pg_swap_interval(int interval)
+{
+    eglSwapInterval(pg_state->display, interval);
+}
+
 void pg_window_moved(int x, int y)
 {
     #ifndef MESA
