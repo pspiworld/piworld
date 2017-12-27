@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include "x11_event_handler.h"
 #include "config.h"
+#include "pg.h"
 #include "util.h"
 
 Config _config;
