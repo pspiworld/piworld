@@ -2056,13 +2056,16 @@ void parse_command(const char *buffer, int forward) {
         get_default_db_path(g->db_path);
     }
     else if (sscanf(buffer, "/view %d", &radius) == 1) {
-        if (radius >= 1 && radius <= 24) {
+        if (radius >= 0 && radius <= 24) {
+            if (radius == AUTO_PICK_VIEW_RADIUS) {
+                radius = get_starting_draw_radius();
+            }
             g->create_radius = radius;
             g->render_radius = radius;
             g->delete_radius = radius + 4;
         }
         else {
-            add_message("Viewing distance must be between 1 and 24.");
+            add_message("Viewing distance must be between 0 and 24.");
         }
     }
     else if (sscanf(buffer, "/position %d %d %d", &xc, &yc, &zc) == 3) {
@@ -2658,6 +2661,9 @@ int main(int argc, char **argv) {
     g->height = config->window_height;
     pg_start(config->window_title, config->window_x, config->window_y,
              g->width, g->height);
+    if (config->view == AUTO_PICK_VIEW_RADIUS) {
+        config->view = get_starting_draw_radius();
+    }
     pg_swap_interval(config->vsync);
     set_key_press_handler(*handle_key_press);
     set_key_release_handler(*handle_key_release);

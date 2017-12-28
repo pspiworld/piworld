@@ -30,7 +30,7 @@ void reset_config() {
     config->show_trees = SHOW_TREES;
     config->show_wireframe = SHOW_WIREFRAME;
     config->verbose = 0;
-    config->view = get_starting_draw_radius();
+    config->view = AUTO_PICK_VIEW_RADIUS;
     config->vsync = VSYNC;
     strncpy(config->window_title, WINDOW_TITLE, strlen(WINDOW_TITLE));
     config->window_x = CENTRE_IN_SCREEN;

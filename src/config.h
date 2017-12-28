@@ -48,6 +48,7 @@
 #define MAX_ADDR_LENGTH 256
 #define MAX_PATH_LENGTH 256
 #define MAX_TITLE_LENGTH 256
+#define AUTO_PICK_VIEW_RADIUS 0
 
 typedef struct {
     char path[MAX_PATH_LENGTH];
