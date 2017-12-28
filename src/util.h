@@ -43,3 +43,14 @@ int char_width(char input);
 int string_width(const char *input);
 int wrap(const char *input, int max_width, char *output, int max_length);
 
+#ifdef DEBUG
+void _check_gl_error(const char *file, int line);
+
+///
+/// Usage
+/// [... some opengl calls]
+/// check_gl_error();
+///
+#define check_gl_error() _check_gl_error(__FILE__,__LINE__)
+#endif
+

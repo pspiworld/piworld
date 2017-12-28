@@ -3022,6 +3022,10 @@ int main(int argc, char **argv) {
                 }
             }
 
+#ifdef DEBUG
+            check_gl_error();
+#endif
+
             // SWAP AND POLL //
             pg_swap_buffers();
             pg_next_event();

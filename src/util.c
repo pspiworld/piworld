@@ -227,3 +227,49 @@ int wrap(const char *input, int max_width, char *output, int max_length) {
     free(text);
     return line_number;
 }
+
+#ifdef DEBUG
+void _check_gl_error(const char *file, int line);
+
+///
+/// Usage
+/// [... some opengl calls]
+/// check_gl_error();
+///
+#define check_gl_error() _check_gl_error(__FILE__,__LINE__)
+
+void _check_gl_error(const char *file, int line) {
+    GLenum err = glGetError();
+
+    while (err != GL_NO_ERROR) {
+        #define MAX_ERROR_TEXT_LENGTH 64
+        char error[MAX_ERROR_TEXT_LENGTH];
+
+        switch(err) {
+            case GL_INVALID_OPERATION:
+                snprintf(error, MAX_ERROR_TEXT_LENGTH, "INVALID_OPERATION");
+                break;
+            case GL_INVALID_ENUM:
+                snprintf(error, MAX_ERROR_TEXT_LENGTH, "INVALID_ENUM");
+                break;
+            case GL_INVALID_VALUE:
+                snprintf(error, MAX_ERROR_TEXT_LENGTH, "INVALID_VALUE");
+                break;
+            case GL_OUT_OF_MEMORY:
+                snprintf(error, MAX_ERROR_TEXT_LENGTH, "OUT_OF_MEMORY");
+                break;
+            case GL_INVALID_FRAMEBUFFER_OPERATION:
+                snprintf(error, MAX_ERROR_TEXT_LENGTH,
+                         "INVALID_FRAMEBUFFER_OPERATION");
+                break;
+            default:
+                snprintf(error, MAX_ERROR_TEXT_LENGTH, "[UNKNOWN ERROR - %d]",
+                         err);
+        }
+
+        printf("GL_%s - %s: %d\n", error, file, line);
+        err = glGetError();
+    }
+}
+#endif
+
