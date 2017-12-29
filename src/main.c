@@ -2425,6 +2425,21 @@ void reset_model() {
     g->time_changed = 1;
 }
 
+void insert_into_typing_buffer(unsigned char c) {
+    int n = strlen(g->typing_buffer);
+    if (n < MAX_TEXT_LENGTH - 1) {
+        if (g->text_cursor != n) {
+            // Shift text after the text cursor to the right
+            memmove(g->typing_buffer + g->text_cursor + 1,
+                    g->typing_buffer + g->text_cursor,
+                    n - g->text_cursor);
+        }
+        g->typing_buffer[g->text_cursor] = c;
+        g->typing_buffer[n + 1] = '\0';
+        g->text_cursor += 1;
+    }
+}
+
 void handle_key_press(unsigned char c, int mods, int keysym)
 {
     if (!g->typing) {
@@ -2516,11 +2531,7 @@ void handle_key_press(unsigned char c, int mods, int keysym)
             }
         } else if (c == 13) {  // return
             if (mods & ShiftMask) {
-                int n = strlen(g->typing_buffer);
-                if (n < MAX_TEXT_LENGTH - 1) {
-                    g->typing_buffer[n] = '\r';
-                    g->typing_buffer[n + 1] = '\0';
-                }
+                insert_into_typing_buffer('\r');
             } else {
                 g->typing = 0;
                 if (g->typing_buffer[0] == CRAFT_KEY_SIGN) {
@@ -2557,18 +2568,7 @@ void handle_key_press(unsigned char c, int mods, int keysym)
             g->text_cursor = strlen(g->typing_buffer);
         } else {
             if (c >= 32 && c < 128) {
-                int n = strlen(g->typing_buffer);
-                if (n < MAX_TEXT_LENGTH - 1) {
-                    if (g->text_cursor != n) {
-                        // Shift text after the text cursor to the right
-                        memmove(g->typing_buffer + g->text_cursor + 1,
-                                g->typing_buffer + g->text_cursor,
-                                n - g->text_cursor);
-                    }
-                    g->typing_buffer[g->text_cursor] = c;
-                    g->typing_buffer[n + 1] = '\0';
-                    g->text_cursor += 1;
-                }
+                insert_into_typing_buffer(c);
             }
         }
     }
