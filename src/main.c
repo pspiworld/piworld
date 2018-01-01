@@ -28,6 +28,13 @@
 #define MAX_TEXT_LENGTH 256
 #define MAX_NAME_LENGTH 32
 
+#define MAX_HISTORY_SIZE 20
+#define CHAT_HISTORY 0
+#define COMMAND_HISTORY 1
+#define SIGN_HISTORY 2
+#define NUM_HISTORIES 3
+#define NOT_IN_HISTORY -1
+
 #define ALIGN_LEFT 0
 #define ALIGN_CENTER 1
 #define ALIGN_RIGHT 2
@@ -136,6 +143,13 @@ typedef struct {
 } Attrib;
 
 typedef struct {
+    char lines[MAX_HISTORY_SIZE][MAX_TEXT_LENGTH];
+    int size;
+    int end;
+    int line_start;
+} TextLineHistory;
+
+typedef struct {
     Worker workers[WORKERS];
     Chunk chunks[MAX_CHUNKS];
     int chunk_count;
@@ -147,6 +161,8 @@ typedef struct {
     int player_count;
     int typing;
     char typing_buffer[MAX_TEXT_LENGTH];
+    TextLineHistory typing_history[NUM_HISTORIES];
+    int history_position;
     int text_cursor;
     int typing_start;
     int message_index;
@@ -2440,6 +2456,78 @@ void insert_into_typing_buffer(unsigned char c) {
     }
 }
 
+void history_add(TextLineHistory *history, char *line)
+{
+    if (MAX_HISTORY_SIZE == 0 || strlen(line) <= history->line_start) {
+        // Ignore empty lines
+        return;
+    }
+
+    int duplicate_line = 1;
+    if (history->size == 0 ||
+        strcmp(line, history->lines[history->end]) != 0) {
+        duplicate_line = 0;
+    }
+    if (!duplicate_line) {
+        // Add a non-duplicate line to the history
+        history->end = (history->end + 1) % MAX_HISTORY_SIZE;
+        history->size = MIN(history->size + 1, MAX_HISTORY_SIZE);
+        snprintf(history->lines[history->end], MAX_TEXT_LENGTH, "%s", line);
+    }
+}
+
+void history_previous(TextLineHistory *history, char *line, int *position)
+{
+    if (history->size == 0) {
+        return;
+    }
+
+    int new_position;
+    if (*position == NOT_IN_HISTORY) {
+        new_position = history->end;
+    } else if (*position == 0) {
+        new_position = history->size - 1;
+    } else {
+        new_position = (*position - 1) % history->size;
+    }
+
+    if (*position != NOT_IN_HISTORY && new_position == history->end) {
+        // Stop if already at start of history
+        return;
+    }
+
+    *position = new_position;
+    snprintf(line, MAX_TEXT_LENGTH, "%s", history->lines[*position]);
+}
+
+void history_next(TextLineHistory *history, char *line, int *position)
+{
+    if (history->size == 0 || *position == NOT_IN_HISTORY ) {
+        return;
+    }
+
+    int new_position;
+    new_position = (*position + 1) % history->size;
+    if (new_position == (history->end + 1) % history->size) {
+        // Do not move past the end of history
+        return;
+    }
+
+    *position = new_position;
+    snprintf(line, MAX_TEXT_LENGTH, "%s", history->lines[*position]);
+}
+
+TextLineHistory* current_history()
+{
+    if (g->typing_buffer[0] == CRAFT_KEY_SIGN) {
+        return &g->typing_history[SIGN_HISTORY];
+    } else if (g->typing_buffer[0] == CRAFT_KEY_COMMAND) {
+        return &g->typing_history[COMMAND_HISTORY];
+    } else {
+        return &g->typing_history[CHAT_HISTORY];
+    }
+}
+
 void handle_key_press(unsigned char c, int mods, int keysym)
 {
     if (!g->typing) {
@@ -2493,22 +2581,21 @@ void handle_key_press(unsigned char c, int mods, int keysym)
         } else if (c == CRAFT_KEY_CHAT) {
             g->typing = 1;
             g->typing_buffer[0] = '\0';
-            g->typing_start = 0;
+            g->typing_start = g->typing_history[CHAT_HISTORY].line_start;
             g->text_cursor = g->typing_start;
         } else if (c == CRAFT_KEY_COMMAND) {
             g->typing = 1;
             g->typing_buffer[0] = '/';
             g->typing_buffer[1] = '\0';
-            g->typing_start = 1;
+            g->typing_start = g->typing_history[COMMAND_HISTORY].line_start;
             g->text_cursor = g->typing_start;
         } else if (c == CRAFT_KEY_SIGN) {
             g->typing = 1;
             g->typing_buffer[0] = CRAFT_KEY_SIGN;
             g->typing_buffer[1] = '\0';
-            g->typing_start = 1;
+            g->typing_start = g->typing_history[SIGN_HISTORY].line_start;
             g->text_cursor = g->typing_start;
         } else if (c == 13) {  // return
-            printf("mods: %d\n", mods);
             if (mods & ControlMask) {
                 on_right_click();
             } else {
@@ -2518,6 +2605,7 @@ void handle_key_press(unsigned char c, int mods, int keysym)
     } else {
         if (keysym == XK_Escape) {
             g->typing = 0;
+            g->history_position = NOT_IN_HISTORY;
         } else if (c == 8) {  // backspace
             int n = strlen(g->typing_buffer);
             if (n > 0 && g->text_cursor > g->typing_start) {
@@ -2545,6 +2633,8 @@ void handle_key_press(unsigned char c, int mods, int keysym)
                 } else {
                     client_talk(g->typing_buffer);
                 }
+                history_add(current_history(), g->typing_buffer);
+                g->history_position = NOT_IN_HISTORY;
             }
         } else if (keysym == XK_Delete) {
             int n = strlen(g->typing_buffer);
@@ -2565,6 +2655,14 @@ void handle_key_press(unsigned char c, int mods, int keysym)
         } else if (keysym == XK_Home) {
             g->text_cursor = g->typing_start;
         } else if (keysym == XK_End) {
+            g->text_cursor = strlen(g->typing_buffer);
+        } else if (keysym == XK_Up) {
+            history_previous(current_history(), g->typing_buffer,
+                             &g->history_position);
+            g->text_cursor = strlen(g->typing_buffer);
+        } else if (keysym == XK_Down) {
+            history_next(current_history(), g->typing_buffer,
+                         &g->history_position);
             g->text_cursor = strlen(g->typing_buffer);
         } else {
             if (c >= 32 && c < 128) {
@@ -2649,11 +2747,24 @@ void handle_focus_out() {
     zoom_is_pressed = 0;
 }
 
+void reset_history()
+{
+    g->history_position = NOT_IN_HISTORY;
+    for (int i=0; i<NUM_HISTORIES; i++) {
+        g->typing_history[i].end = -1;
+        g->typing_history[i].size = 0;
+    }
+    g->typing_history[CHAT_HISTORY].line_start = 0;
+    g->typing_history[COMMAND_HISTORY].line_start = 1;
+    g->typing_history[SIGN_HISTORY].line_start = 1;
+}
+
 int main(int argc, char **argv) {
     // INITIALIZATION //
     srand(time(NULL));
     rand();
     reset_config();
+    reset_history();
     parse_startup_config(argc, argv);
 
     // WINDOW INITIALIZATION //
