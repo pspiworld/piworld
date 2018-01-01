@@ -2049,7 +2049,7 @@ void parse_command(const char *buffer, int forward) {
     char server_addr[MAX_ADDR_LENGTH];
     int server_port = DEFAULT_PORT;
     char filename[MAX_PATH_LENGTH];
-    int radius, count, xc, yc, zc;
+    int int_option, radius, count, xc, yc, zc;
     char window_title[MAX_TITLE_LENGTH];
     if (sscanf(buffer,
         "/online %128s %d", server_addr, &server_port) >= 1)
@@ -2089,6 +2089,47 @@ void parse_command(const char *buffer, int forward) {
         s->x = xc;
         s->y = yc;
         s->z = zc;
+    }
+    else if (sscanf(buffer, "/show-chat-text %d", &int_option) == 1) {
+        config->show_chat_text = int_option;
+    }
+    else if (sscanf(buffer, "/show-clouds %d", &int_option) == 1) {
+        config->show_clouds = int_option;
+        g->mode_changed = 1;  // regenerate world
+    }
+    else if (sscanf(buffer, "/show-crosshairs %d", &int_option) == 1) {
+        config->show_crosshairs = int_option;
+    }
+    else if (sscanf(buffer, "/show-item %d", &int_option) == 1) {
+        config->show_item = int_option;
+    }
+    else if (sscanf(buffer, "/show-info-text %d", &int_option) == 1) {
+        config->show_info_text = int_option;
+    }
+    else if (sscanf(buffer, "/show-lights %d", &int_option) == 1) {
+        config->show_lights = int_option;
+        g->mode_changed = 1;  // regenerate world
+    }
+    else if (sscanf(buffer, "/show-plants %d", &int_option) == 1) {
+        config->show_plants = int_option;
+        g->mode_changed = 1;  // regenerate world
+    }
+    else if (sscanf(buffer, "/show-player-names %d", &int_option) == 1) {
+        config->show_player_names = int_option;
+    }
+    else if (sscanf(buffer, "/show-trees %d", &int_option) == 1) {
+        config->show_trees = int_option;
+        g->mode_changed = 1;  // regenerate world
+    }
+    else if (sscanf(buffer, "/show-wireframe %d", &int_option) == 1) {
+        config->show_wireframe = int_option;
+    }
+    else if (sscanf(buffer, "/verbose %d", &int_option) == 1) {
+        config->verbose = int_option;
+    }
+    else if (sscanf(buffer, "/vsync %d", &int_option) == 1) {
+        config->vsync = int_option;
+        pg_swap_interval(config->vsync);
     }
     else if (sscanf(buffer, "/window-size %d %d", &xc, &yc) == 2) {
         pg_resize_window(xc, yc);
