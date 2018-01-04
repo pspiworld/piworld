@@ -55,6 +55,10 @@ can build PiWorld to use it:
     cmake -DMESA=1 -DRASPI=2 .
     make -j4
 
+To reduce judder when playing you can start the game with:
+
+    ./piworld --view=4 --show-plants=0
+
 #### Making a release build
 
     cmake -DMESA=0 -DRASPI=1 -DRELEASE=1 .
