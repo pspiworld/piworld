@@ -33,7 +33,11 @@ void create_world(int p, int q, world_func func, void *arg) {
                 func(x, y, z, w * flag, arg);
             }
             if (w == 1) {
+#ifdef SERVER
+                if (SHOW_PLANTS) {
+#else
                 if (config->show_plants) {
+#endif
                     // grass
                     if (simplex2(-x * 0.1, z * 0.1, 4, 0.8, 2) > 0.6) {
                         func(x, h, z, TALL_GRASS * flag, arg);
@@ -45,7 +49,11 @@ void create_world(int p, int q, world_func func, void *arg) {
                     }
                 }
                 // trees
+#ifdef SERVER
+                int ok = SHOW_TREES;
+#else
                 int ok = config->show_trees;
+#endif
                 if (dx - 4 < 0 || dz - 4 < 0 ||
                     dx + 4 >= CHUNK_SIZE || dz + 4 >= CHUNK_SIZE)
                 {
@@ -71,7 +79,11 @@ void create_world(int p, int q, world_func func, void *arg) {
                 }
             }
             // clouds
-            if (config->show_clouds) {
+#ifdef SERVER
+                if (SHOW_CLOUDS) {
+#else
+                if (config->show_clouds) {
+#endif
                 for (int y = 64; y < 72; y++) {
                     if (simplex3(
                         x * 0.01, y * 0.1, z * 0.01, 8, 0.5, 2) > 0.75)

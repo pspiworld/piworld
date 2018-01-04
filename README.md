@@ -77,7 +77,7 @@ Or, with the "/online" command in the game itself.
 The server is written in Python but requires a compiled DLL so it can perform
 the terrain generation just like the client.
 
-    gcc -std=c99 -O3 -fPIC -shared -o world -I src -I deps/noise deps/noise/noise.c src/world.c
+    gcc -DSERVER -std=c99 -O3 -fPIC -shared -o world -I src -I deps/noise deps/noise/noise.c src/world.c
     ./server.py [HOST [PORT]]
 
 ### Controls

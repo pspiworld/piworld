@@ -1,4 +1,4 @@
-# gcc -std=c99 -O3 -shared -fpic -o world \
+# gcc -DSERVER -std=c99 -O3 -shared -fpic -o world \
 #   -I src -I deps/noise deps/noise/noise.c src/world.c
 
 from ctypes import CDLL, CFUNCTYPE, c_float, c_int, c_void_p
