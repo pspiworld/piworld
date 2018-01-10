@@ -65,6 +65,7 @@ typedef struct {
     int show_trees;
     int show_wireframe;
     char server[MAX_ADDR_LENGTH];
+    int use_cache;
     int verbose;
     int view;
     int vsync;

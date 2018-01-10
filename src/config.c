@@ -29,6 +29,7 @@ void reset_config() {
     config->show_player_names = SHOW_PLAYER_NAMES;
     config->show_trees = SHOW_TREES;
     config->show_wireframe = SHOW_WIREFRAME;
+    config->use_cache = USE_CACHE;
     config->verbose = 0;
     config->view = AUTO_PICK_VIEW_RADIUS;
     config->vsync = VSYNC;
@@ -105,6 +106,7 @@ void parse_startup_config(int argc, char **argv) {
             {"show-trees",        required_argument, 0,  0 },
             {"show-wireframe",    required_argument, 0,  0 },
             {"verbose",           no_argument,       0,  0 },
+            {"use-cache",         required_argument, 0,  0 },
             {"view",              required_argument, 0,  0 },
             {"vsync",             required_argument, 0,  0 },
             {"window-size",       required_argument, 0,  0 },
@@ -142,6 +144,8 @@ void parse_startup_config(int argc, char **argv) {
                        sscanf(optarg, "%d", &config->show_trees) == 1) {
             } else if (strncmp(opt_name, "show-wireframe", 14) == 0 &&
                        sscanf(optarg, "%d", &config->show_wireframe) == 1) {
+            } else if (strncmp(opt_name, "use-cache", 9) == 0 &&
+                       sscanf(optarg, "%d", &config->use_cache) == 1) {
             } else if (strncmp(opt_name, "verbose", 7) == 0) {
                 config->verbose = 1;
             } else if (strncmp(opt_name, "view", 4) == 0 &&

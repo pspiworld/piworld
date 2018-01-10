@@ -2943,7 +2943,7 @@ int main(int argc, char **argv) {
         }
 
         // DATABASE INITIALIZATION //
-        if (g->mode == MODE_OFFLINE || USE_CACHE) {
+        if (g->mode == MODE_OFFLINE || config->use_cache) {
             db_enable();
             if (db_init(g->db_path)) {
                 return -1;
