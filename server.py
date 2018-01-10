@@ -3,6 +3,7 @@ from math import floor
 from world import World
 import Queue
 import SocketServer
+import atexit
 import datetime
 import random
 import re
@@ -189,21 +190,28 @@ class Model(object):
             (re.compile(r'^/help(?:\s+(\S+))?$'), self.on_help),
             (re.compile(r'^/list$'), self.on_list),
         ]
+        self.running = True
+    def finish(self):
+        self.running = False
     def start(self):
         thread = threading.Thread(target=self.run)
         thread.setDaemon(True)
         thread.start()
+        self.thread = thread
     def run(self):
         self.connection = sqlite3.connect(DB_PATH)
         self.create_tables()
         self.commit()
-        while True:
+        while self.running:
             try:
                 if time.time() - self.last_commit > COMMIT_INTERVAL:
                     self.commit()
                 self.dequeue()
             except Exception:
                 traceback.print_exc()
+        # Commit any pending changes before exiting the thread. This will
+        # prevent sqlite leaving behind a journal file.
+        self.commit()
     def enqueue(self, func, *args, **kwargs):
         self.queue.put((func, args, kwargs))
     def dequeue(self):
@@ -654,6 +662,12 @@ def cleanup():
     print('commit;')
     print >> sys.stderr, '%d of %d blocks will be cleaned up' % (count, total)
 
+def close_server(server):
+    print("\nPlease wait for server to close (upto 5 seconds)...")
+    server.server_close()
+    server.model.finish()
+    server.model.thread.join()
+
 def main():
     if len(sys.argv) == 2 and sys.argv[1] == 'cleanup':
         cleanup()
@@ -668,6 +682,7 @@ def main():
     model.start()
     server = Server((host, port), Handler)
     server.model = model
+    atexit.register(close_server, server)
     server.serve_forever()
 
 if __name__ == '__main__':
