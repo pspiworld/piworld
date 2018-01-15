@@ -2078,7 +2078,7 @@ void parse_command(const char *buffer, int forward) {
             }
             g->create_radius = radius;
             g->render_radius = radius;
-            g->delete_radius = radius + 4;
+            g->delete_radius = radius + 3;
         }
         else {
             add_message("Viewing distance must be between 0 and 24.");
@@ -2924,7 +2924,7 @@ int main(int argc, char **argv) {
     int draw_radius = config->view;
     g->create_radius = draw_radius;
     g->render_radius = draw_radius;
-    g->delete_radius = draw_radius + 4;
+    g->delete_radius = draw_radius + 3;
     g->sign_radius = draw_radius;
 
     // OUTER LOOP //
