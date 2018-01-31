@@ -18,6 +18,8 @@ void reset_config() {
     get_config_path(config->path);
     get_default_db_path(config->db_path);
     config->port = DEFAULT_PORT;
+    config->pwpi = 1;
+    config->pwpi_port = PWPI_PORT;
     config->server[0] = '\0';
     config->show_chat_text = SHOW_CHAT_TEXT;
     config->show_clouds = SHOW_CLOUDS;
@@ -94,6 +96,8 @@ void parse_startup_config(int argc, char **argv) {
         int option_index = 0;
         static struct option long_options[] = {
             {"port",              required_argument, 0,  0 },
+            {"pwpi",              required_argument, 0,  0 },
+            {"pwpi-port",         required_argument, 0,  0 },
             {"server",            required_argument, 0,  0 },
             {"show-chat-text",    required_argument, 0,  0 },
             {"show-crosshairs",   required_argument, 0,  0 },
@@ -124,6 +128,10 @@ void parse_startup_config(int argc, char **argv) {
             opt_name = long_options[option_index].name;
             if (strncmp(opt_name, "port", 4) == 0 &&
                 sscanf(optarg, "%d", &config->port) == 1) {
+            } else if (strncmp(opt_name, "pwpi", 4) == 0 &&
+                sscanf(optarg, "%d", &config->pwpi) == 1) {
+            } else if (strncmp(opt_name, "pwpi-port", 9) == 0 &&
+                sscanf(optarg, "%d", &config->pwpi_port) == 1) {
             } else if (strncmp(opt_name, "show-chat-text", 15) == 0 &&
                        sscanf(optarg, "%d", &config->show_chat_text) == 1) {
             } else if (strncmp(opt_name, "show-crosshairs", 15) == 0 &&

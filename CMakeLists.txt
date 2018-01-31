@@ -13,7 +13,7 @@ FILE(GLOB SOURCE_FILES
     deps/tinycthread/tinycthread.c
     )
 
-set(COMMON_LIBS dl m pthread sqlite3 X11 Xcursor)
+set(COMMON_LIBS dl event m pthread sqlite3 X11 Xcursor)
 
 if(MESA)
     # The MESA driver is only for the pi2/3.

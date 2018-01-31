@@ -16,6 +16,7 @@
 #include "matrix.h"
 #include "noise.h"
 #include "pg.h"
+#include "pwpi.h"
 #include "sign.h"
 #include "tinycthread.h"
 #include "util.h"
@@ -2090,6 +2091,9 @@ void parse_command(const char *buffer, int forward) {
         s->y = yc;
         s->z = zc;
     }
+    else if (sscanf(buffer, "/pwpi %d", &int_option) == 1) {
+        int_option ? pwpi_enable() : pwpi_disable();
+    }
     else if (sscanf(buffer, "/show-chat-text %d", &int_option) == 1) {
         config->show_chat_text = int_option;
     }
@@ -2464,6 +2468,69 @@ void parse_buffer(char *buffer) {
     }
 }
 
+void parse_pwpi_line(char *line, char *return_message) {
+    State *s = &g->players->state;
+    int ix, iy, iz, iw, p, q;
+    float fx, fy, fz, frx, fry;
+    char query;
+    if (sscanf(line, "B,%d,%d,%d,%d", &ix, &iy, &iz, &iw) == 4) {
+        // Set block
+        if (iy > 0 && iy < 256) {
+            p = chunked(ix);
+            q = chunked(iz);
+            if (get_client_enabled() && get_block(ix, iy, iz) != EMPTY) {
+                set_block(ix, iy, iz, 0);
+            }
+            set_block(ix, iy, iz, iw);
+            if (player_intersects_block(2, s->x, s->y, s->z, ix, iy, iz)) {
+                s->y = highest_block(s->x, s->z) + 2;
+            }
+        }
+    } else if (sscanf(line, "P,%f,%f,%f,%f,%f", &fx, &fy, &fz,
+                      &frx, &fry) == 5) {
+        // Set player location and view direction
+        s->x = fx;
+        s->y = fy;
+        s->z = fz;
+        s->rx = frx;
+        s->ry = fry;
+    } else if (sscanf(line, "P,%f,%f,%f", &fx, &fy, &fz) == 3) {
+        // Set player location
+        s->x = fx;
+        s->y = fy;
+        s->z = fz;
+    } else if (sscanf(line, "P,%f,%f", &frx, &fry) == 2) {
+        // Set player view direction
+        s->rx = frx;
+        s->ry = fry;
+    } else if (sscanf(line, "R,%d,%d", &p, &q) == 2) {
+        // Redraw chunk
+        Chunk *chunk = find_chunk(p, q);
+        if (chunk) {
+            dirty_chunk(chunk);
+        }
+    } else if (line[0] == 'T' && line[1] == ',') {
+        // Show a message
+        char *text = line + 2;
+        add_message(text);
+    } else if (sscanf(line, "Q,%c", &query) == 1) {
+        // Query
+        if (query == 'P') {
+            // Player state: position, view angle, block under crosshair and
+            // current item in hand.
+            int hx = 0, hy = 0, hz = 0;
+            int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
+            snprintf(return_message, MAX_PWPI_TEXT_LENGTH,
+                     "%f,%f,%f,%f,%f,%d,%d,%d,%d,%d\n", s->x, s->y, s->z,
+                     s->rx, s->ry, hx, hy, hz, hw, items[g->item_index]);
+        } else if (sscanf(line, "Q,B,%d,%d,%d", &ix, &iy, &iz) == 3) {
+            // Block
+            snprintf(return_message, MAX_PWPI_TEXT_LENGTH, "%d\n",
+                     get_block(ix, iy, iz));
+        }
+    }
+}
+
 void reset_model() {
     memset(g->chunks, 0, sizeof(Chunk) * MAX_CHUNKS);
     g->chunk_count = 0;
@@ -2807,6 +2874,10 @@ int main(int argc, char **argv) {
     reset_config();
     reset_history();
     parse_startup_config(argc, argv);
+    pwpi_init(config->pwpi_port, *parse_pwpi_line);
+    if (!config->pwpi) {
+        pwpi_disable();
+    }
 
     // WINDOW INITIALIZATION //
     g->width = config->window_width;
@@ -3016,6 +3087,9 @@ int main(int argc, char **argv) {
             // HANDLE MOVEMENT //
             handle_movement(dt);
 
+            // HANDLE DATA FROM PWPI //
+            pwpi_handle_events();
+
             // HANDLE DATA FROM SERVER //
             char *buffer = client_recv();
             if (buffer) {
@@ -3216,6 +3290,7 @@ int main(int argc, char **argv) {
         delete_all_chunks();
         delete_all_players();
     }
+    pwpi_shutdown();
 
     pg_end();
     return 0;

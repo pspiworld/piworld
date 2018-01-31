@@ -49,11 +49,14 @@
 #define MAX_PATH_LENGTH 256
 #define MAX_TITLE_LENGTH 256
 #define AUTO_PICK_VIEW_RADIUS 0
+#define PWPI_PORT 11760
 
 typedef struct {
     char path[MAX_PATH_LENGTH];
     char db_path[MAX_PATH_LENGTH];
     int port;
+    int pwpi;
+    int pwpi_port;
     int show_chat_text;
     int show_clouds;
     int show_crosshairs;

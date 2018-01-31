@@ -32,7 +32,7 @@ Zero can be fast enough.
 
 #### Linux (Raspbian) - dependencies to compile piworld
 
-    sudo apt-get install cmake libsqlite3-dev xorg-dev
+    sudo apt-get install cmake libevent-dev libsqlite3-dev xorg-dev
 
 ### Compile and Run
 
