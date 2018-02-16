@@ -2528,6 +2528,19 @@ void parse_pwpi_line(char *line, char *return_message) {
             snprintf(return_message, MAX_PWPI_TEXT_LENGTH, "%d\n",
                      get_block(ix, iy, iz));
         }
+    } else if (sscanf(line, "H,%d", &ix) == 1) {
+        // Set item in hand
+        if (ix > EMPTY && ix <= COLOR_31) {
+            for (int i=0; i<item_count; i++) {
+                if (items[i] == ix) {
+                    g->item_index = i;
+                    break;
+                }
+            }
+        }
+    } else if (strcmp(line, "END") == 0) {
+        // Client exits cleanly
+        snprintf(return_message, MAX_PWPI_TEXT_LENGTH, "GOODBYE\n");
     }
 }
 
