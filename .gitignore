@@ -4,7 +4,6 @@ CMakeFiles
 cmake_install.cmake
 config.py
 log.txt
-piworld
 world
 *.o
 *.db
