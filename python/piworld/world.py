@@ -5,6 +5,7 @@ from collections import namedtuple
 
 MAX_PWPI_TEXT_LENGTH = 512
 PWPI_PORT = 11760
+PLAYER_HEIGHT = 2
 
 Vec3 = namedtuple('Vec3', ('x', 'y', 'z'))
 Vec2 = namedtuple('Vec2', ('x', 'y'))
@@ -84,8 +85,9 @@ class Player:
         self.item_under_crosshair = int(cw)
         self.under_crosshair = Vec3(int(cx), int(cy), int(cz))
         self.item_in_hand = int(item_in_hand)
-        self.under_foot = Vec3(int(self.pos.x), int(self.pos.y),
-                               int(self.pos.z))
+        self.under_foot = Vec3(int(round(self.pos.x)),
+                               int(round(self.pos.y - PLAYER_HEIGHT)),
+                               int(round(self.pos.z)))
 
     def set_pos(self, x, y, z):
         self.world._send('P,%f,%f,%f' % (x, y, z))
