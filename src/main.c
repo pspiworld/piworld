@@ -16,6 +16,7 @@
 #include "matrix.h"
 #include "noise.h"
 #include "pg.h"
+#include "pg_joystick.h"
 #include "sign.h"
 #include "tinycthread.h"
 #include "util.h"
@@ -46,6 +47,22 @@
 #define WORKER_BUSY 1
 #define WORKER_DONE 2
 
+#define DEADZONE 0.0
+
+#define CROUCH_JUMP 0
+#define REMOVE_ADD 1
+#define CYCLE_DOWN_UP 2
+#define FLY_PICK 3
+#define ZOOM_ORTHO 4
+#define SHOULDER_BUTTON_MODE_COUNT 5
+const char *shoulder_button_modes[SHOULDER_BUTTON_MODE_COUNT] = {
+    "Crouch/Jump",
+    "Remove/Add",
+    "Previous/Next",
+    "Fly/Pick",
+    "Zoom/Ortho"
+};
+
 const float GREEN[4] = {0.0, 1.0, 0.0, 1.0};
 const float BLACK[4] = {0.0, 0.0, 0.0, 1.0};
 
@@ -63,7 +80,11 @@ int view_up_is_pressed;
 int view_down_is_pressed;
 int ortho_is_pressed;
 int zoom_is_pressed;
-
+float view_speed_left_right;
+float view_speed_up_down;
+float movement_speed_left_right;
+float movement_speed_forward_back;
+int shoulder_button_mode;
 
 typedef struct {
     Map map;
@@ -229,14 +250,14 @@ void get_sight_vector(float rx, float ry, float *vx, float *vy, float *vz) {
     *vz = sinf(rx - RADIANS(90)) * m;
 }
 
-void get_motion_vector(int flying, int sz, int sx, float rx, float ry,
+void get_motion_vector(int flying, float sz, float sx, float rx, float ry,
     float *vx, float *vy, float *vz) {
     *vx = 0; *vy = 0; *vz = 0;
     if (!sz && !sx) {
         return;
     }
-    float strafe = atan2f(sz, sx);
     if (flying) {
+        float strafe = atan2f(sz, sx);
         float m = cosf(ry);
         float y = sinf(ry);
         if (sx) {
@@ -251,11 +272,9 @@ void get_motion_vector(int flying, int sz, int sx, float rx, float ry,
         *vx = cosf(rx + strafe) * m;
         *vy = y;
         *vz = sinf(rx + strafe) * m;
-    }
-    else {
-        *vx = cosf(rx + strafe);
-        *vy = 0;
-        *vz = sinf(rx + strafe);
+    } else {
+        *vx = sx * cosf(rx) - sz * sinf(rx);
+        *vz = sx * sinf(rx) + sz * cosf(rx);
     }
 }
 
@@ -2198,6 +2217,57 @@ void parse_command(const char *buffer, int forward) {
     }
 }
 
+void clear_block_under_crosshair(Player *player)
+{
+    State *s = &player->state;
+    int hx, hy, hz;
+    int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
+    if (hy > 0 && hy < 256 && is_destructable(hw)) {
+        set_block(hx, hy, hz, 0);
+        record_block(hx, hy, hz, 0);
+        if (is_plant(get_block(hx, hy + 1, hz))) {
+            set_block(hx, hy + 1, hz, 0);
+        }
+    }
+}
+
+void set_block_under_crosshair(Player *player)
+{
+    State *s = &player->state;
+    int hx, hy, hz;
+    int hw = hit_test(1, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
+    if (hy > 0 && hy < 256 && is_obstacle(hw)) {
+        if (!player_intersects_block(2, s->x, s->y, s->z, hx, hy, hz)) {
+            set_block(hx, hy, hz, items[g->item_index]);
+            record_block(hx, hy, hz, items[g->item_index]);
+        }
+    }
+}
+
+void set_item_in_hand_to_item_under_crosshair(Player *player)
+{
+    State *s = &player->state;
+    int hx, hy, hz;
+    int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
+    for (int i = 0; i < item_count; i++) {
+        if (items[i] == hw) {
+            g->item_index = i;
+            break;
+        }
+    }
+}
+
+void cycle_item_in_hand_up(Player *player) {
+    g->item_index = (g->item_index + 1) % item_count;
+}
+
+void cycle_item_in_hand_down(Player *player) {
+    g->item_index--;
+    if (g->item_index < 0) {
+        g->item_index = item_count - 1;
+    }
+}
+
 void on_light() {
     State *s = &g->players->state;
     int hx, hy, hz;
@@ -2279,26 +2349,27 @@ void handle_mouse_input() {
 void handle_movement(double dt) {
     static float dy = 0;
     State *s = &g->players->state;
-    int sz = 0;
-    int sx = 0;
+    float sz = 0;
+    float sx = 0;
     if (!g->typing) {
-        float m = dt * 1.0;
+        float m1 = dt * view_speed_left_right;
+        float m2 = dt * view_speed_up_down;
 
         // View distance
         g->ortho = ortho_is_pressed ? 64 : 0;
         g->fov = zoom_is_pressed ? 15 : 65;
 
         // Walking
-        if (forward_is_pressed) sz--;
-        if (back_is_pressed) sz++;
-        if (left_is_pressed) sx--;
-        if (right_is_pressed) sx++;
+        if (forward_is_pressed) sz = -movement_speed_forward_back;
+        if (back_is_pressed) sz = movement_speed_forward_back;
+        if (left_is_pressed) sx = -movement_speed_left_right;
+        if (right_is_pressed) sx = movement_speed_left_right;
 
         // View direction
-        if (view_left_is_pressed) s->rx -= m;
-        if (view_right_is_pressed) s->rx += m;
-        if (view_up_is_pressed) s->ry += m;
-        if (view_down_is_pressed) s->ry -= m;
+        if (view_left_is_pressed) s->rx -= m1;
+        if (view_right_is_pressed) s->rx += m1;
+        if (view_up_is_pressed) s->ry += m2;
+        if (view_down_is_pressed) s->ry -= m2;
     }
     float vx, vy, vz;
     get_motion_vector(g->flying, sz, sx, s->rx, s->ry, &vx, &vy, &vz);
@@ -2574,12 +2645,16 @@ void handle_key_press(unsigned char c, int mods, int keysym)
     if (!g->typing) {
         if (c == CRAFT_KEY_FORWARD) {
             forward_is_pressed = 1;
+            movement_speed_forward_back = 1;
         } else if (c == CRAFT_KEY_BACKWARD) {
             back_is_pressed = 1;
+            movement_speed_forward_back = 1;
         } else if (c == CRAFT_KEY_LEFT) {
             left_is_pressed = 1;
+            movement_speed_left_right = 1;
         } else if (c == CRAFT_KEY_RIGHT) {
             right_is_pressed = 1;
+            movement_speed_left_right = 1;
         } else if (keysym == XK_Escape) {
             terminate = True;
         } else if (keysym == XK_F1) {
@@ -2588,12 +2663,16 @@ void handle_key_press(unsigned char c, int mods, int keysym)
             set_mouse_relative();
         } else if (keysym == XK_Up) {
             view_up_is_pressed = 1;
+            view_speed_up_down = 1;
         } else if (keysym == XK_Down) {
             view_down_is_pressed = 1;
+            view_speed_up_down = 1;
         } else if (keysym == XK_Left) {
             view_left_is_pressed = 1;
+            view_speed_left_right = 1;
         } else if (keysym == XK_Right) {
             view_right_is_pressed = 1;
+            view_speed_left_right = 1;
         } else if (c == ' ') {
             jump_is_pressed = 1;
         } else if (c == 'c') {
@@ -2800,6 +2879,162 @@ void reset_history()
     g->typing_history[SIGN_HISTORY].line_start = 1;
 }
 
+void handle_joystick_axis(PG_Joystick *j, int j_num, int axis, float value)
+{
+    Player *p = g->players;
+
+    if (j->axis_count < 4) {
+        if (axis == 0) {
+            left_is_pressed = (value < 0) ? 1 : 0;
+            right_is_pressed = (value > 0) ? 1 : 0;
+            movement_speed_left_right = fabs(value);
+        } else if (axis == 1) {
+            forward_is_pressed = (value < 0) ? 1 : 0;
+            back_is_pressed = (value > 0) ? 1 : 0;
+            movement_speed_forward_back = fabs(value);
+        }
+    } else {
+        if (axis == 0) {
+            movement_speed_left_right = fabs(value) * 2.0;
+            left_is_pressed = (value < -DEADZONE);
+            right_is_pressed = (value > DEADZONE);
+        } else if (axis == 1) {
+            movement_speed_forward_back = fabs(value) * 2.0;
+            forward_is_pressed = (value < -DEADZONE);
+            back_is_pressed = (value > DEADZONE);
+        } else if (axis == 2) {
+            view_speed_up_down = fabs(value) * 2.0;
+            view_up_is_pressed = (value < -DEADZONE);
+            view_down_is_pressed = (value > DEADZONE);
+        } else if (axis == 3) {
+            view_speed_left_right = fabs(value) * 2.0;
+            view_left_is_pressed = (value < -DEADZONE);
+            view_right_is_pressed = (value > DEADZONE);
+        } else if (axis == 4) {
+            movement_speed_left_right = fabs(value);
+            left_is_pressed = (value < 0) ? 1 : 0;
+            right_is_pressed = (value > 0) ? 1 : 0;
+        } else if (axis == 5) {
+            movement_speed_forward_back = fabs(value);
+            forward_is_pressed = (value < 0) ? 1 : 0;
+            back_is_pressed = (value > 0) ? 1 : 0;
+        }
+    }
+}
+
+void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
+{
+    Player *p = g->players;
+
+    if (j->axis_count < 4) {
+        if (button == 0) {
+            view_up_is_pressed = state;
+            view_speed_up_down = 1;
+        } else if (button == 2) {
+            view_down_is_pressed = state;
+            view_speed_up_down = 1;
+        } else if (button == 3) {
+            view_left_is_pressed = state;
+            view_speed_left_right = 1;
+        } else if (button == 1) {
+            view_right_is_pressed = state;
+            view_speed_left_right = 1;
+        } else if (button == 5) {
+            switch (shoulder_button_mode) {
+                case CROUCH_JUMP:
+                    jump_is_pressed = state;
+                    break;
+                case REMOVE_ADD:
+                    if (state) {
+                        set_block_under_crosshair(p);
+                    }
+                    break;
+                case CYCLE_DOWN_UP:
+                    if (state) {
+                        cycle_item_in_hand_up(p);
+                    }
+                    break;
+                case FLY_PICK:
+                    if (state) {
+                        set_item_in_hand_to_item_under_crosshair(p);
+                    }
+                    break;
+                case ZOOM_ORTHO:
+                    ortho_is_pressed = state;
+                    break;
+            }
+        } else if (button == 4) {
+           switch (shoulder_button_mode) {
+                case CROUCH_JUMP:
+                    crouch_is_pressed = state;
+                    break;
+                case REMOVE_ADD:
+                    if (state) {
+                        clear_block_under_crosshair(p);
+                    }
+                    break;
+                case CYCLE_DOWN_UP:
+                    if (state) {
+                        cycle_item_in_hand_down(p);
+                    }
+                    break;
+                case FLY_PICK:
+                    if (state) {
+                        g->flying = !g->flying;
+                    }
+                    break;
+                case ZOOM_ORTHO:
+                    zoom_is_pressed = state;
+                    break;
+            }
+        } else if (button == 8) {
+            if (state) {
+                shoulder_button_mode += 1;
+                shoulder_button_mode %= SHOULDER_BUTTON_MODE_COUNT;
+                add_message(shoulder_button_modes[shoulder_button_mode]);
+            }
+        }
+    } else {
+        if (button == 0) {
+            if (state) {
+                cycle_item_in_hand_up(p);
+            }
+        } else if (button == 2) {
+            if (state) {
+                cycle_item_in_hand_down(p);
+            }
+        } else if (button == 3) {
+            if (state) {
+                set_item_in_hand_to_item_under_crosshair(p);
+            }
+        } else if (button == 1) {
+            if (state) {
+                g->flying = !g->flying;
+            }
+        } else if (button == 5) {
+            if (state) {
+                clear_block_under_crosshair(p);
+            }
+        } else if (button == 4) {
+            crouch_is_pressed = state;
+        } else if (button == 6) {
+            jump_is_pressed = state;
+        } else if (button == 7) {
+            if (state) {
+                set_block_under_crosshair(p);
+            }
+        } else if (button == 8) {
+            zoom_is_pressed = state;
+        } else if (button == 9) {
+            ortho_is_pressed = state;
+        } else if (button == 10) {
+            ortho_is_pressed = state;
+        } else if (button == 11) {
+            zoom_is_pressed = state;
+        }
+    }
+}
+
 int main(int argc, char **argv) {
     // INITIALIZATION //
     srand(time(NULL));
@@ -2825,6 +3060,10 @@ int main(int argc, char **argv) {
     if (config->verbose) {
         pg_print_info();
     }
+    pg_init_joysticks();
+
+    pg_set_joystick_button_handler(*handle_joystick_button);
+    pg_set_joystick_axis_handler(*handle_joystick_axis);
 
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
@@ -3015,6 +3254,9 @@ int main(int argc, char **argv) {
 
             // HANDLE MOVEMENT //
             handle_movement(dt);
+
+            // HANDLE JOYSTICK INPUT //
+            pg_poll_joystick_events();
 
             // HANDLE DATA FROM SERVER //
             char *buffer = client_recv();
@@ -3217,6 +3459,7 @@ int main(int argc, char **argv) {
         delete_all_players();
     }
 
+    pg_terminate_joysticks();
     pg_end();
     return 0;
 }
