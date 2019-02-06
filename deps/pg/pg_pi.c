@@ -9,6 +9,7 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 static PI_STATE_T _pi_state, *pi_state=&_pi_state;
+static EGL_DISPMANX_WINDOW_T nativewindow;
 
 void _open_x11_window(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                       char *title);
@@ -32,7 +33,6 @@ EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
                                       char *title)
 {
     int32_t success = 0;
-    static EGL_DISPMANX_WINDOW_T nativewindow;
     int x11_x, x11_y;
 
     x11_x = *x - RASPBIAN_X11_WINDOW_OFFSET_X;
@@ -166,35 +166,39 @@ int pg_get_gpu_mem_size()
     return gpu_mem;
 }
 
-void pi_set_window_position(int x, int y)
+void pi_set_window_geometry(int *x, int *y, int *w, int *h)
 {
     int wx;
     int wy;
-    uint32_t width, height;
     DISPMANX_UPDATE_HANDLE_T dispman_update;
+    VC_RECT_T src_rect;
     int failure;
     Screen *screen;
 
     // Account for screen offset
     screen = DefaultScreenOfDisplay(pi_state->x11_display);
-    x += (pi_state->screen_w - WidthOfScreen(screen)) / 2;
-    y += (pi_state->screen_h - HeightOfScreen(screen)) / 2;
-
-    width = pi_state->dst_rect.width;
-    height = pi_state->dst_rect.height;
+    *x += (pi_state->screen_w - WidthOfScreen(screen)) / 2;
+    *y += (pi_state->screen_h - HeightOfScreen(screen)) / 2;
 
     // Keep the ES2 window on-screen - brcmGLES does not like going off-screen
-    x = MAX(0, x);
-    y = MAX(0, y);
-    wx = (x + width > pi_state->screen_w) ? pi_state->screen_w - width : x;
-    wy = (y + height > pi_state->screen_h) ? pi_state->screen_h - height : y;
+    *w = MIN(*w, pi_state->screen_w);
+    *h = MIN(*h, pi_state->screen_h);
+    *x = MAX(0, *x);
+    *y = MAX(0, *y);
+    *x = (*x + *w > pi_state->screen_w) ? pi_state->screen_w - *w : *x;
+    *y = (*y + *h > pi_state->screen_h) ? pi_state->screen_h - *h : *y;
 
-    vc_dispmanx_rect_set(&pi_state->dst_rect, wx, wy, width, height);
+    vc_dispmanx_rect_set(&src_rect, 0, 0, *w << 16, *h << 16);
+    vc_dispmanx_rect_set(&pi_state->dst_rect, *x, *y, *w, *h);
+
     dispman_update = vc_dispmanx_update_start(0);
     failure = vc_dispmanx_element_change_attributes(dispman_update,
-        pi_state->dispman_element, 0, 0, 0, &pi_state->dst_rect, 0, 0,
+        pi_state->dispman_element, 0, 0, 0, &pi_state->dst_rect, &src_rect, 0,
         DISPMANX_NO_ROTATE);
     vc_dispmanx_update_submit_sync(dispman_update);
+
+    nativewindow.width = *w;
+    nativewindow.height = *h;
 }
 
 #endif

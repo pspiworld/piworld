@@ -132,26 +132,21 @@ void pg_swap_interval(int interval)
     eglSwapInterval(pg_state->display, interval);
 }
 
-void pg_window_moved(int x, int y)
-{
-    #ifndef MESA
-    // Call extra setup function for brcm driver
-    pi_set_window_position(x, y);
-    #endif
-}
-
 void pg_get_window_size(int *width, int *height)
 {
     *width = pg_state->window_width;
     *height = pg_state->window_height;
 }
 
-void pg_window_resized(int width, int height)
+void pg_set_window_geometry(int x, int y, int width, int height)
 {
-    #ifdef MESA
-    // Window resizing not supported under brcm driver yet
+    #ifndef MESA
+    // Call extra setup function for brcm driver
+    pi_set_window_geometry(&x, &y, &width, &height);
+    #endif
+    pg_state->window_x = x;
+    pg_state->window_y = y;
     pg_state->window_width = width;
     pg_state->window_height = height;
-    #endif
 }
 

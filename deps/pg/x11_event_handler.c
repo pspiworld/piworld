@@ -123,14 +123,14 @@ void pg_next_event()
                 !event.xconfigure.above) {
                 x11_event_state->x = event.xconfigure.x;
                 x11_event_state->y = event.xconfigure.y;
-                pg_window_moved(x11_event_state->x, x11_event_state->y);
             }
             if (event.xconfigure.width != x11_event_state->width ||
                 event.xconfigure.height != x11_event_state->height) {
                 x11_event_state->width = event.xconfigure.width;
                 x11_event_state->height = event.xconfigure.height;
-                pg_window_resized(x11_event_state->width, x11_event_state->height);
             }
+            pg_set_window_geometry(x11_event_state->x, x11_event_state->y,
+                x11_event_state->width, x11_event_state->height);
             if (relative_mouse_in_use()) {
                 // Reset mouse cursor as window manager may of changed it when
                 // moving the window.
