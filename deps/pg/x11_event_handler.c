@@ -33,6 +33,10 @@
 #include "pg.h"
 #include "x11_event_handler.h"
 
+#define _NET_WM_STATE_REMOVE  0    /* remove/unset property */
+#define _NET_WM_STATE_ADD     1    /* add/set property */
+#define _NET_WM_STATE_TOGGLE  2    /* toggle property  */
+
 static X11_EVENT_STATE_T _x11_event_state, *x11_event_state=&_x11_event_state;
 KeyPressHandler _key_press_handler;
 KeyReleaseHandler _key_release_handler;
@@ -352,6 +356,40 @@ void pg_resize_window(int width, int height)
 void pg_set_window_title(char *title)
 {
     XStoreName(x11_event_state->display, x11_event_state->window, title);
+}
+
+void pg_toggle_fullscreen()
+{
+    pg_fullscreen(!x11_event_state->fullscreen);
+}
+
+void pg_fullscreen(int fullscreen)
+{
+    XEvent event;
+    Atom   state_atom;
+    Atom   fs_atom;
+    Window root;
+
+    x11_event_state->fullscreen = fullscreen;
+    state_atom = XInternAtom(x11_event_state->display,
+                             "_NET_WM_STATE", False);
+    fs_atom    = XInternAtom(x11_event_state->display,
+                             "_NET_WM_STATE_FULLSCREEN", False);
+
+    event.xclient.type          = ClientMessage;
+    event.xclient.serial        = 0;
+    event.xclient.send_event    = True;
+    event.xclient.window        = x11_event_state->window;
+    event.xclient.message_type  = state_atom;
+    event.xclient.format        = 32;
+    event.xclient.data.l[0]     = fullscreen ? _NET_WM_STATE_ADD :
+                                               _NET_WM_STATE_REMOVE;
+    event.xclient.data.l[1]     = fs_atom;
+    event.xclient.data.l[2]     = 0;
+
+    root = XDefaultRootWindow(x11_event_state->display);
+    XSendEvent(x11_event_state->display, root, False,
+               SubstructureRedirectMask | SubstructureNotifyMask, &event);
 }
 
 void _pg_fatal(char *format, ...)

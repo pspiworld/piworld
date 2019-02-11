@@ -2070,7 +2070,10 @@ void parse_command(const char *buffer, int forward) {
     char filename[MAX_PATH_LENGTH];
     int int_option, radius, count, xc, yc, zc;
     char window_title[MAX_TITLE_LENGTH];
-    if (sscanf(buffer,
+    if (strcmp(buffer, "/fullscreen") == 0) {
+        pg_toggle_fullscreen();
+    }
+    else if (sscanf(buffer,
         "/online %128s %d", server_addr, &server_port) >= 1)
     {
         g->mode_changed = 1;
@@ -2661,6 +2664,8 @@ void handle_key_press(unsigned char c, int mods, int keysym)
             set_mouse_absolute();
         } else if (keysym == XK_F2) {
             set_mouse_relative();
+        } else if (keysym == XK_F11) {
+            pg_toggle_fullscreen();
         } else if (keysym == XK_Up) {
             view_up_is_pressed = 1;
             view_speed_up_down = 1;
@@ -2865,6 +2870,7 @@ void handle_focus_out() {
     view_down_is_pressed = 0;
     ortho_is_pressed = 0;
     zoom_is_pressed = 0;
+    pg_fullscreen(0);
 }
 
 void reset_history()
@@ -3061,6 +3067,9 @@ int main(int argc, char **argv) {
         pg_print_info();
     }
     pg_init_joysticks();
+    if (config->fullscreen) {
+        pg_fullscreen(1);
+    }
 
     pg_set_joystick_button_handler(*handle_joystick_button);
     pg_set_joystick_axis_handler(*handle_joystick_axis);

@@ -17,6 +17,7 @@ Config *config = &_config;
 void reset_config() {
     get_config_path(config->path);
     get_default_db_path(config->db_path);
+    config->fullscreen = FULLSCREEN;
     config->port = DEFAULT_PORT;
     config->server[0] = '\0';
     config->show_chat_text = SHOW_CHAT_TEXT;
@@ -93,6 +94,7 @@ void parse_startup_config(int argc, char **argv) {
     while (1) {
         int option_index = 0;
         static struct option long_options[] = {
+            {"fullscreen",        no_argument,       0,  0 },
             {"port",              required_argument, 0,  0 },
             {"server",            required_argument, 0,  0 },
             {"show-chat-text",    required_argument, 0,  0 },
@@ -122,7 +124,9 @@ void parse_startup_config(int argc, char **argv) {
         switch (c) {
         case 0:
             opt_name = long_options[option_index].name;
-            if (strncmp(opt_name, "port", 4) == 0 &&
+            if (strncmp(opt_name, "fullscreen", 10) == 0) {
+                 config->fullscreen = 1;
+            } else if (strncmp(opt_name, "port", 4) == 0 &&
                 sscanf(optarg, "%d", &config->port) == 1) {
             } else if (strncmp(opt_name, "show-chat-text", 15) == 0 &&
                        sscanf(optarg, "%d", &config->show_chat_text) == 1) {

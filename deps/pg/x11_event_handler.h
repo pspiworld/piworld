@@ -27,6 +27,7 @@ typedef struct
     Atom WM_DELETE_WINDOW;
     int width, height;
     int x, y;
+    int fullscreen;
 } X11_EVENT_STATE_T;
 
 void x11_event_init(Display *display, Window window, int x, int y, int w, int h);
@@ -55,6 +56,8 @@ void get_x11_accumulative_mouse_motion(int *x, int *y);
 void pg_move_window(int x, int y);
 void pg_resize_window(int width, int height);
 void pg_set_window_title(char *title);
+void pg_fullscreen(int fullscreen);
+void pg_toggle_fullscreen();
 
 void _pg_fatal(char *format, ...);
 
