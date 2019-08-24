@@ -24,6 +24,8 @@ CHUNK_SIZE = 16
 BUFFER_SIZE = 4096
 COMMIT_INTERVAL = 5
 
+MAX_LOCAL_PLAYERS = 4
+
 AUTH_REQUIRED = False
 
 DAY_LENGTH = 600
@@ -37,16 +39,21 @@ ALLOWED_ITEMS = set([
     32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
     48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63])
 
+ADD = 'F'
 AUTHENTICATE = 'A'
 BLOCK = 'B'
 CHUNK = 'C'
 DISCONNECT = 'D'
+GOTO = 'G'
 KEY = 'K'
 LIGHT = 'L'
 NICK = 'N'
 POSITION = 'P'
+PQ = 'Q'
 REDRAW = 'R'
+REMOVE = 'X'
 SIGN = 'S'
+SPAWN = 'W'
 TALK = 'T'
 TIME = 'E'
 VERSION = 'V'
@@ -95,6 +102,13 @@ class Server(SocketServer.ThreadingMixIn, SocketServer.TCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
+class Player:
+    def __init__(self, nick, position, pid):
+        self.pid = pid
+        self.nick = nick
+        self.position = position
+        self.is_active = False
+
 class Handler(SocketServer.BaseRequestHandler):
     def setup(self):
         self.position_limiter = RateLimiter(100, 5)
@@ -102,9 +116,9 @@ class Handler(SocketServer.BaseRequestHandler):
         self.version = None
         self.client_id = None
         self.user_id = None
-        self.nick = None
         self.queue = Queue.Queue()
         self.running = True
+        self.players = []
         self.start()
     def handle(self):
         model = self.server.model
@@ -166,6 +180,8 @@ class Handler(SocketServer.BaseRequestHandler):
             self.queue.put(data)
     def send(self, *args):
         self.send_raw(packet(*args))
+    def active_players(self):
+        return [x for x in self.players if x.is_active]
 
 class Model(object):
     def __init__(self, seed):
@@ -173,20 +189,22 @@ class Model(object):
         self.clients = []
         self.queue = Queue.Queue()
         self.commands = {
+            ADD: self.on_add,
             AUTHENTICATE: self.on_authenticate,
             CHUNK: self.on_chunk,
             BLOCK: self.on_block,
+            GOTO: self.on_goto,
             LIGHT: self.on_light,
+            NICK: self.on_nick,
             POSITION: self.on_position,
+            PQ: self.on_pq,
+            REMOVE: self.on_remove,
             TALK: self.on_talk,
             SIGN: self.on_sign,
+            SPAWN: self.on_spawn,
             VERSION: self.on_version,
         }
         self.patterns = [
-            (re.compile(r'^/nick(?:\s+([^,\s]+))?$'), self.on_nick),
-            (re.compile(r'^/spawn$'), self.on_spawn),
-            (re.compile(r'^/goto(?:\s+(\S+))?$'), self.on_goto),
-            (re.compile(r'^/pq\s+(-?[0-9]+)\s*,?\s*(-?[0-9]+)$'), self.on_pq),
             (re.compile(r'^/help(?:\s+(\S+))?$'), self.on_help),
             (re.compile(r'^/list$'), self.on_list),
         ]
@@ -292,17 +310,20 @@ class Model(object):
         return result
     def on_connect(self, client):
         client.client_id = self.next_client_id()
-        client.nick = 'guest%d' % client.client_id
         log('CONN', client.client_id, *client.client_address)
-        client.position = SPAWN_POINT
+        client.players = []
         self.clients.append(client)
-        client.send(YOU, client.client_id, *client.position)
         client.send(TIME, time.time(), DAY_LENGTH)
         client.send(TALK, 'Welcome to PiWorld!')
         client.send(TALK, 'Type "/help" for a list of commands.')
-        self.send_position(client)
-        self.send_positions(client)
-        self.send_nick(client)
+        for i in range(MAX_LOCAL_PLAYERS):
+            p = i + 1
+            player = Player('guest%d-%d' % (client.client_id, p), SPAWN_POINT, p)
+            client.players.append(player)
+            client.send(YOU, client.client_id, p, *client.players[i].position)
+            self.send_nick(client, p)
+        for i in range(MAX_LOCAL_PLAYERS):
+            self.send_positions(client, i + 1)
         self.send_nicks(client)
     def on_data(self, client, data):
         #log('RECV', client.client_id, data)
@@ -315,13 +336,14 @@ class Model(object):
         log('DISC', client.client_id, *client.client_address)
         self.clients.remove(client)
         self.send_disconnect(client)
-        self.send_talk('%s has disconnected from the server.' % client.nick)
+        self.send_talk('%s has disconnected from the server.' % client.players[0].nick)
     def on_version(self, client, version):
         if client.version is not None:
             return
         version = int(version)
-        if version != 1:
+        if version != 2:
             client.stop()
+            print("Unmatched client version:", version)
             return
         client.version = version
         # TODO: client.start() here
@@ -340,9 +362,9 @@ class Model(object):
             client.nick = 'guest%d' % client.client_id
         else:
             client.nick = username
-        self.send_nick(client)
+        self.send_nick(client, 1)
         # TODO: has left message if was already authenticated
-        self.send_talk('%s has joined the game.' % client.nick)
+        self.send_talk('%s has joined the game.' % client.players[0].nick)
     def on_chunk(self, client, p, q, key=0):
         packets = []
         p, q, key = map(int, (p, q, key))
@@ -487,10 +509,19 @@ class Model(object):
             )
             self.execute(query, dict(x=x, y=y, z=z, face=face))
         self.send_sign(client, p, q, x, y, z, face, text)
-    def on_position(self, client, x, y, z, rx, ry):
+    def on_position(self, client, player, x, y, z, rx, ry):
+        player = int(player)
         x, y, z, rx, ry = map(float, (x, y, z, rx, ry))
-        client.position = (x, y, z, rx, ry)
-        self.send_position(client)
+        client.players[player - 1].position = (x, y, z, rx, ry)
+        self.send_position(client, player)
+    def on_add(self, client, player):
+        player = int(player)
+        client.players[player - 1].is_active = True
+        self.send_add(client, player)
+    def on_remove(self, client, player):
+        player = int(player)
+        client.players[player - 1].is_active = False
+        self.send_remove(client, player)
     def on_talk(self, client, *args):
         text = ','.join(args)
         if text.startswith('/'):
@@ -512,38 +543,50 @@ class Model(object):
                 client.send(TALK, 'Unrecognized nick: "%s"' % nick)
         else:
             self.send_talk('%s> %s' % (client.nick, text))
-    def on_nick(self, client, nick=None):
+    def on_nick(self, client, player, nick=None):
+        player = int(player)
         if AUTH_REQUIRED:
             client.send(TALK, 'You cannot change your nick on this server.')
             return
         if nick is None:
-            client.send(TALK, 'Your nickname is %s' % client.nick)
+            client.send(TALK, 'Your nickname is %s' % client.players[player - 1].nick)
         else:
-            self.send_talk('%s is now known as %s' % (client.nick, nick))
-            client.nick = nick
-            self.send_nick(client)
-    def on_spawn(self, client):
-        client.position = SPAWN_POINT
-        client.send(YOU, client.client_id, *client.position)
-        self.send_position(client)
-    def on_goto(self, client, nick=None):
-        if nick is None:
-            clients = [x for x in self.clients if x != client]
+            self.send_talk('%s is now known as %s' % (client.players[player - 1].nick, nick))
+            client.players[player - 1].nick = nick
+            self.send_nick(client, player)
+    def on_spawn(self, client, player):
+        player = int(player)
+        client.players[player - 1].position = SPAWN_POINT
+        client.send(YOU, client.client_id, player, *client.players[player - 1].position)
+        self.send_position(client, player)
+    def on_goto(self, client, player, nick=None):
+        player = int(player)
+        if nick in (None, ""):
+            clients = [x for x in self.clients if (x != client and len(client.active_players()) > 0)]
+            if len(client.active_players()) > 1:
+                # Include own client if > 1 active players
+                clients.append(client)
             other = random.choice(clients) if clients else None
+            active_players = other.active_players()
+            other_player = random.choice(active_players) if active_players else None
         else:
-            nicks = dict((client.nick, client) for client in self.clients)
-            other = nicks.get(nick)
-        if other:
-            client.position = other.position
-            client.send(YOU, client.client_id, *client.position)
-            self.send_position(client)
-    def on_pq(self, client, p, q):
+            nicks = {}
+            for client in self.clients:
+                nicks.update(dict((player.nick, (client, player)) for player in client.players))
+            other = nicks.get(nick)[0]
+            other_player = nicks.get(nick)[1]
+        if other and other_player:
+            client.players[player - 1].position = other_player.position
+            client.send(YOU, client.client_id, player, *client.players[player - 1].position)
+            self.send_position(client, player)
+    def on_pq(self, client, player, p, q):
+        player = int(player)
         p, q = map(int, (p, q))
         if abs(p) > 1000 or abs(q) > 1000:
             return
-        client.position = (p * CHUNK_SIZE, 0, q * CHUNK_SIZE, 0, 0)
-        client.send(YOU, client.client_id, *client.position)
-        self.send_position(client)
+        client.players[player - 1].position = (p * CHUNK_SIZE, 0, q * CHUNK_SIZE, 0, 0)
+        client.send(YOU, client.client_id, player, *client.players[player - 1].position)
+        self.send_position(client, player)
     def on_help(self, client, topic=None):
         if topic is None:
             client.send(TALK, 'Type "t" to chat. Type "/" to type commands:')
@@ -586,26 +629,46 @@ class Model(object):
             client.send(TALK, 'Help: /view N')
             client.send(TALK, 'Set viewing distance, 1 - 24.')
     def on_list(self, client):
-        client.send(TALK,
-            'Players: %s' % ', '.join(x.nick for x in self.clients))
-    def send_positions(self, client):
+        players = []
+        for c in self.clients:
+            players.extend(x.nick for x in c.active_players())
+        client.send(TALK, 'Players: %s' % ', '.join(players))
+    def send_positions(self, client, player):
+        for other in self.clients:
+            other_player = other.players[player - 1]
+            if other == client or not(other_player.is_active):
+                continue
+            client.send(POSITION, other.client_id, player, *other_player.position)
+    def send_position(self, client, player):
         for other in self.clients:
             if other == client:
                 continue
-            client.send(POSITION, other.client_id, *other.position)
-    def send_position(self, client):
+            other.send(POSITION, client.client_id, player, *client.players[player - 1].position)
+    def send_add(self, client, player):
         for other in self.clients:
             if other == client:
                 continue
-            other.send(POSITION, client.client_id, *client.position)
+            other.send(ADD, client.client_id, player)
+        self.send_position(client, player)
+        self.send_positions(client, player)
+        for i in range(MAX_LOCAL_PLAYERS):
+            self.send_nick(client, i + 1)
+        self.send_nicks(client)
+    def send_remove(self, client, player):
+        for other in self.clients:
+            if other == client:
+                continue
+            other.send(REMOVE, client.client_id, player)
     def send_nicks(self, client):
         for other in self.clients:
             if other == client:
                 continue
-            client.send(NICK, other.client_id, other.nick)
-    def send_nick(self, client):
+            for i in range(MAX_LOCAL_PLAYERS):
+                client.send(NICK, other.client_id, i+1, other.players[i].nick)
+    def send_nick(self, client, player_index):
         for other in self.clients:
-            other.send(NICK, client.client_id, client.nick)
+            other.send(NICK, client.client_id, player_index,
+                       client.players[player_index - 1].nick)
     def send_disconnect(self, client):
         for other in self.clients:
             if other == client:

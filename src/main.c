@@ -24,7 +24,8 @@
 #include "x11_event_handler.h"
 
 #define MAX_CHUNKS 8192
-#define MAX_PLAYERS 128
+#define MAX_CLIENTS 128
+#define MAX_LOCAL_PLAYERS 4
 #define WORKERS 1
 #define MAX_TEXT_LENGTH 256
 #define MAX_NAME_LENGTH 32
@@ -67,24 +68,6 @@ const float GREEN[4] = {0.0, 1.0, 0.0, 1.0};
 const float BLACK[4] = {0.0, 0.0, 0.0, 1.0};
 
 static int terminate;
-
-int forward_is_pressed;
-int back_is_pressed;
-int left_is_pressed;
-int right_is_pressed;
-int jump_is_pressed;
-int crouch_is_pressed;
-int view_left_is_pressed;
-int view_right_is_pressed;
-int view_up_is_pressed;
-int view_down_is_pressed;
-int ortho_is_pressed;
-int zoom_is_pressed;
-float view_speed_left_right;
-float view_speed_up_down;
-float movement_speed_left_right;
-float movement_speed_forward_back;
-int shoulder_button_mode;
 
 typedef struct {
     Map map;
@@ -139,14 +122,62 @@ typedef struct {
     float t;
 } State;
 
-typedef struct {
-    int id;
+typedef struct Player {
     char name[MAX_NAME_LENGTH];
+    int id;  // 1...MAX_LOCAL_PLAYERS
     State state;
     State state1;
     State state2;
     GLuint buffer;
+    int texture_index;
+    int is_active;
 } Player;
+
+typedef struct {
+    int id;
+    Player players[MAX_LOCAL_PLAYERS];
+} Client;
+
+typedef struct {
+    Player *player;
+    int item_index;
+    int flying;
+    float dy;
+    int typing;
+
+    int view_x;
+    int view_y;
+    int view_width;
+    int view_height;
+
+    int forward_is_pressed;
+    int back_is_pressed;
+    int left_is_pressed;
+    int right_is_pressed;
+    int jump_is_pressed;
+    int crouch_is_pressed;
+    int view_left_is_pressed;
+    int view_right_is_pressed;
+    int view_up_is_pressed;
+    int view_down_is_pressed;
+    int ortho_is_pressed;
+    int zoom_is_pressed;
+    float view_speed_left_right;
+    float view_speed_up_down;
+    float movement_speed_left_right;
+    float movement_speed_forward_back;
+    int shoulder_button_mode;
+
+    Block block0;
+    Block block1;
+    Block copy0;
+    Block copy1;
+
+    int observe1;
+    int observe1_client_id;
+    int observe2;
+    int observe2_client_id;
+} LocalPlayer;
 
 typedef struct {
     GLuint program;
@@ -178,9 +209,11 @@ typedef struct {
     int render_radius;
     int delete_radius;
     int sign_radius;
-    Player players[MAX_PLAYERS];
-    int player_count;
-    int typing;
+    Client clients[MAX_CLIENTS];
+    LocalPlayer local_players[MAX_LOCAL_PLAYERS];
+    LocalPlayer *keyboard_player;
+    LocalPlayer *mouse_player;
+    int client_count;
     char typing_buffer[MAX_TEXT_LENGTH];
     TextLineHistory typing_history[NUM_HISTORIES];
     int history_position;
@@ -190,10 +223,6 @@ typedef struct {
     char messages[MAX_MESSAGES][MAX_TEXT_LENGTH];
     int width;
     int height;
-    int observe1;
-    int observe2;
-    int flying;
-    int item_index;
     float scale;
     int ortho;
     float fov;
@@ -203,14 +232,77 @@ typedef struct {
     char db_path[MAX_PATH_LENGTH];
     int day_length;
     int time_changed;
-    Block block0;
-    Block block1;
-    Block copy0;
-    Block copy1;
+    int auto_match_players_to_joysticks;
 } Model;
 
 static Model model;
 static Model *g = &model;
+
+void move_primary_focus_to_active_player(void);
+void set_players_view_size(int w, int h);
+Client *find_client(int id);
+
+void set_player_count(Client *client, int count)
+{
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        Player *player = client->players + i;
+        if (i < count) {
+            player->is_active = 1;
+        } else {
+            player->is_active = 0;
+        }
+    }
+}
+
+int get_first_active_player(Client *client) {
+    int first_active_player = 0;
+    for (int i=0; i<MAX_LOCAL_PLAYERS-1; i++) {
+        Player *player = &client->players[i];
+        if (player->is_active) {
+            first_active_player = i;
+            break;
+        }
+    }
+    return first_active_player;
+}
+
+int get_next_local_player(Client *client, int start)
+{
+    int next = get_first_active_player(client);
+
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        Player *player = &client->players[i];
+        if (i > start && player->is_active) {
+            next = i;
+            break;
+        }
+    }
+    return next;
+}
+
+int get_next_player(int *player_index, int *client_id)
+{
+    Client *client = find_client(*client_id);
+    if (!client) {
+        client = g->clients;
+        *client_id = client->id;
+        *player_index = 1;
+    }
+    int next = get_next_local_player(client, *player_index);
+    if (next <= *player_index) {
+        *client_id = (*client_id + 1) % (g->client_count + 1);
+        if (*client_id == 0) {
+            *client_id = 1;
+        }
+        client = find_client(*client_id);
+        if (!client) {
+            client = g->clients;
+            *client_id = client->id;
+        }
+        next = get_first_active_player(client);
+    }
+    *player_index = next;
+}
 
 int chunked(float x) {
     return floorf(roundf(x) / CHUNK_SIZE);
@@ -324,9 +416,9 @@ GLuint gen_plant_buffer(float x, float y, float z, float n, int w) {
     return gen_faces(10, 4, data);
 }
 
-GLuint gen_player_buffer(float x, float y, float z, float rx, float ry) {
+GLuint gen_player_buffer(float x, float y, float z, float rx, float ry, int p) {
     GLfloat *data = malloc_faces(10, 6);
-    make_player(data, x, y, z, rx, ry);
+    make_player(data, x, y, z, rx, ry, p);
     return gen_faces(10, 6, data);
 }
 
@@ -451,11 +543,11 @@ void draw_player(Attrib *attrib, Player *player) {
     draw_cube(attrib, player->buffer);
 }
 
-Player *find_player(int id) {
-    for (int i = 0; i < g->player_count; i++) {
-        Player *player = g->players + i;
-        if (player->id == id) {
-            return player;
+Client *find_client(int id) {
+    for (int i = 0; i < g->client_count; i++) {
+        Client *client = g->clients + i;
+        if (client->id == id) {
+            return client;
         }
     }
     return 0;
@@ -481,7 +573,8 @@ void update_player(Player *player,
         State *s = &player->state;
         s->x = x; s->y = y; s->z = z; s->rx = rx; s->ry = ry;
         del_buffer(player->buffer);
-        player->buffer = gen_player_buffer(s->x, s->y, s->z, s->rx, s->ry);
+        player->buffer = gen_player_buffer(s->x, s->y, s->z, s->rx, s->ry,
+                                           player->texture_index);
     }
 }
 
@@ -503,24 +596,34 @@ void interpolate_player(Player *player) {
         0);
 }
 
-void delete_player(int id) {
-    Player *player = find_player(id);
-    if (!player) {
+void delete_client(int id) {
+    Client *client = find_client(id);
+    if (!client) {
         return;
     }
-    int count = g->player_count;
-    del_buffer(player->buffer);
-    Player *other = g->players + (--count);
-    memcpy(player, other, sizeof(Player));
-    g->player_count = count;
+    int count = g->client_count;
+    for (int i = 0; i<MAX_LOCAL_PLAYERS; i++) {
+        Player *player = client->players + i;
+        if (player->is_active) {
+            del_buffer(player->buffer);
+        }
+    }
+    Client *other = g->clients + (--count);
+    memcpy(client, other, sizeof(Client));
+    g->client_count = count;
 }
 
 void delete_all_players() {
-    for (int i = 0; i < g->player_count; i++) {
-        Player *player = g->players + i;
-        del_buffer(player->buffer);
+    for (int i = 0; i < g->client_count; i++) {
+        Client *client = g->clients + i;
+        for (int j = 0; j < MAX_LOCAL_PLAYERS; j++) {
+            Player *player = client->players + j;
+            if (player->is_active) {
+                del_buffer(player->buffer);
+            }
+        }
     }
-    g->player_count = 0;
+    g->client_count = 0;
 }
 
 float player_player_distance(Player *p1, Player *p2) {
@@ -551,17 +654,20 @@ Player *player_crosshair(Player *player) {
     Player *result = 0;
     float threshold = RADIANS(5);
     float best = 0;
-    for (int i = 0; i < g->player_count; i++) {
-        Player *other = g->players + i;
-        if (other == player) {
-            continue;
-        }
-        float p = player_crosshair_distance(player, other);
-        float d = player_player_distance(player, other);
-        if (d < 96 && p / d < threshold) {
-            if (best == 0 || d < best) {
-                best = d;
-                result = other;
+    for (int i = 0; i < g->client_count; i++) {
+        Client *client = g->clients + i;
+        for (int j = 0; j < MAX_LOCAL_PLAYERS; j++) {
+            Player *other = client->players + j;
+            if (other == player || !other->is_active) {
+                continue;
+            }
+            float p = player_crosshair_distance(player, other);
+            float d = player_player_distance(player, other);
+            if (d < 96 && p / d < threshold) {
+                if (best == 0 || d < best) {
+                    best = d;
+                    result = other;
+                }
             }
         }
     }
@@ -1267,14 +1373,38 @@ void create_chunk(Chunk *chunk, int p, int q) {
 
 void delete_chunks() {
     int count = g->chunk_count;
-    State *s1 = &g->players->state;
-    State *s2 = &(g->players + g->observe1)->state;
-    State *s3 = &(g->players + g->observe2)->state;
-    State *states[3] = {s1, s2, s3};
+    int states_count = 0;
+    // Maximum states include the basic player view and 2 observe views.
+    #define MAX_STATES (MAX_LOCAL_PLAYERS * 3)
+    State *states[MAX_STATES];
+
+    for (int p = 0; p < MAX_LOCAL_PLAYERS; p++) {
+        LocalPlayer *local = g->local_players + p;
+        if (local->player->is_active) {
+            states[states_count++] = &local->player->state;
+            if (local->observe1) {
+                Client *client = find_client(local->observe1_client_id);
+                if (client) {
+                    Player *observe_player = client->players + local->observe1
+                                             - 1;
+                    states[states_count++] = &observe_player->state;
+                }
+            }
+            if (local->observe2) {
+                Client *client = find_client(local->observe2_client_id);
+                if (client) {
+                    Player *observe_player = client->players + local->observe2
+                                             - 1;
+                    states[states_count++] = &observe_player->state;
+                }
+            }
+        }
+    }
+
     for (int i = 0; i < count; i++) {
         Chunk *chunk = g->chunks + i;
         int delete = 1;
-        for (int j = 0; j < 3; j++) {
+        for (int j = 0; j < states_count; j++) {
             State *s = states[j];
             int p = chunked(s->x);
             int q = chunked(s->z);
@@ -1620,12 +1750,12 @@ void set_block(int x, int y, int z, int w) {
     client_block(x, y, z, w);
 }
 
-void record_block(int x, int y, int z, int w) {
-    memcpy(&g->block1, &g->block0, sizeof(Block));
-    g->block0.x = x;
-    g->block0.y = y;
-    g->block0.z = z;
-    g->block0.w = w;
+void record_block(int x, int y, int z, int w, LocalPlayer *local) {
+    memcpy(&local->block1, &local->block0, sizeof(Block));
+    local->block0.x = x;
+    local->block0.y = y;
+    local->block0.z = z;
+    local->block0.w = w;
 }
 
 int get_block(int x, int y, int z) {
@@ -1717,15 +1847,15 @@ void render_signs(Attrib *attrib, Player *player) {
     }
 }
 
-void render_sign(Attrib *attrib, Player *player) {
-    if (!g->typing || g->typing_buffer[0] != CRAFT_KEY_SIGN) {
+void render_sign(Attrib *attrib, LocalPlayer *local) {
+    if (!local->typing || g->typing_buffer[0] != CRAFT_KEY_SIGN) {
         return;
     }
     int x, y, z, face;
-    if (!hit_test_face(player, &x, &y, &z, &face)) {
+    if (!hit_test_face(local->player, &x, &y, &z, &face)) {
         return;
     }
-    State *s = &player->state;
+    State *s = &local->player->state;
     float matrix[16];
     set_matrix_3d(
         matrix, g->width, g->height,
@@ -1755,10 +1885,13 @@ void render_players(Attrib *attrib, Player *player) {
     glUniform3f(attrib->camera, s->x, s->y, s->z);
     glUniform1i(attrib->sampler, 0);
     glUniform1f(attrib->timer, time_of_day());
-    for (int i = 0; i < g->player_count; i++) {
-        Player *other = g->players + i;
-        if (other != player) {
-            draw_player(attrib, other);
+    for (int i = 0; i < g->client_count; i++) {
+        Client *client = g->clients + i;
+        for (int j = 0; j < MAX_LOCAL_PLAYERS; j++) {
+            Player *other = client->players + j;
+            if (other != player && other->is_active) {
+                draw_player(attrib, other);
+            }
         }
     }
 }
@@ -1807,7 +1940,7 @@ void render_crosshairs(Attrib *attrib) {
     del_buffer(crosshair_buffer);
 }
 
-void render_item(Attrib *attrib) {
+void render_item(Attrib *attrib, LocalPlayer *p) {
     float matrix[16];
     set_matrix_item(matrix, g->width, g->height, g->scale);
     glUseProgram(attrib->program);
@@ -1815,7 +1948,7 @@ void render_item(Attrib *attrib) {
     glUniform3f(attrib->camera, 0, 0, 5);
     glUniform1i(attrib->sampler, 0);
     glUniform1f(attrib->timer, time_of_day());
-    int w = items[g->item_index];
+    int w = items[p->item_index];
     if (is_plant(w)) {
         GLuint buffer = gen_plant_buffer(0, 0, 0, 0.5, w);
         draw_plant(attrib, buffer);
@@ -1877,16 +2010,16 @@ void login() {
     client_login("", "");
 }
 
-void copy() {
-    memcpy(&g->copy0, &g->block0, sizeof(Block));
-    memcpy(&g->copy1, &g->block1, sizeof(Block));
+void copy(LocalPlayer *local) {
+    memcpy(&local->copy0, &local->block0, sizeof(Block));
+    memcpy(&local->copy1, &local->block1, sizeof(Block));
 }
 
-void paste() {
-    Block *c1 = &g->copy1;
-    Block *c2 = &g->copy0;
-    Block *p1 = &g->block1;
-    Block *p2 = &g->block0;
+void paste(LocalPlayer *local) {
+    Block *c1 = &local->copy1;
+    Block *c2 = &local->copy0;
+    Block *p1 = &local->block1;
+    Block *p2 = &local->block0;
     int scx = SIGN(c2->x - c1->x);
     int scz = SIGN(c2->z - c1->z);
     int spx = SIGN(p2->x - p1->x);
@@ -2068,8 +2201,11 @@ void parse_command(const char *buffer, int forward) {
     char server_addr[MAX_ADDR_LENGTH];
     int server_port = DEFAULT_PORT;
     char filename[MAX_PATH_LENGTH];
-    int int_option, radius, count, xc, yc, zc;
+    char name[MAX_NAME_LENGTH];
+    int int_option, radius, count, p, q, xc, yc, zc;
     char window_title[MAX_TITLE_LENGTH];
+    LocalPlayer *local = g->keyboard_player;
+    Player *player = g->keyboard_player->player;
     if (strcmp(buffer, "/fullscreen") == 0) {
         pg_toggle_fullscreen();
     }
@@ -2093,6 +2229,24 @@ void parse_command(const char *buffer, int forward) {
         g->mode = MODE_OFFLINE;
         get_default_db_path(g->db_path);
     }
+    else if (sscanf(buffer, "/nick %32c", name) == 1) {
+        int prefix_length = strlen("/nick ");
+        name[MIN(strlen(buffer) - prefix_length, MAX_NAME_LENGTH-1)] = '\0';
+        strncpy(player->name, name, MAX_NAME_LENGTH);
+        client_nick(player->id, name);
+    }
+    else if (strcmp(buffer, "/spawn") == 0) {
+        client_spawn(player->id);
+    }
+    else if (strcmp(buffer, "/goto") == 0) {
+        client_goto(player->id, "");
+    }
+    else if (sscanf(buffer, "/goto %32c", name) == 1) {
+        client_goto(player->id, name);
+    }
+    else if (sscanf(buffer, "/pq %d %d", &p, &q) == 2) {
+        client_pq(player->id, p, q);
+    }
     else if (sscanf(buffer, "/view %d", &radius) == 1) {
         if (radius >= 0 && radius <= 24) {
             if (radius == AUTO_PICK_VIEW_RADIUS) {
@@ -2106,8 +2260,31 @@ void parse_command(const char *buffer, int forward) {
             add_message("Viewing distance must be between 0 and 24.");
         }
     }
+    else if (sscanf(buffer, "/players %d", &int_option) == 1) {
+        if (int_option >= 1 && int_option <= MAX_LOCAL_PLAYERS) {
+            g->auto_match_players_to_joysticks = 0;
+            config->players = int_option;
+            move_primary_focus_to_active_player();
+            set_player_count(g->clients, config->players);
+        }
+        else {
+            add_message("Player count must be between 1 and 4.");
+        }
+    }
+    else if (strcmp(buffer, "/exit") == 0) {
+        if (config->players <= 1) {
+            terminate = True;
+        } else {
+            client_remove_player(player->id);
+            player->is_active = 0;
+            g->auto_match_players_to_joysticks = 0;
+            config->players -= 1;
+            move_primary_focus_to_active_player();
+            set_players_view_size(g->width, g->height);
+        }
+    }
     else if (sscanf(buffer, "/position %d %d %d", &xc, &yc, &zc) == 3) {
-        State *s = &g->players->state;
+        State *s = &player->state;
         s->x = xc;
         s->y = yc;
         s->z = zc;
@@ -2165,114 +2342,114 @@ void parse_command(const char *buffer, int forward) {
         pg_move_window(xc, yc);
     }
     else if (strcmp(buffer, "/copy") == 0) {
-        copy();
+        copy(local);
     }
     else if (strcmp(buffer, "/paste") == 0) {
-        paste();
+        paste(local);
     }
     else if (strcmp(buffer, "/tree") == 0) {
-        tree(&g->block0);
+        tree(&local->block0);
     }
     else if (sscanf(buffer, "/array %d %d %d", &xc, &yc, &zc) == 3) {
-        array(&g->block1, &g->block0, xc, yc, zc);
+        array(&local->block1, &local->block0, xc, yc, zc);
     }
     else if (sscanf(buffer, "/array %d", &count) == 1) {
-        array(&g->block1, &g->block0, count, count, count);
+        array(&local->block1, &local->block0, count, count, count);
     }
     else if (strcmp(buffer, "/fcube") == 0) {
-        cube(&g->block0, &g->block1, 1);
+        cube(&local->block0, &local->block1, 1);
     }
     else if (strcmp(buffer, "/cube") == 0) {
-        cube(&g->block0, &g->block1, 0);
+        cube(&local->block0, &local->block1, 0);
     }
     else if (sscanf(buffer, "/fsphere %d", &radius) == 1) {
-        sphere(&g->block0, radius, 1, 0, 0, 0);
+        sphere(&local->block0, radius, 1, 0, 0, 0);
     }
     else if (sscanf(buffer, "/sphere %d", &radius) == 1) {
-        sphere(&g->block0, radius, 0, 0, 0, 0);
+        sphere(&local->block0, radius, 0, 0, 0, 0);
     }
     else if (sscanf(buffer, "/fcirclex %d", &radius) == 1) {
-        sphere(&g->block0, radius, 1, 1, 0, 0);
+        sphere(&local->block0, radius, 1, 1, 0, 0);
     }
     else if (sscanf(buffer, "/circlex %d", &radius) == 1) {
-        sphere(&g->block0, radius, 0, 1, 0, 0);
+        sphere(&local->block0, radius, 0, 1, 0, 0);
     }
     else if (sscanf(buffer, "/fcircley %d", &radius) == 1) {
-        sphere(&g->block0, radius, 1, 0, 1, 0);
+        sphere(&local->block0, radius, 1, 0, 1, 0);
     }
     else if (sscanf(buffer, "/circley %d", &radius) == 1) {
-        sphere(&g->block0, radius, 0, 0, 1, 0);
+        sphere(&local->block0, radius, 0, 0, 1, 0);
     }
     else if (sscanf(buffer, "/fcirclez %d", &radius) == 1) {
-        sphere(&g->block0, radius, 1, 0, 0, 1);
+        sphere(&local->block0, radius, 1, 0, 0, 1);
     }
     else if (sscanf(buffer, "/circlez %d", &radius) == 1) {
-        sphere(&g->block0, radius, 0, 0, 0, 1);
+        sphere(&local->block0, radius, 0, 0, 0, 1);
     }
     else if (sscanf(buffer, "/fcylinder %d", &radius) == 1) {
-        cylinder(&g->block0, &g->block1, radius, 1);
+        cylinder(&local->block0, &local->block1, radius, 1);
     }
     else if (sscanf(buffer, "/cylinder %d", &radius) == 1) {
-        cylinder(&g->block0, &g->block1, radius, 0);
+        cylinder(&local->block0, &local->block1, radius, 0);
     }
     else if (forward) {
         client_talk(buffer);
     }
 }
 
-void clear_block_under_crosshair(Player *player)
+void clear_block_under_crosshair(LocalPlayer *local)
 {
-    State *s = &player->state;
+    State *s = &local->player->state;
     int hx, hy, hz;
     int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     if (hy > 0 && hy < 256 && is_destructable(hw)) {
         set_block(hx, hy, hz, 0);
-        record_block(hx, hy, hz, 0);
+        record_block(hx, hy, hz, 0, local);
         if (is_plant(get_block(hx, hy + 1, hz))) {
             set_block(hx, hy + 1, hz, 0);
         }
     }
 }
 
-void set_block_under_crosshair(Player *player)
+void set_block_under_crosshair(LocalPlayer *local)
 {
-    State *s = &player->state;
+    State *s = &local->player->state;
     int hx, hy, hz;
     int hw = hit_test(1, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     if (hy > 0 && hy < 256 && is_obstacle(hw)) {
         if (!player_intersects_block(2, s->x, s->y, s->z, hx, hy, hz)) {
-            set_block(hx, hy, hz, items[g->item_index]);
-            record_block(hx, hy, hz, items[g->item_index]);
+            set_block(hx, hy, hz, items[local->item_index]);
+            record_block(hx, hy, hz, items[local->item_index], local);
         }
     }
 }
 
-void set_item_in_hand_to_item_under_crosshair(Player *player)
+void set_item_in_hand_to_item_under_crosshair(LocalPlayer *local)
 {
-    State *s = &player->state;
+    State *s = &local->player->state;
     int hx, hy, hz;
     int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     for (int i = 0; i < item_count; i++) {
         if (items[i] == hw) {
-            g->item_index = i;
+            local->item_index = i;
             break;
         }
     }
 }
 
-void cycle_item_in_hand_up(Player *player) {
-    g->item_index = (g->item_index + 1) % item_count;
+void cycle_item_in_hand_up(LocalPlayer *player) {
+    player->item_index = (player->item_index + 1) % item_count;
 }
 
-void cycle_item_in_hand_down(Player *player) {
-    g->item_index--;
-    if (g->item_index < 0) {
-        g->item_index = item_count - 1;
+void cycle_item_in_hand_down(LocalPlayer *player) {
+    player->item_index--;
+    if (player->item_index < 0) {
+        player->item_index = item_count - 1;
     }
 }
 
-void on_light() {
-    State *s = &g->players->state;
+void on_light(LocalPlayer *local) {
+    State *s = &local->player->state;
     int hx, hy, hz;
     int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     if (hy > 0 && hy < 256 && is_destructable(hw)) {
@@ -2280,47 +2457,47 @@ void on_light() {
     }
 }
 
-void on_left_click() {
-    State *s = &g->players->state;
+void on_left_click(LocalPlayer *local) {
+    State *s = &local->player->state;
     int hx, hy, hz;
     int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     if (hy > 0 && hy < 256 && is_destructable(hw)) {
         set_block(hx, hy, hz, 0);
-        record_block(hx, hy, hz, 0);
+        record_block(hx, hy, hz, 0, local);
         if (is_plant(get_block(hx, hy + 1, hz))) {
             set_block(hx, hy + 1, hz, 0);
         }
     }
 }
 
-void on_right_click() {
-    State *s = &g->players->state;
+void on_right_click(LocalPlayer *local) {
+    State *s = &local->player->state;
     int hx, hy, hz;
     int hw = hit_test(1, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     if (hy > 0 && hy < 256 && is_obstacle(hw)) {
         if (!player_intersects_block(2, s->x, s->y, s->z, hx, hy, hz)) {
-            set_block(hx, hy, hz, items[g->item_index]);
-            record_block(hx, hy, hz, items[g->item_index]);
+            set_block(hx, hy, hz, items[local->item_index]);
+            record_block(hx, hy, hz, items[local->item_index], local);
         }
     }
 }
 
-void on_middle_click() {
-    State *s = &g->players->state;
+void on_middle_click(LocalPlayer *local) {
+    State *s = &local->player->state;
     int hx, hy, hz;
     int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     for (int i = 0; i < item_count; i++) {
         if (items[i] == hw) {
-            g->item_index = i;
+            local->item_index = i;
             break;
         }
     }
 }
 
-void handle_mouse_input() {
+void handle_mouse_input(LocalPlayer *local) {
     static double px = 0;
     static double py = 0;
-    State *s = &g->players->state;
+    State *s = &local->player->state;
     if ((px || py)) {
         double mx, my;
         int mix, miy;
@@ -2349,66 +2526,61 @@ void handle_mouse_input() {
     }
 }
 
-void handle_movement(double dt) {
-    static float dy = 0;
-    State *s = &g->players->state;
+void handle_movement(double dt, LocalPlayer *local) {
+    State *s = &local->player->state;
     float sz = 0;
     float sx = 0;
-    if (!g->typing) {
-        float m1 = dt * view_speed_left_right;
-        float m2 = dt * view_speed_up_down;
-
-        // View distance
-        g->ortho = ortho_is_pressed ? 64 : 0;
-        g->fov = zoom_is_pressed ? 15 : 65;
+    if (!local->typing) {
+        float m1 = dt * local->view_speed_left_right;
+        float m2 = dt * local->view_speed_up_down;
 
         // Walking
-        if (forward_is_pressed) sz = -movement_speed_forward_back;
-        if (back_is_pressed) sz = movement_speed_forward_back;
-        if (left_is_pressed) sx = -movement_speed_left_right;
-        if (right_is_pressed) sx = movement_speed_left_right;
+        if (local->forward_is_pressed) sz = -local->movement_speed_forward_back;
+        if (local->back_is_pressed) sz = local->movement_speed_forward_back;
+        if (local->left_is_pressed) sx = -local->movement_speed_left_right;
+        if (local->right_is_pressed) sx = local->movement_speed_left_right;
 
         // View direction
-        if (view_left_is_pressed) s->rx -= m1;
-        if (view_right_is_pressed) s->rx += m1;
-        if (view_up_is_pressed) s->ry += m2;
-        if (view_down_is_pressed) s->ry -= m2;
+        if (local->view_left_is_pressed) s->rx -= m1;
+        if (local->view_right_is_pressed) s->rx += m1;
+        if (local->view_up_is_pressed) s->ry += m2;
+        if (local->view_down_is_pressed) s->ry -= m2;
     }
     float vx, vy, vz;
-    get_motion_vector(g->flying, sz, sx, s->rx, s->ry, &vx, &vy, &vz);
-    if (!g->typing) {
-        if (jump_is_pressed) {
-            if (g->flying) {
+    get_motion_vector(local->flying, sz, sx, s->rx, s->ry, &vx, &vy, &vz);
+    if (!local->typing) {
+        if (local->jump_is_pressed) {
+            if (local->flying) {
                 vy = 1;
             }
-            else if (dy == 0) {
-                dy = 8;
+            else if (local->dy == 0) {
+                local->dy = 8;
             }
-        } else if (crouch_is_pressed) {
-            if (g->flying) {
+        } else if (local->crouch_is_pressed) {
+            if (local->flying) {
                 vy = -1;
             }
-            else if (dy == 0) {
-                dy = -4;
+            else if (local->dy == 0) {
+                local->dy = -4;
             }
         } else {
             // If previously in a crouch, move to standing position
             int block_under_player_head = get_block(roundf(s->x), s->y,
                                                     roundf(s->z));
             if (is_obstacle(block_under_player_head)) {
-                dy = 8;
+                local->dy = 8;
             }
         }
     }
     float speed = 5;  // walking speed
-    if (g->flying) {
+    if (local->flying) {
         speed = 20;
-    } else if (crouch_is_pressed) {
+    } else if (local->crouch_is_pressed) {
         speed = 2;
     }
     int estimate = roundf(sqrtf(
         powf(vx * speed, 2) +
-        powf(vy * speed + ABS(dy) * 2, 2) +
+        powf(vy * speed + ABS(local->dy) * 2, 2) +
         powf(vz * speed, 2)) * dt * 8);
     int step = MAX(8, estimate);
     float ut = dt / step;
@@ -2416,24 +2588,24 @@ void handle_movement(double dt) {
     vy = vy * ut * speed;
     vz = vz * ut * speed;
     for (int i = 0; i < step; i++) {
-        if (g->flying) {
-            dy = 0;
+        if (local->flying) {
+            local->dy = 0;
         }
         else {
-            dy -= ut * 25;
-            dy = MAX(dy, -250);
+            local->dy -= ut * 25;
+            local->dy = MAX(local->dy, -250);
         }
         s->x += vx;
-        s->y += vy + dy * ut;
+        s->y += vy + local->dy * ut;
         s->z += vz;
         int player_standing_height = 2;
         int player_couching_height = 1;
         int player_min_height = player_standing_height;
-        if (crouch_is_pressed) {
+        if (local->crouch_is_pressed) {
             player_min_height = player_couching_height;
         }
         if (collide(player_min_height, &s->x, &s->y, &s->z)) {
-            dy = 0;
+            local->dy = 0;
         }
     }
     if (s->y < 0) {
@@ -2442,66 +2614,107 @@ void handle_movement(double dt) {
 }
 
 void parse_buffer(char *buffer) {
-    Player *me = g->players;
-    State *s = &g->players->state;
+    #define INVALID_PLAYER_INDEX (p < 1 || p > MAX_LOCAL_PLAYERS)
+    Client *local_client = g->clients;
     char *key;
     char *line = tokenize(buffer, "\n", &key);
     while (line) {
         int pid;
-        float ux, uy, uz, urx, ury;
-        if (sscanf(line, "U,%d,%f,%f,%f,%f,%f",
-            &pid, &ux, &uy, &uz, &urx, &ury) == 6)
+        int p;
+        float px, py, pz, prx, pry;
+        if (sscanf(line, "P,%d,%d,%f,%f,%f,%f,%f",
+            &pid, &p, &px, &py, &pz, &prx, &pry) == 7)
         {
-            me->id = pid;
+            if (INVALID_PLAYER_INDEX) goto next_line;
+            Client *client = find_client(pid);
+            if (!client && g->client_count < MAX_CLIENTS) {
+                // Add a new client
+                client = g->clients + g->client_count;
+                g->client_count++;
+                client->id = pid;
+                // Initialize the players.
+                for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+                    Player *player = client->players + i;
+                    player->is_active = 0;
+                    player->id = i + 1;
+                    player->buffer = 0;
+                    player->texture_index = i;
+                }
+            }
+            if (client) {
+                Player *player = &client->players[p - 1];
+                if (!player->is_active) {
+                    printf("P now active: %d\n", p);
+                    // Add remote player
+                    player->is_active = 1;
+                    snprintf(player->name, MAX_NAME_LENGTH, "player%d-%d",
+                             pid, p);
+                    update_player(player, px, py, pz, prx, pry, 1);
+                    client_add_player(player->id);
+                } else {
+                    update_player(player, px, py, pz, prx, pry, 1);
+                }
+            }
+            goto next_line;
+        }
+        float ux, uy, uz, urx, ury;
+        if (sscanf(line, "U,%d,%d,%f,%f,%f,%f,%f",
+            &pid, &p, &ux, &uy, &uz, &urx, &ury) == 7)
+        {
+            if (INVALID_PLAYER_INDEX) goto next_line;
+            Player *me = local_client->players + (p-1);
+            State *s = &me->state;
+            local_client->id = pid;
             s->x = ux; s->y = uy; s->z = uz; s->rx = urx; s->ry = ury;
             force_chunks(me);
             if (uy == 0) {
                 s->y = highest_block(s->x, s->z) + 2;
             }
+            goto next_line;
         }
+
         int bp, bq, bx, by, bz, bw;
         if (sscanf(line, "B,%d,%d,%d,%d,%d,%d",
             &bp, &bq, &bx, &by, &bz, &bw) == 6)
         {
+            Player *me = local_client->players;
+            State *s = &me->state;
             _set_block(bp, bq, bx, by, bz, bw, 0);
             if (player_intersects_block(2, s->x, s->y, s->z, bx, by, bz)) {
                 s->y = highest_block(s->x, s->z) + 2;
             }
+            goto next_line;
         }
         if (sscanf(line, "L,%d,%d,%d,%d,%d,%d",
             &bp, &bq, &bx, &by, &bz, &bw) == 6)
         {
             set_light(bp, bq, bx, by, bz, bw);
+            goto next_line;
         }
-        float px, py, pz, prx, pry;
-        if (sscanf(line, "P,%d,%f,%f,%f,%f,%f",
-            &pid, &px, &py, &pz, &prx, &pry) == 6)
-        {
-            Player *player = find_player(pid);
-            if (!player && g->player_count < MAX_PLAYERS) {
-                player = g->players + g->player_count;
-                g->player_count++;
-                player->id = pid;
-                player->buffer = 0;
-                snprintf(player->name, MAX_NAME_LENGTH, "player%d", pid);
-                update_player(player, px, py, pz, prx, pry, 1); // twice
+        if (sscanf(line, "X,%d,%d", &pid, &p) == 2) {
+            if (INVALID_PLAYER_INDEX) goto next_line;
+            Client *client = find_client(pid);
+            if (client) {
+                Player *player = &client->players[p - 1];
+                player->is_active = 0;
             }
-            if (player) {
-                update_player(player, px, py, pz, prx, pry, 1);
-            }
+            goto next_line;
         }
         if (sscanf(line, "D,%d", &pid) == 1) {
-            delete_player(pid);
+            delete_client(pid);
+            goto next_line;
         }
         int kp, kq, kk;
         if (sscanf(line, "K,%d,%d,%d", &kp, &kq, &kk) == 3) {
             db_set_key(kp, kq, kk);
+            goto next_line;
         }
         if (sscanf(line, "R,%d,%d", &kp, &kq) == 2) {
             Chunk *chunk = find_chunk(kp, kq);
             if (chunk) {
                 dirty_chunk(chunk);
             }
+            goto next_line;
         }
         double elapsed;
         int day_length;
@@ -2509,20 +2722,24 @@ void parse_buffer(char *buffer) {
             pg_set_time(fmod(elapsed, day_length));
             g->day_length = day_length;
             g->time_changed = 1;
+            goto next_line;
         }
         if (line[0] == 'T' && line[1] == ',') {
             char *text = line + 2;
             add_message(text);
+            goto next_line;
         }
         char format[64];
         snprintf(
-            format, sizeof(format), "N,%%d,%%%ds", MAX_NAME_LENGTH - 1);
+            format, sizeof(format), "N,%%d,%%d,%%%ds", MAX_NAME_LENGTH - 1);
         char name[MAX_NAME_LENGTH];
-        if (sscanf(line, format, &pid, name) == 2) {
-            Player *player = find_player(pid);
-            if (player) {
-                strncpy(player->name, name, MAX_NAME_LENGTH);
+        if (sscanf(line, format, &pid, &p, name) == 3) {
+            if (INVALID_PLAYER_INDEX) goto next_line;
+            Client *client = find_client(pid);
+            if (client) {
+                strncpy(client->players[p - 1].name, name, MAX_NAME_LENGTH);
             }
+            goto next_line;
         }
         snprintf(
             format, sizeof(format),
@@ -2533,7 +2750,10 @@ void parse_buffer(char *buffer) {
             &bp, &bq, &bx, &by, &bz, &face, text) >= 6)
         {
             _set_sign(bp, bq, bx, by, bz, face, text, 0);
+            goto next_line;
         }
+
+next_line:
         line = tokenize(NULL, "\n", &key);
     }
 }
@@ -2541,19 +2761,25 @@ void parse_buffer(char *buffer) {
 void reset_model() {
     memset(g->chunks, 0, sizeof(Chunk) * MAX_CHUNKS);
     g->chunk_count = 0;
-    memset(g->players, 0, sizeof(Player) * MAX_PLAYERS);
-    g->player_count = 0;
-    g->observe1 = 0;
-    g->observe2 = 0;
-    g->flying = 0;
-    g->item_index = 0;
+    memset(g->clients, 0, sizeof(Client) * MAX_CLIENTS);
+    g->client_count = 0;
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = &g->local_players[i];
+        local->flying = 0;
+        local->item_index = 0;
+        local->typing = 0;
+        local->observe1 = 0;
+        local->observe1_client_id = 0;
+        local->observe2 = 0;
+        local->observe2_client_id = 0;
+    }
     memset(g->typing_buffer, 0, sizeof(char) * MAX_TEXT_LENGTH);
-    g->typing = 0;
     memset(g->messages, 0, sizeof(char) * MAX_MESSAGES * MAX_TEXT_LENGTH);
     g->message_index = 0;
     g->day_length = DAY_LENGTH;
     pg_set_time(g->day_length / 3.0);
     g->time_changed = 1;
+    set_player_count(g->clients, config->players);
 }
 
 void insert_into_typing_buffer(unsigned char c) {
@@ -2643,93 +2869,155 @@ TextLineHistory* current_history()
     }
 }
 
+void move_primary_focus_to_active_player()
+{
+    int focus = 0;
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        if (g->local_players[i].player->is_active) {
+            focus = i;
+            break;
+        }
+    }
+    g->keyboard_player = &g->local_players[focus];
+    g->mouse_player = &g->local_players[focus];
+}
+
+void cycle_primary_focus_around_local_players()
+{
+    int first_active_player = 0;
+    for (int i=0; i<MAX_LOCAL_PLAYERS-1; i++) {
+        LocalPlayer *local = &g->local_players[i];
+        if (local->player->is_active) {
+            first_active_player = i;
+            break;
+        }
+    }
+    int next = first_active_player;
+
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = &g->local_players[i];
+        if (i > (g->keyboard_player->player->id - 1)
+            && local->player->is_active) {
+            next = i;
+            break;
+        }
+    }
+    g->keyboard_player = &g->local_players[next];
+    g->mouse_player = &g->local_players[next];
+}
+
 void handle_key_press(unsigned char c, int mods, int keysym)
 {
-    if (!g->typing) {
+    LocalPlayer *p = g->keyboard_player;
+    if (!p->typing) {
         if (c == CRAFT_KEY_FORWARD) {
-            forward_is_pressed = 1;
-            movement_speed_forward_back = 1;
+            p->forward_is_pressed = 1;
+            p->movement_speed_forward_back = 1;
         } else if (c == CRAFT_KEY_BACKWARD) {
-            back_is_pressed = 1;
-            movement_speed_forward_back = 1;
+            p->back_is_pressed = 1;
+            p->movement_speed_forward_back = 1;
         } else if (c == CRAFT_KEY_LEFT) {
-            left_is_pressed = 1;
-            movement_speed_left_right = 1;
+            p->left_is_pressed = 1;
+            p->movement_speed_left_right = 1;
         } else if (c == CRAFT_KEY_RIGHT) {
-            right_is_pressed = 1;
-            movement_speed_left_right = 1;
+            p->right_is_pressed = 1;
+            p->movement_speed_left_right = 1;
         } else if (keysym == XK_Escape) {
             terminate = True;
         } else if (keysym == XK_F1) {
             set_mouse_absolute();
         } else if (keysym == XK_F2) {
             set_mouse_relative();
+        } else if (keysym == XK_F8) {
+            cycle_primary_focus_around_local_players();
         } else if (keysym == XK_F11) {
             pg_toggle_fullscreen();
         } else if (keysym == XK_Up) {
-            view_up_is_pressed = 1;
-            view_speed_up_down = 1;
+            p->view_up_is_pressed = 1;
+            p->view_speed_up_down = 1;
         } else if (keysym == XK_Down) {
-            view_down_is_pressed = 1;
-            view_speed_up_down = 1;
+            p->view_down_is_pressed = 1;
+            p->view_speed_up_down = 1;
         } else if (keysym == XK_Left) {
-            view_left_is_pressed = 1;
-            view_speed_left_right = 1;
+            p->view_left_is_pressed = 1;
+            p->view_speed_left_right = 1;
         } else if (keysym == XK_Right) {
-            view_right_is_pressed = 1;
-            view_speed_left_right = 1;
+            p->view_right_is_pressed = 1;
+            p->view_speed_left_right = 1;
         } else if (c == ' ') {
-            jump_is_pressed = 1;
+            p->jump_is_pressed = 1;
         } else if (c == 'c') {
-            crouch_is_pressed = 1;
+            p->crouch_is_pressed = 1;
         } else if (c == 'z') {
-            zoom_is_pressed = 1;
+            p->zoom_is_pressed = 1;
         } else if (c == 'f') {
-            ortho_is_pressed = 1;
+            p->ortho_is_pressed = 1;
         } else if (keysym == XK_Tab) {  // CRAFT_KEY_FLY
-            g->flying = !g->flying;
+            p->flying = !p->flying;
         } else if (c >= '1' && c <= '9') {
-            g->item_index = c - '1';
+            p->item_index = c - '1';
         } else if (c == '0' && c <= '9') {
-            g->item_index = 9;
+            p->item_index = 9;
         } else if (c == CRAFT_KEY_ITEM_NEXT) {
-            g->item_index = (g->item_index + 1) % item_count;
+            p->item_index = (p->item_index + 1) % item_count;
         } else if (c == CRAFT_KEY_ITEM_PREV) {
-            g->item_index--;
-            if (g->item_index < 0) {
-                g->item_index = item_count - 1;
+            p->item_index--;
+            if (p->item_index < 0) {
+                p->item_index = item_count - 1;
             }
         } else if (c == CRAFT_KEY_OBSERVE) {
-            g->observe1 = (g->observe1 + 1) % g->player_count;
+            int start = ((p->observe1 == 0) ?  p->player->id : p->observe1) - 1;
+            if (p->observe1_client_id == 0) {
+                p->observe1_client_id = g->clients->id;
+            }
+            get_next_player(&start, &p->observe1_client_id);
+            p->observe1 = start + 1;
+            if (p->observe1 == p->player->id &&
+                p->observe1_client_id == g->clients->id) {
+                // cancel observing of another player
+                p->observe1 = 0;
+                p->observe1_client_id = 0;
+            }
         } else if (c == CRAFT_KEY_OBSERVE_INSET) {
-            g->observe2 = (g->observe2 + 1) % g->player_count;
+            int start = ((p->observe2 == 0) ?  p->player->id : p->observe2) - 1;
+            if (p->observe2_client_id == 0) {
+                p->observe2_client_id = g->clients->id;
+            }
+            get_next_player(&start, &p->observe2_client_id);
+            p->observe2 = start + 1;
+            if (p->observe2 == p->player->id &&
+                p->observe2_client_id == g->clients->id) {
+                // cancel observing of another player
+                p->observe2 = 0;
+                p->observe2_client_id = 0;
+            }
         } else if (c == CRAFT_KEY_CHAT) {
-            g->typing = 1;
+            p->typing = 1;
             g->typing_buffer[0] = '\0';
             g->typing_start = g->typing_history[CHAT_HISTORY].line_start;
             g->text_cursor = g->typing_start;
         } else if (c == CRAFT_KEY_COMMAND) {
-            g->typing = 1;
+            p->typing = 1;
             g->typing_buffer[0] = '/';
             g->typing_buffer[1] = '\0';
             g->typing_start = g->typing_history[COMMAND_HISTORY].line_start;
             g->text_cursor = g->typing_start;
         } else if (c == CRAFT_KEY_SIGN) {
-            g->typing = 1;
+            p->typing = 1;
             g->typing_buffer[0] = CRAFT_KEY_SIGN;
             g->typing_buffer[1] = '\0';
             g->typing_start = g->typing_history[SIGN_HISTORY].line_start;
             g->text_cursor = g->typing_start;
         } else if (c == 13) {  // return
             if (mods & ControlMask) {
-                on_right_click();
+                on_right_click(g->mouse_player);
             } else {
-                on_left_click();
+                on_left_click(g->mouse_player);
             }
         }
     } else {
         if (keysym == XK_Escape) {
-            g->typing = 0;
+            p->typing = 0;
             g->history_position = NOT_IN_HISTORY;
         } else if (c == 8) {  // backspace
             int n = strlen(g->typing_buffer);
@@ -2746,9 +3034,9 @@ void handle_key_press(unsigned char c, int mods, int keysym)
             if (mods & ShiftMask) {
                 insert_into_typing_buffer('\r');
             } else {
-                g->typing = 0;
+                p->typing = 0;
                 if (g->typing_buffer[0] == CRAFT_KEY_SIGN) {
-                    Player *player = g->players;
+                    Player *player = g->clients->players;
                     int x, y, z, face;
                     if (hit_test_face(player, &x, &y, &z, &face)) {
                         set_sign(x, y, z, face, g->typing_buffer + 1);
@@ -2799,30 +3087,31 @@ void handle_key_press(unsigned char c, int mods, int keysym)
 
 void handle_key_release(unsigned char c, int keysym)
 {
+    LocalPlayer *p = g->keyboard_player;
     if (c == CRAFT_KEY_FORWARD) {
-        forward_is_pressed = 0;
+        p->forward_is_pressed = 0;
     } else if (c == CRAFT_KEY_BACKWARD) {
-        back_is_pressed = 0;
+        p->back_is_pressed = 0;
     } else if (c == CRAFT_KEY_LEFT) {
-        left_is_pressed = 0;
+        p->left_is_pressed = 0;
     } else if (c == CRAFT_KEY_RIGHT) {
-        right_is_pressed = 0;
+        p->right_is_pressed = 0;
     } else if (c == ' ') {
-        jump_is_pressed = 0;
+        p->jump_is_pressed = 0;
     } else if (c == 'c') {
-        crouch_is_pressed = 0;
+        p->crouch_is_pressed = 0;
     } else if (c == 'z') {
-        zoom_is_pressed = 0;
+        p->zoom_is_pressed = 0;
     } else if (c == 'f') {
-        ortho_is_pressed = 0;
+        p->ortho_is_pressed = 0;
     } else if (keysym == XK_Up) {
-        view_up_is_pressed = 0;
+        p->view_up_is_pressed = 0;
     } else if (keysym == XK_Down) {
-        view_down_is_pressed = 0;
+        p->view_down_is_pressed = 0;
     } else if (keysym == XK_Left) {
-        view_left_is_pressed = 0;
+        p->view_left_is_pressed = 0;
     } else if (keysym == XK_Right) {
-        view_right_is_pressed = 0;
+        p->view_right_is_pressed = 0;
     }
 }
 
@@ -2830,24 +3119,25 @@ void handle_mouse_release(int b, int mods)
 {
     if (b == 1) {
         if (mods & ControlMask) {
-            on_right_click();
+            on_right_click(g->mouse_player);
         } else {
-            on_left_click();
+            on_left_click(g->mouse_player);
         }
     } else if (b == 2) {
-        on_middle_click();
+        on_middle_click(g->mouse_player);
     } else if (b == 3) {
         if (mods & ControlMask) {
-            on_light();
+            on_light(g->mouse_player);
         } else {
-            on_right_click();
+            on_right_click(g->mouse_player);
         }
     } else if (b == 4) {
-        g->item_index = (g->item_index + 1) % item_count;
+        g->keyboard_player->item_index =
+            (g->keyboard_player->item_index + 1) % item_count;
     } else if (b == 5) {
-        g->item_index--;
-        if (g->item_index < 0) {
-            g->item_index = item_count - 1;
+        g->keyboard_player->item_index--;
+        if (g->keyboard_player->item_index < 0) {
+            g->keyboard_player->item_index = item_count - 1;
         }
     }
 }
@@ -2858,18 +3148,22 @@ void handle_window_close()
 }
 
 void handle_focus_out() {
-    forward_is_pressed = 0;
-    back_is_pressed = 0;
-    left_is_pressed = 0;
-    right_is_pressed = 0;
-    jump_is_pressed = 0;
-    crouch_is_pressed = 0;
-    view_left_is_pressed = 0;
-    view_right_is_pressed = 0;
-    view_up_is_pressed = 0;
-    view_down_is_pressed = 0;
-    ortho_is_pressed = 0;
-    zoom_is_pressed = 0;
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *p = &g->local_players[i];
+        p->forward_is_pressed = 0;
+        p->back_is_pressed = 0;
+        p->left_is_pressed = 0;
+        p->right_is_pressed = 0;
+        p->jump_is_pressed = 0;
+        p->crouch_is_pressed = 0;
+        p->view_left_is_pressed = 0;
+        p->view_right_is_pressed = 0;
+        p->view_up_is_pressed = 0;
+        p->view_down_is_pressed = 0;
+        p->ortho_is_pressed = 0;
+        p->zoom_is_pressed = 0;
+    }
+
     pg_fullscreen(0);
 }
 
@@ -2885,70 +3179,86 @@ void reset_history()
     g->typing_history[SIGN_HISTORY].line_start = 1;
 }
 
+LocalPlayer *map_joystick_to_player(PG_Joystick *j, int j_num) {
+    LocalPlayer *p = g->local_players;
+    int joystick_count = pg_joystick_count();
+
+    if (joystick_count < config->players) {
+        // If 4 players and only 3 joysticks start the joystick mapping from
+        // player 2, assuming player 1 still has the keyboard and mouse.
+        j_num++;
+    }
+
+    if (j_num < config->players) {
+        p = &g->local_players[j_num];
+    }
+    return p;
+}
+
 void handle_joystick_axis(PG_Joystick *j, int j_num, int axis, float value)
 {
-    Player *p = g->players;
+    LocalPlayer *p = map_joystick_to_player(j, j_num);
 
     if (j->axis_count < 4) {
         if (axis == 0) {
-            left_is_pressed = (value < 0) ? 1 : 0;
-            right_is_pressed = (value > 0) ? 1 : 0;
-            movement_speed_left_right = fabs(value);
+            p->left_is_pressed = (value < 0) ? 1 : 0;
+            p->right_is_pressed = (value > 0) ? 1 : 0;
+            p->movement_speed_left_right = fabs(value);
         } else if (axis == 1) {
-            forward_is_pressed = (value < 0) ? 1 : 0;
-            back_is_pressed = (value > 0) ? 1 : 0;
-            movement_speed_forward_back = fabs(value);
+            p->forward_is_pressed = (value < 0) ? 1 : 0;
+            p->back_is_pressed = (value > 0) ? 1 : 0;
+            p->movement_speed_forward_back = fabs(value);
         }
     } else {
         if (axis == 0) {
-            movement_speed_left_right = fabs(value) * 2.0;
-            left_is_pressed = (value < -DEADZONE);
-            right_is_pressed = (value > DEADZONE);
+            p->movement_speed_left_right = fabs(value) * 2.0;
+            p->left_is_pressed = (value < -DEADZONE);
+            p->right_is_pressed = (value > DEADZONE);
         } else if (axis == 1) {
-            movement_speed_forward_back = fabs(value) * 2.0;
-            forward_is_pressed = (value < -DEADZONE);
-            back_is_pressed = (value > DEADZONE);
+            p->movement_speed_forward_back = fabs(value) * 2.0;
+            p->forward_is_pressed = (value < -DEADZONE);
+            p->back_is_pressed = (value > DEADZONE);
         } else if (axis == 2) {
-            view_speed_up_down = fabs(value) * 2.0;
-            view_up_is_pressed = (value < -DEADZONE);
-            view_down_is_pressed = (value > DEADZONE);
+            p->view_speed_up_down = fabs(value) * 2.0;
+            p->view_up_is_pressed = (value < -DEADZONE);
+            p->view_down_is_pressed = (value > DEADZONE);
         } else if (axis == 3) {
-            view_speed_left_right = fabs(value) * 2.0;
-            view_left_is_pressed = (value < -DEADZONE);
-            view_right_is_pressed = (value > DEADZONE);
+            p->view_speed_left_right = fabs(value) * 2.0;
+            p->view_left_is_pressed = (value < -DEADZONE);
+            p->view_right_is_pressed = (value > DEADZONE);
         } else if (axis == 4) {
-            movement_speed_left_right = fabs(value);
-            left_is_pressed = (value < 0) ? 1 : 0;
-            right_is_pressed = (value > 0) ? 1 : 0;
+            p->movement_speed_left_right = fabs(value);
+            p->left_is_pressed = (value < 0) ? 1 : 0;
+            p->right_is_pressed = (value > 0) ? 1 : 0;
         } else if (axis == 5) {
-            movement_speed_forward_back = fabs(value);
-            forward_is_pressed = (value < 0) ? 1 : 0;
-            back_is_pressed = (value > 0) ? 1 : 0;
+            p->movement_speed_forward_back = fabs(value);
+            p->forward_is_pressed = (value < 0) ? 1 : 0;
+            p->back_is_pressed = (value > 0) ? 1 : 0;
         }
     }
 }
 
 void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
 {
-    Player *p = g->players;
+    LocalPlayer *p = map_joystick_to_player(j, j_num);
 
     if (j->axis_count < 4) {
         if (button == 0) {
-            view_up_is_pressed = state;
-            view_speed_up_down = 1;
+            p->view_up_is_pressed = state;
+            p->view_speed_up_down = 1;
         } else if (button == 2) {
-            view_down_is_pressed = state;
-            view_speed_up_down = 1;
+            p->view_down_is_pressed = state;
+            p->view_speed_up_down = 1;
         } else if (button == 3) {
-            view_left_is_pressed = state;
-            view_speed_left_right = 1;
+            p->view_left_is_pressed = state;
+            p->view_speed_left_right = 1;
         } else if (button == 1) {
-            view_right_is_pressed = state;
-            view_speed_left_right = 1;
+            p->view_right_is_pressed = state;
+            p->view_speed_left_right = 1;
         } else if (button == 5) {
-            switch (shoulder_button_mode) {
+            switch (p->shoulder_button_mode) {
                 case CROUCH_JUMP:
-                    jump_is_pressed = state;
+                    p->jump_is_pressed = state;
                     break;
                 case REMOVE_ADD:
                     if (state) {
@@ -2966,13 +3276,13 @@ void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
                     }
                     break;
                 case ZOOM_ORTHO:
-                    ortho_is_pressed = state;
+                    p->ortho_is_pressed = state;
                     break;
             }
         } else if (button == 4) {
-           switch (shoulder_button_mode) {
+           switch (p->shoulder_button_mode) {
                 case CROUCH_JUMP:
-                    crouch_is_pressed = state;
+                    p->crouch_is_pressed = state;
                     break;
                 case REMOVE_ADD:
                     if (state) {
@@ -2986,18 +3296,18 @@ void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
                     break;
                 case FLY_PICK:
                     if (state) {
-                        g->flying = !g->flying;
+                        p->flying = !p->flying;
                     }
                     break;
                 case ZOOM_ORTHO:
-                    zoom_is_pressed = state;
+                    p->zoom_is_pressed = state;
                     break;
             }
         } else if (button == 8) {
             if (state) {
-                shoulder_button_mode += 1;
-                shoulder_button_mode %= SHOULDER_BUTTON_MODE_COUNT;
-                add_message(shoulder_button_modes[shoulder_button_mode]);
+                p->shoulder_button_mode += 1;
+                p->shoulder_button_mode %= SHOULDER_BUTTON_MODE_COUNT;
+                add_message(shoulder_button_modes[p->shoulder_button_mode]);
             }
         }
     } else {
@@ -3015,29 +3325,254 @@ void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
             }
         } else if (button == 1) {
             if (state) {
-                g->flying = !g->flying;
+                p->flying = !p->flying;
             }
         } else if (button == 5) {
             if (state) {
                 clear_block_under_crosshair(p);
             }
         } else if (button == 4) {
-            crouch_is_pressed = state;
+            p->crouch_is_pressed = state;
         } else if (button == 6) {
-            jump_is_pressed = state;
+            p->jump_is_pressed = state;
         } else if (button == 7) {
             if (state) {
                 set_block_under_crosshair(p);
             }
         } else if (button == 8) {
-            zoom_is_pressed = state;
+            p->zoom_is_pressed = state;
         } else if (button == 9) {
-            ortho_is_pressed = state;
+            p->ortho_is_pressed = state;
         } else if (button == 10) {
-            ortho_is_pressed = state;
+            p->ortho_is_pressed = state;
         } else if (button == 11) {
-            zoom_is_pressed = state;
+            p->zoom_is_pressed = state;
         }
+    }
+}
+
+void render_player_world(
+        LocalPlayer *local, GLuint sky_buffer, Attrib sky_attrib,
+        Attrib block_attrib, Attrib text_attrib, Attrib line_attrib,
+        FPS fps)
+{
+    Player *player = local->player;
+    State *s = &player->state;
+
+    glViewport(local->view_x, local->view_y, local->view_width,
+               local->view_height);
+    g->width = local->view_width;
+    g->height = local->view_height;
+    g->ortho = local->ortho_is_pressed ? 64 : 0;
+    g->fov = local->zoom_is_pressed ? 15 : 65;
+
+    if (local->observe1 > 0 && find_client(local->observe1_client_id)) {
+        player = find_client(local->observe1_client_id)->players +
+                 (local->observe1 - 1);
+    }
+
+    // RENDER 3-D SCENE //
+    render_sky(&sky_attrib, player, sky_buffer);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    int face_count = render_chunks(&block_attrib, player);
+    render_signs(&text_attrib, player);
+    render_sign(&text_attrib, local);
+    render_players(&block_attrib, player);
+    if (config->show_wireframe) {
+        render_wireframe(&line_attrib, player);
+    }
+
+    // RENDER HUD //
+    glClear(GL_DEPTH_BUFFER_BIT);
+    if (config->show_crosshairs) {
+        render_crosshairs(&line_attrib);
+    }
+    if (config->show_item) {
+        render_item(&block_attrib, local);
+    }
+
+    // RENDER TEXT //
+    char text_buffer[1024];
+    float ts = 12 * g->scale;
+    float tx = ts / 2;
+    float ty = g->height - ts;
+    if (config->show_info_text) {
+        int hour = time_of_day() * 24;
+        char am_pm = hour < 12 ? 'a' : 'p';
+        hour = hour % 12;
+        hour = hour ? hour : 12;
+        if (config->verbose) {
+            snprintf(
+                text_buffer, 1024,
+                "(%d, %d) (%.2f, %.2f, %.2f) [%d, %d, %d] %d%cm",
+                chunked(s->x), chunked(s->z), s->x, s->y, s->z,
+                g->client_count, g->chunk_count,
+                face_count * 2, hour, am_pm);
+            render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts,
+                        text_buffer);
+            ty -= ts * 2;
+
+            // FPS counter in lower right corner
+            float bottom_bar_y = 0 + ts * 2;
+            float right_side = g->width - ts;
+            snprintf(text_buffer, 1024, "%dfps", fps.fps);
+            render_text(&text_attrib, ALIGN_RIGHT, right_side,
+                        bottom_bar_y, ts, text_buffer);
+        } else {
+            snprintf(text_buffer, 1024, "(%.2f, %.2f, %.2f)",
+                     s->x, s->y, s->z);
+            render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts,
+                        text_buffer);
+
+            // Game time in upper right corner
+            float right_side = g->width - tx;
+            snprintf(text_buffer, 1024, "%d%cm", hour, am_pm);
+            render_text(&text_attrib, ALIGN_RIGHT, right_side, ty, ts,
+                        text_buffer);
+
+            ty -= ts * 2;
+        }
+    }
+    if (config->show_chat_text) {
+        for (int i = 0; i < MAX_MESSAGES; i++) {
+            int index = (g->message_index + i) % MAX_MESSAGES;
+            if (strlen(g->messages[index])) {
+                render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts,
+                    g->messages[index]);
+                ty -= ts * 2;
+            }
+        }
+    }
+    if (local->typing) {
+        snprintf(text_buffer, 1024, "> %s", g->typing_buffer);
+        render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts, text_buffer);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        render_text_cursor(&line_attrib, tx + ts * (g->text_cursor+1) + ts/2,
+                           ty);
+        ty -= ts * 2;
+    }
+    if (config->show_player_names) {
+        Player *other = player_crosshair(player);
+        if (other) {
+            render_text(&text_attrib, ALIGN_CENTER,
+                g->width / 2, g->height / 2 - ts - 24, ts,
+                other->name);
+        }
+    }
+    if (config->players > 1) {
+        // Render player name if more than 1 local player
+        if (player == g->keyboard_player->player) {
+            snprintf(text_buffer, 1024, "* %s *", player->name);
+        } else {
+            snprintf(text_buffer, 1024, "%s", player->name);
+        }
+        render_text(&text_attrib, ALIGN_CENTER, g->width/2, ts, ts,
+                    text_buffer);
+    }
+
+    // RENDER PICTURE IN PICTURE //
+    if (local->observe2 && find_client(local->observe2_client_id)) {
+        player = (find_client(local->observe2_client_id))->players +
+                 (local->observe2 - 1);
+
+        int pw = local->view_width / 4 * g->scale;
+        int ph = local->view_height / 3 * g->scale;
+        int offset = 32 * g->scale;
+        int pad = 3 * g->scale;
+        int sw = pw + pad * 2;
+        int sh = ph + pad * 2;
+
+        glEnable(GL_SCISSOR_TEST);
+        glScissor(g->width - sw - offset + pad + local->view_x,
+                  offset - pad + local->view_y, sw, sh);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glDisable(GL_SCISSOR_TEST);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glViewport(g->width - pw - offset + local->view_x,
+                   offset + local->view_y, pw, ph);
+
+        g->width = pw;
+        g->height = ph;
+        g->ortho = 0;
+        g->fov = 65;
+
+        render_sky(&sky_attrib, player, sky_buffer);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        render_chunks(&block_attrib, player);
+        render_signs(&text_attrib, player);
+        render_players(&block_attrib, player);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        if (config->show_player_names) {
+            render_text(&text_attrib, ALIGN_CENTER,
+                pw / 2, ts, ts, player->name);
+        }
+    }
+}
+
+void set_players_view_size(int w, int h)
+{
+    int view_margin = 6;
+    int active_count = 0;
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = &g->local_players[i];
+        if (local->player->is_active) {
+            active_count++;
+            if (config->players == 1) {
+                // Full size view
+                local->view_x = 0;
+                local->view_y = 0;
+                local->view_width = w;
+                local->view_height = h;
+            } else if (config->players == 2) {
+                // Half size views
+                if (active_count == 1) {
+                    local->view_x = 0;
+                    local->view_y = 0;
+                    local->view_width = w / 2 - (view_margin/2);
+                    local->view_height = h;
+                } else {
+                    local->view_x = w / 2 + (view_margin/2);
+                    local->view_y = 0;
+                    local->view_width = w / 2 - (view_margin/2);
+                    local->view_height = h;
+                }
+            } else {
+                // Quarter size views
+                if (local->player->id == 1) {
+                    local->view_x = 0;
+                    local->view_y = h / 2 + (view_margin/2);
+                    local->view_width = w / 2 - (view_margin/2);
+                    local->view_height = h / 2 - (view_margin/2);
+                } else if (local->player->id == 2) {
+                    local->view_x = w / 2 + (view_margin/2);
+                    local->view_y = h / 2 + (view_margin/2);
+                    local->view_width = w / 2 - (view_margin/2);
+                    local->view_height = h / 2 - (view_margin/2);
+
+                } else if (local->player->id == 3) {
+                    local->view_x = 0;
+                    local->view_y = 0;
+                    local->view_width = w / 2 - (view_margin/2);
+                    local->view_height = h / 2 - (view_margin/2);
+
+                } else {
+                    local->view_x = w / 2 + (view_margin/2);
+                    local->view_y = 0;
+                    local->view_width = w / 2 - (view_margin/2);
+                    local->view_height = h / 2 - (view_margin/2);
+                }
+            }
+        }
+    }
+}
+
+void set_players_to_match_joysticks()
+{
+    int joystick_count = pg_joystick_count();
+    if (joystick_count != config->players) {
+        config->players = MAX(1, pg_joystick_count());
+        config->players = MIN(MAX_LOCAL_PLAYERS, config->players);
+        set_player_count(g->clients, config->players);
     }
 }
 
@@ -3067,12 +3602,22 @@ int main(int argc, char **argv) {
         pg_print_info();
     }
     pg_init_joysticks();
+    if (config->players == -1) {
+        g->auto_match_players_to_joysticks = 1;
+        set_players_to_match_joysticks();
+    } else {
+        g->auto_match_players_to_joysticks = 0;
+        set_player_count(g->clients, config->players);
+    }
     if (config->fullscreen) {
         pg_fullscreen(1);
     }
 
     pg_set_joystick_button_handler(*handle_joystick_button);
     pg_set_joystick_axis_handler(*handle_joystick_axis);
+
+    g->keyboard_player = g->local_players;
+    g->mouse_player = g->local_players;
 
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
@@ -3207,7 +3752,7 @@ int main(int argc, char **argv) {
             client_enable();
             client_connect(config->server, config->port);
             client_start();
-            client_version(1);
+            client_version(2);
             login();
         }
 
@@ -3218,18 +3763,37 @@ int main(int argc, char **argv) {
         double last_update = pg_get_time();
         GLuint sky_buffer = gen_sky_buffer();
 
-        Player *me = g->players;
-        State *s = &g->players->state;
-        me->id = 0;
-        me->name[0] = '\0';
-        me->buffer = 0;
-        g->player_count = 1;
+        g->client_count = 1;
+        g->clients->id = 0;
 
-        // LOAD STATE FROM DATABASE //
-        int loaded = db_load_state(&s->x, &s->y, &s->z, &s->rx, &s->ry);
-        force_chunks(me);
-        if (!loaded) {
-            s->y = highest_block(s->x, s->z) + 2;
+        for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+            g->local_players[i].player = &g->clients->players[i];
+            LocalPlayer *local = &g->local_players[i];
+            State *s = &local->player->state;
+
+            local->player->id = i+1;
+            local->player->name[0] = '\0';
+            local->player->buffer = 0;
+            local->player->texture_index = i;
+
+            // LOAD STATE FROM DATABASE //
+            int loaded = db_load_state(&s->x, &s->y, &s->z, &s->rx, &s->ry, i);
+            force_chunks(local->player);
+            if (!loaded) {
+                s->y = highest_block(s->x, s->z) + 2;
+            }
+
+            loaded = db_load_player_name(local->player->name, MAX_NAME_LENGTH, i);
+            if (!loaded) {
+                snprintf(local->player->name, MAX_NAME_LENGTH, "player%d", i + 1);
+            }
+        }
+
+        for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+            Player *player = g->local_players[i].player;
+            if (player->is_active) {
+                client_add_player(player->id);
+            }
         }
 
         // VIEW SETUP //
@@ -3243,6 +3807,7 @@ int main(int argc, char **argv) {
             g->scale = get_scale_factor();
             pg_get_window_size(&g->width, &g->height);
             glViewport(0, 0, g->width, g->height);
+            set_players_view_size(g->width, g->height);
 
             // FRAME RATE //
             if (g->time_changed) {
@@ -3259,10 +3824,15 @@ int main(int argc, char **argv) {
             previous = now;
 
             // HANDLE MOUSE INPUT //
-            handle_mouse_input();
+            handle_mouse_input(g->mouse_player);
 
             // HANDLE MOVEMENT //
-            handle_movement(dt);
+            for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+                LocalPlayer *local = &g->local_players[i];
+                if (local->player->is_active) {
+                    handle_movement(dt, local);
+                }
+            }
 
             // HANDLE JOYSTICK INPUT //
             pg_poll_joystick_events();
@@ -3283,147 +3853,58 @@ int main(int argc, char **argv) {
             // SEND POSITION TO SERVER //
             if (now - last_update > 0.1) {
                 last_update = now;
-                client_position(s->x, s->y, s->z, s->rx, s->ry);
-            }
-
-            // PREPARE TO RENDER //
-            g->observe1 = g->observe1 % g->player_count;
-            g->observe2 = g->observe2 % g->player_count;
-            delete_chunks();
-            del_buffer(me->buffer);
-            me->buffer = gen_player_buffer(s->x, s->y, s->z, s->rx, s->ry);
-            for (int i = 1; i < g->player_count; i++) {
-                interpolate_player(g->players + i);
-            }
-            Player *player = g->players + g->observe1;
-
-            // RENDER 3-D SCENE //
-            glClear(GL_COLOR_BUFFER_BIT);
-            glClear(GL_DEPTH_BUFFER_BIT);
-            render_sky(&sky_attrib, player, sky_buffer);
-            glClear(GL_DEPTH_BUFFER_BIT);
-            int face_count = render_chunks(&block_attrib, player);
-            render_signs(&text_attrib, player);
-            render_sign(&text_attrib, player);
-            render_players(&block_attrib, player);
-            if (config->show_wireframe) {
-                render_wireframe(&line_attrib, player);
-            }
-
-            // RENDER HUD //
-            glClear(GL_DEPTH_BUFFER_BIT);
-            if (config->show_crosshairs) {
-                render_crosshairs(&line_attrib);
-            }
-            if (config->show_item) {
-                render_item(&block_attrib);
-            }
-
-            // RENDER TEXT //
-            char text_buffer[1024];
-            float ts = 12 * g->scale;
-            float tx = ts / 2;
-            float ty = g->height - ts;
-            if (config->show_info_text) {
-                int hour = time_of_day() * 24;
-                char am_pm = hour < 12 ? 'a' : 'p';
-                hour = hour % 12;
-                hour = hour ? hour : 12;
-                if (config->verbose) {
-                    snprintf(
-                        text_buffer, 1024,
-                        "(%d, %d) (%.2f, %.2f, %.2f) [%d, %d, %d] %d%cm",
-                        chunked(s->x), chunked(s->z), s->x, s->y, s->z,
-                        g->player_count, g->chunk_count,
-                        face_count * 2, hour, am_pm);
-                    render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts,
-                                text_buffer);
-                    ty -= ts * 2;
-
-                    // FPS counter in lower right corner
-                    float bottom_bar_y = 0 + ts * 2;
-                    float right_side = g->width - ts;
-                    snprintf(text_buffer, 1024, "%dfps", fps.fps);
-                    render_text(&text_attrib, ALIGN_RIGHT, right_side,
-                                bottom_bar_y, ts, text_buffer);
-                } else {
-                    snprintf(text_buffer, 1024, "(%.2f, %.2f, %.2f)",
-                             s->x, s->y, s->z);
-                    render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts,
-                                text_buffer);
-
-                    // Game time in upper right corner
-                    float right_side = g->width - tx;
-                    snprintf(text_buffer, 1024, "%d%cm", hour, am_pm);
-                    render_text(&text_attrib, ALIGN_RIGHT, right_side, ty, ts,
-                                text_buffer);
-
-                    ty -= ts * 2;
-                }
-            }
-            if (config->show_chat_text) {
-                for (int i = 0; i < MAX_MESSAGES; i++) {
-                    int index = (g->message_index + i) % MAX_MESSAGES;
-                    if (strlen(g->messages[index])) {
-                        render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts,
-                            g->messages[index]);
-                        ty -= ts * 2;
+                for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+                    LocalPlayer *local = &g->local_players[i];
+                    if (local->player->is_active) {
+                        State *s = &local->player->state;
+                        client_position(local->player->id,
+                                        s->x, s->y, s->z, s->rx, s->ry);
                     }
                 }
             }
-            if (g->typing) {
-                snprintf(text_buffer, 1024, "> %s", g->typing_buffer);
-                render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts, text_buffer);
-                glClear(GL_DEPTH_BUFFER_BIT);
-                render_text_cursor(&line_attrib, tx + ts * (g->text_cursor+1) + ts/2, ty);
-                ty -= ts * 2;
-            }
-            if (config->show_player_names) {
-                if (player != me) {
-                    render_text(&text_attrib, ALIGN_CENTER,
-                        g->width / 2, ts, ts, player->name);
-                }
-                Player *other = player_crosshair(player);
-                if (other) {
-                    render_text(&text_attrib, ALIGN_CENTER,
-                        g->width / 2, g->height / 2 - ts - 24, ts,
-                        other->name);
+
+            // PREPARE TO RENDER //
+            delete_chunks();
+            for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+                Player *player = g->local_players[i].player;
+                if (player->is_active) {
+                    State *s = &player->state;
+                    del_buffer(player->buffer);
+                    player->buffer = gen_player_buffer(s->x, s->y, s->z, s->rx,
+                        s->ry, player->texture_index);
                 }
             }
-
-            // RENDER PICTURE IN PICTURE //
-            if (g->observe2) {
-                player = g->players + g->observe2;
-
-                int pw = 256 * g->scale;
-                int ph = 256 * g->scale;
-                int offset = 32 * g->scale;
-                int pad = 3 * g->scale;
-                int sw = pw + pad * 2;
-                int sh = ph + pad * 2;
-
-                glEnable(GL_SCISSOR_TEST);
-                glScissor(g->width - sw - offset + pad, offset - pad, sw, sh);
-                glClear(GL_COLOR_BUFFER_BIT);
-                glDisable(GL_SCISSOR_TEST);
-                glClear(GL_DEPTH_BUFFER_BIT);
-                glViewport(g->width - pw - offset, offset, pw, ph);
-
-                g->width = pw;
-                g->height = ph;
-                g->ortho = 0;
-                g->fov = 65;
-
-                render_sky(&sky_attrib, player, sky_buffer);
-                glClear(GL_DEPTH_BUFFER_BIT);
-                render_chunks(&block_attrib, player);
-                render_signs(&text_attrib, player);
-                render_players(&block_attrib, player);
-                glClear(GL_DEPTH_BUFFER_BIT);
-                if (config->show_player_names) {
-                    render_text(&text_attrib, ALIGN_CENTER,
-                        pw / 2, ts, ts, player->name);
+            for (int i = 1; i < g->client_count; i++) {
+                Client *client = g->clients + i;
+                for (int j = 0; j < MAX_LOCAL_PLAYERS; j++) {
+                    Player *remote_player = client->players + j;
+                    if (remote_player->is_active) {
+                        interpolate_player(remote_player);
+                    }
                 }
+            }
+
+            // RENDER //
+            glClear(GL_COLOR_BUFFER_BIT);
+            glClear(GL_DEPTH_BUFFER_BIT);
+            for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+                LocalPlayer *local = &g->local_players[i];
+                if (local->player->is_active) {
+                    render_player_world(local, sky_buffer,
+                                        sky_attrib, block_attrib, text_attrib,
+                                        line_attrib, fps);
+                }
+            }
+
+            // Match player count to joystick count
+            static int players_joysticks_counter = 0;
+            #define PLAYER_JOYSTICK_RATE_LIMIT 100
+            if (g->auto_match_players_to_joysticks == 1) {
+                if (players_joysticks_counter > PLAYER_JOYSTICK_RATE_LIMIT) {
+                    set_players_to_match_joysticks();
+                    players_joysticks_counter = 0;
+                }
+                players_joysticks_counter++;
             }
 
 #ifdef DEBUG
@@ -3458,7 +3939,13 @@ int main(int argc, char **argv) {
         }
 
         // SHUTDOWN //
-        db_save_state(s->x, s->y, s->z, s->rx, s->ry);
+        db_clear_state();
+        db_clear_player_names();
+        for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+            State *ls = &g->local_players[i].player->state;
+            db_save_state(ls->x, ls->y, ls->z, ls->rx, ls->ry);
+            db_save_player_name(g->local_players[i].player->name);
+        }
         db_close();
         db_disable();
         client_stop();

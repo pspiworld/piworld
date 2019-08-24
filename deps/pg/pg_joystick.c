@@ -293,3 +293,14 @@ void pg_set_joystick_button_handler(JoystickButtonHandler joystick_button_handle
     _joystick_button_handler = joystick_button_handler;
 }
 
+int pg_joystick_count()
+{
+    int count = 0;
+    for (int i = 0; i <= PG_JOYSTICK_LAST; i++) {
+        if (pg_js.js[i].present) {
+            count++;
+        }
+    }
+    return count;
+}
+

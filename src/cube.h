@@ -17,7 +17,7 @@ void make_plant(
 
 void make_player(
     float *data,
-    float x, float y, float z, float rx, float ry);
+    float x, float y, float z, float rx, float ry, int p);
 
 void make_cube_wireframe(
     float *data, float x, float y, float z, float n);

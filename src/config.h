@@ -54,6 +54,7 @@ typedef struct {
     char path[MAX_PATH_LENGTH];
     char db_path[MAX_PATH_LENGTH];
     int fullscreen;
+    int players;
     int port;
     int show_chat_text;
     int show_clouds;

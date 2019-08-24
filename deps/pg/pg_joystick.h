@@ -65,4 +65,5 @@ void pg_terminate_joysticks(void);
 void pg_set_joystick_button_handler(JoystickButtonHandler joystick_button_handler);
 void pg_set_joystick_axis_handler(JoystickAxisHandler joystick_axis_handler);
 void pg_poll_joystick_events(void);
+int pg_joystick_count(void);
 

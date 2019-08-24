@@ -53,6 +53,9 @@ int db_init(char *path) {
         "   rx float not null,"
         "   ry float not null"
         ");"
+        "create table if not exists player_name ("
+        "    name text not null"
+        ");"
         "create table if not exists block ("
         "    p int not null,"
         "    q int not null,"
@@ -180,6 +183,13 @@ void _db_commit() {
     sqlite3_exec(db, "commit; begin;", NULL, NULL, NULL);
 }
 
+void db_clear_state() {
+    if (!db_enabled) {
+        return;
+    }
+    sqlite3_exec(db, "delete from state;", NULL, NULL, NULL);
+}
+
 void db_save_state(float x, float y, float z, float rx, float ry) {
     if (!db_enabled) {
         return;
@@ -187,7 +197,6 @@ void db_save_state(float x, float y, float z, float rx, float ry) {
     static const char *query =
         "insert into state (x, y, z, rx, ry) values (?, ?, ?, ?, ?);";
     sqlite3_stmt *stmt;
-    sqlite3_exec(db, "delete from state;", NULL, NULL, NULL);
     sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
     sqlite3_bind_double(stmt, 1, x);
     sqlite3_bind_double(stmt, 2, y);
@@ -198,7 +207,8 @@ void db_save_state(float x, float y, float z, float rx, float ry) {
     sqlite3_finalize(stmt);
 }
 
-int db_load_state(float *x, float *y, float *z, float *rx, float *ry) {
+int db_load_state(float *x, float *y, float *z, float *rx, float *ry,
+                  int player) {
     if (!db_enabled) {
         return 0;
     }
@@ -207,13 +217,59 @@ int db_load_state(float *x, float *y, float *z, float *rx, float *ry) {
     int result = 0;
     sqlite3_stmt *stmt;
     sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
+    for (int i=0; i<=player; i++) {
+        result = sqlite3_step(stmt);
+    }
+    if (result == SQLITE_ROW) {
         *x = sqlite3_column_double(stmt, 0);
         *y = sqlite3_column_double(stmt, 1);
         *z = sqlite3_column_double(stmt, 2);
         *rx = sqlite3_column_double(stmt, 3);
         *ry = sqlite3_column_double(stmt, 4);
         result = 1;
+    } else {
+        result = 0;
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+void db_clear_player_names() {
+    if (!db_enabled) {
+        return;
+    }
+    sqlite3_exec(db, "delete from player_name;", NULL, NULL, NULL);
+}
+
+void db_save_player_name(const char *name) {
+    if (!db_enabled) {
+        return;
+    }
+    static const char *query = "insert into player_name (name) values (?);";
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
+    sqlite3_bind_text(stmt, 1, name, -1, NULL);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+int db_load_player_name(char *name, int max_name_length, int player) {
+    if (!db_enabled) {
+        return 0;
+    }
+    static const char *query = "select name from player_name;";
+    int result = 0;
+    sqlite3_stmt *stmt;
+    sqlite3_prepare_v2(db, query, -1, &stmt, NULL);
+    for (int i=0; i<=player; i++) {
+        result = sqlite3_step(stmt);
+    }
+    if (result == SQLITE_ROW) {
+        strncpy(name, sqlite3_column_text(stmt, 0), max_name_length);
+        name[max_name_length-1] = '\0';
+        result = 1;
+    } else {
+        result = 0;
     }
     sqlite3_finalize(stmt);
     return result;

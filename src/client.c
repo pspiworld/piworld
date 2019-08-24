@@ -77,23 +77,67 @@ void client_login(const char *username, const char *identity_token) {
     client_send(buffer);
 }
 
-void client_position(float x, float y, float z, float rx, float ry) {
+void client_nick(const int player, const char *name) {
+    char buffer[1024];
+    snprintf(buffer, 1024, "N,%d,%s\n", player, name);
+    client_send(buffer);
+}
+
+void client_spawn(const int player) {
+    char buffer[1024];
+    snprintf(buffer, 1024, "W,%d\n", player);
+    client_send(buffer);
+}
+
+void client_goto(const int player, const char *name) {
+    char buffer[1024];
+    snprintf(buffer, 1024, "G,%d,%s\n", player, name);
+    client_send(buffer);
+}
+
+void client_pq(int player, int p, int q) {
+    char buffer[1024];
+    snprintf(buffer, 1024, "Q,%d,%d,%d\n", player, p, q);
+    client_send(buffer);
+}
+
+void client_position(int player, float x, float y, float z, float rx, float ry) {
     if (!client_enabled) {
         return;
     }
-    static float px, py, pz, prx, pry = 0;
+    #define MAX_LOCAL_PLAYERS 4
+    static float px[MAX_LOCAL_PLAYERS] = {0, 0, 0, 0};
+    static float py[MAX_LOCAL_PLAYERS] = {0, 0, 0, 0};
+    static float pz[MAX_LOCAL_PLAYERS] = {0, 0, 0, 0};
+    static float prx[MAX_LOCAL_PLAYERS] = {0, 0, 0, 0};
+    static float pry[MAX_LOCAL_PLAYERS] = {0, 0, 0, 0};
+    int p = player - 1;
     float distance =
-        (px - x) * (px - x) +
-        (py - y) * (py - y) +
-        (pz - z) * (pz - z) +
-        (prx - rx) * (prx - rx) +
-        (pry - ry) * (pry - ry);
+        (px[p] - x) * (px[p] - x) +
+        (py[p] - y) * (py[p] - y) +
+        (pz[p] - z) * (pz[p] - z) +
+        (prx[p] - rx) * (prx[p] - rx) +
+        (pry[p] - ry) * (pry[p] - ry);
     if (distance < 0.0001) {
         return;
     }
-    px = x; py = y; pz = z; prx = rx; pry = ry;
+    px[p] = x; py[p] = y; pz[p] = z; prx[p] = rx; pry[p] = ry;
+
     char buffer[1024];
-    snprintf(buffer, 1024, "P,%.2f,%.2f,%.2f,%.2f,%.2f\n", x, y, z, rx, ry);
+    snprintf(buffer, 1024, "P,%d,%.2f,%.2f,%.2f,%.2f,%.2f\n",
+             player, x, y, z, rx, ry);
+    client_send(buffer);
+}
+
+void client_add_player(int player) {
+    char buffer[1024];
+    snprintf(buffer, 1024, "F,%d\n", player);
+    client_send(buffer);
+}
+
+void client_remove_player(int player) {
+    char buffer[1024];
+    snprintf(buffer, 1024, "X,%d\n", player);
     client_send(buffer);
 }
 
