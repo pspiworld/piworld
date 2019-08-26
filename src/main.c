@@ -241,6 +241,15 @@ static Model *g = &model;
 void move_primary_focus_to_active_player(void);
 void set_players_view_size(int w, int h);
 Client *find_client(int id);
+void set_view_radius(int requested_size);
+
+void limit_player_count_to_fit_gpu_mem()
+{
+    if (pg_get_gpu_mem_size() < 128 && config->players > 2) {
+        printf("More GPU memory needed for more players.\n");
+        config->players = 2;
+    }
+}
 
 void set_player_count(Client *client, int count)
 {
@@ -2249,12 +2258,7 @@ void parse_command(const char *buffer, int forward) {
     }
     else if (sscanf(buffer, "/view %d", &radius) == 1) {
         if (radius >= 0 && radius <= 24) {
-            if (radius == AUTO_PICK_VIEW_RADIUS) {
-                radius = get_starting_draw_radius();
-            }
-            g->create_radius = radius;
-            g->render_radius = radius;
-            g->delete_radius = radius + 3;
+            set_view_radius(radius);
         }
         else {
             add_message("Viewing distance must be between 0 and 24.");
@@ -2263,9 +2267,13 @@ void parse_command(const char *buffer, int forward) {
     else if (sscanf(buffer, "/players %d", &int_option) == 1) {
         if (int_option >= 1 && int_option <= MAX_LOCAL_PLAYERS) {
             g->auto_match_players_to_joysticks = 0;
-            config->players = int_option;
-            move_primary_focus_to_active_player();
-            set_player_count(g->clients, config->players);
+            if (config->players != int_option) {
+                config->players = int_option;
+                limit_player_count_to_fit_gpu_mem();
+                move_primary_focus_to_active_player();
+                set_player_count(g->clients, config->players);
+                set_view_radius(g->render_radius);
+            }
         }
         else {
             add_message("Player count must be between 1 and 4.");
@@ -2281,6 +2289,7 @@ void parse_command(const char *buffer, int forward) {
             config->players -= 1;
             move_primary_focus_to_active_player();
             set_players_view_size(g->width, g->height);
+            set_view_radius(g->render_radius);
         }
     }
     else if (sscanf(buffer, "/position %d %d %d", &xc, &yc, &zc) == 3) {
@@ -3572,7 +3581,48 @@ void set_players_to_match_joysticks()
     if (joystick_count != config->players) {
         config->players = MAX(1, pg_joystick_count());
         config->players = MIN(MAX_LOCAL_PLAYERS, config->players);
+        limit_player_count_to_fit_gpu_mem();
         set_player_count(g->clients, config->players);
+    }
+}
+
+/*
+ * Set view radius that will fit into the current size of GPU RAM.
+ */
+void set_view_radius(int requested_size)
+{
+    int radius = requested_size;
+    int extend_delete_radius = 3;
+    int gpu_mb = pg_get_gpu_mem_size();
+    if (gpu_mb < 48 || (gpu_mb < 128 && config->players >= 2)) {
+        // A draw distance of 1 is not enough for the game to be usable, but
+        // this does at least show something on screen (for low resolutions
+        // only - higher ones will crash the game with low GPU RAM).
+        radius = 1;
+        extend_delete_radius = 1;
+    } else if (gpu_mb < 64) {
+        radius = 2;
+        extend_delete_radius = 1;
+    } else if (gpu_mb < 128 || (gpu_mb < 256 && config->players >= 3)) {
+        // A GPU RAM size of 64M will result in rendering issues for draw
+        // distances greater than 3 (with a chunk size of 16).
+        radius = 3;
+        extend_delete_radius = 1;
+    } else if (gpu_mb < 256 || requested_size == AUTO_PICK_VIEW_RADIUS) {
+        // For the Raspberry Pi reduce amount to draw to both fit into 128MiB
+        // of GPU RAM and keep the render speed at a reasonable smoothness.
+        radius = 5;
+    }
+
+    g->create_radius = radius;
+    g->render_radius = radius;
+    g->delete_radius = radius + extend_delete_radius;
+    g->sign_radius = radius;
+
+    if (config->verbose) {
+        printf("\nradii: create: %d render: %d delete: %d sign: %d\n",
+               g->create_radius, g->render_radius, g->delete_radius,
+               g->sign_radius);
     }
 }
 
@@ -3589,9 +3639,6 @@ int main(int argc, char **argv) {
     g->height = config->window_height;
     pg_start(config->window_title, config->window_x, config->window_y,
              g->width, g->height);
-    if (config->view == AUTO_PICK_VIEW_RADIUS) {
-        config->view = get_starting_draw_radius();
-    }
     pg_swap_interval(config->vsync);
     set_key_press_handler(*handle_key_press);
     set_key_release_handler(*handle_key_release);
@@ -3607,11 +3654,13 @@ int main(int argc, char **argv) {
         set_players_to_match_joysticks();
     } else {
         g->auto_match_players_to_joysticks = 0;
+        limit_player_count_to_fit_gpu_mem();
         set_player_count(g->clients, config->players);
     }
     if (config->fullscreen) {
         pg_fullscreen(1);
     }
+    set_view_radius(config->view);
 
     pg_set_joystick_button_handler(*handle_joystick_button);
     pg_set_joystick_axis_handler(*handle_joystick_axis);
@@ -3713,12 +3762,6 @@ int main(int argc, char **argv) {
         g->mode = MODE_OFFLINE;
         snprintf(g->db_path, MAX_PATH_LENGTH, "%s", config->db_path);
     }
-
-    int draw_radius = config->view;
-    g->create_radius = draw_radius;
-    g->render_radius = draw_radius;
-    g->delete_radius = draw_radius + 3;
-    g->sign_radius = draw_radius;
 
     // OUTER LOOP //
     int running = 1;
@@ -3901,7 +3944,11 @@ int main(int argc, char **argv) {
             #define PLAYER_JOYSTICK_RATE_LIMIT 100
             if (g->auto_match_players_to_joysticks == 1) {
                 if (players_joysticks_counter > PLAYER_JOYSTICK_RATE_LIMIT) {
+                    int prev_player_count = config->players;
                     set_players_to_match_joysticks();
+                    if (config->players != prev_player_count) {
+                        set_view_radius(g->render_radius);
+                    }
                     players_joysticks_counter = 0;
                 }
                 players_joysticks_counter++;

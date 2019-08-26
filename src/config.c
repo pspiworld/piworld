@@ -64,30 +64,6 @@ void get_server_db_cache_path(char *path)
         "%s/cache.%s.%d.db", config->path, config->server, config->port);
 }
 
-/*
- * Return a draw radius that will fit into the current size of GPU RAM.
- */
-int get_starting_draw_radius()
-{
-    int gpu_mb = pg_get_gpu_mem_size();
-    if (gpu_mb < 48) {
-        // A draw distance of 1 is not enough for the game to be usable, but
-        // this does at least show something on screen (for low resolutions
-        // only - higher ones will crash the game with low GPU RAM).
-        return 1;
-    } else if (gpu_mb < 64) {
-        return 2;
-    } else if (gpu_mb < 128) {
-        // A GPU RAM size of 64M will result in rendering issues for draw
-        // distances greater than 3 (with a chunk size of 16).
-        return 3;
-    } else {
-        // For the Raspberry Pi reduce amount to draw to both fit into 128MiB
-        // of GPU RAM and keep the render speed at a reasonable smoothness.
-        return 5;
-    }
-}
-
 void parse_startup_config(int argc, char **argv) {
     int c;
     const char *opt_name;

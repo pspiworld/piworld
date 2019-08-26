@@ -84,6 +84,5 @@ void reset_config();
 void get_config_path(char *path);
 void get_default_db_path(char *path);
 void get_server_db_cache_path(char *path);
-int get_starting_draw_radius();
 void parse_startup_config(int argc, char **argv);
 
