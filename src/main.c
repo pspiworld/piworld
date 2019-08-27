@@ -3600,7 +3600,7 @@ void set_view_radius(int requested_size)
         // only - higher ones will crash the game with low GPU RAM).
         radius = 1;
         extend_delete_radius = 1;
-    } else if (gpu_mb < 64) {
+    } else if (gpu_mb < 64 || (gpu_mb < 192 && config->players >= 3)) {
         radius = 2;
         extend_delete_radius = 1;
     } else if (gpu_mb < 128 || (gpu_mb < 256 && config->players >= 3)) {
