@@ -1,6 +1,7 @@
 
 #ifndef MESA
 
+#include "pg.h"
 #include "pg_pi.h"
 
 #define RASPBIAN_X11_WINDOW_OFFSET_X -2
@@ -26,6 +27,17 @@ EGLNativeDisplayType get_egl_display_id()
     return EGL_DEFAULT_DISPLAY;
 }
 
+int get_reduction_factor(int w, int h) {
+    int reduction = 1;
+    if (pg_get_gpu_mem_size() < 128) {
+        if ((w * h) > (1680 * 1024)) {
+            reduction = 3;
+        } else if ((w * h) > (640 * 480)) {
+            reduction = 2;
+        }
+    }
+    return reduction;
+}
 
 EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
                                       uint32_t *x, uint32_t *y,
@@ -67,10 +79,12 @@ EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
     pi_state->dst_rect.width = *w;
     pi_state->dst_rect.height = *h;
 
+    int reduction = get_reduction_factor(*w, *h);
+
     src_rect.x = 0;
     src_rect.y = 0;
-    src_rect.width = *w << 16;
-    src_rect.height = *h << 16;
+    src_rect.width = (*w/reduction) << 16;
+    src_rect.height = (*h/reduction) << 16;
 
     pi_state->dispman_display = vc_dispmanx_display_open( 0 /* LCD */);
     dispman_update = vc_dispmanx_update_start( 0 );
@@ -188,8 +202,14 @@ void pi_set_window_geometry(int *x, int *y, int *w, int *h)
     *x = (*x + *w > pi_state->screen_w) ? pi_state->screen_w - *w : *x;
     *y = (*y + *h > pi_state->screen_h) ? pi_state->screen_h - *h : *y;
 
-    vc_dispmanx_rect_set(&src_rect, 0, 0, *w << 16, *h << 16);
+    int reduction = get_reduction_factor(*w, *h);
+
+    vc_dispmanx_rect_set(&src_rect, 0, 0, (*w/reduction) << 16,
+                         (*h/reduction) << 16);
     vc_dispmanx_rect_set(&pi_state->dst_rect, *x, *y, *w, *h);
+
+    *w = (*w/reduction);
+    *h = (*h/reduction);
 
     dispman_update = vc_dispmanx_update_start(0);
     failure = vc_dispmanx_element_change_attributes(dispman_update,
