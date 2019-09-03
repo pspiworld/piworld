@@ -32,7 +32,7 @@ void create_world(int p, int q, world_func func, void *arg) {
             for (int y = 1; y < h; y++) {
                 func(x, y, z, w * flag, arg);
             }
-            if (w == 1) {
+            if (w == GRASS) {
 #ifdef SERVER
                 if (SHOW_PLANTS) {
 #else
