@@ -26,7 +26,7 @@ void create_world(int p, int q, world_func func, void *arg) {
                 w = SAND;
             }
 
-            func(x, 0, z, BEDROCK, arg);
+            func(x, 0, z, BEDROCK * flag, arg);
 
             // sand and grass terrain
             for (int y = 1; y < h; y++) {

@@ -1,5 +1,6 @@
 
 #include <assert.h>
+#include <ctype.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
@@ -184,6 +185,7 @@ typedef struct {
     GLuint position;
     GLuint normal;
     GLuint uv;
+    GLuint color;
     GLuint matrix;
     GLuint sampler;
     GLuint camera;
@@ -463,13 +465,17 @@ void draw_triangles_3d_text(Attrib *attrib, GLuint buffer, int count) {
     glBindBuffer(GL_ARRAY_BUFFER, buffer);
     glEnableVertexAttribArray(attrib->position);
     glEnableVertexAttribArray(attrib->uv);
+    glEnableVertexAttribArray(attrib->color);
     glVertexAttribPointer(attrib->position, 3, GL_FLOAT, GL_FALSE,
-        sizeof(GLfloat) * 5, 0);
+        sizeof(GLfloat) * 9, 0);
     glVertexAttribPointer(attrib->uv, 2, GL_FLOAT, GL_FALSE,
-        sizeof(GLfloat) * 5, (GLvoid *)(sizeof(GLfloat) * 3));
+        sizeof(GLfloat) * 9, (GLvoid *)(sizeof(GLfloat) * 3));
+    glVertexAttribPointer(attrib->color, 4, GL_FLOAT, GL_FALSE,
+        sizeof(GLfloat) * 9, (GLvoid *)(sizeof(GLfloat) * 5));
     glDrawArrays(GL_TRIANGLES, 0, count);
     glDisableVertexAttribArray(attrib->position);
     glDisableVertexAttribArray(attrib->uv);
+    glDisableVertexAttribArray(attrib->color);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
@@ -922,8 +928,21 @@ int _gen_sign_buffer(
     if (face < 0 || face >= 8) {
         return 0;
     }
+    float font_scaling = 1.0;
+    float r = 0.0, g = 0.0, b = 0.0;
+    const char *start_of_text = text;
+    if (strlen(text) > 2 && text[0] == '\\' &&
+        (isdigit(text[1]) || text[1] == '.')) {
+        font_scaling = atof(&text[1]);
+        char *first_space_char = strchr(text, ' ');
+        if (first_space_char != NULL) {
+            start_of_text = first_space_char + 1;
+        } else {
+            start_of_text = text + 3;
+        }
+    }
     int count = 0;
-    float max_width = 64;
+    float max_width = 64 / font_scaling;
     float line_height = 1.25;
     char lines[1024];
     int rows = wrap(text, max_width, lines, 1024);
@@ -941,12 +960,43 @@ int _gen_sign_buffer(
     char *line = tokenize(lines, "\n", &key);
     while (line) {
         int length = strlen(line);
-        int line_width = string_width(line);
+        int line_start = 0;
+        int line_width = string_width(line + line_start);
         line_width = MIN(line_width, max_width);
         float rx = sx - dx * line_width / max_width / 2;
         float ry = sy;
         float rz = sz - dz * line_width / max_width / 2;
-        for (int i = 0; i < length; i++) {
+        for (int i = line_start; i < length; i++) {
+            if (line[i] == '\\' && i+1 < length) {
+                // process markup
+                char color_text[MAX_COLOR_STRING_LENGTH];
+                if (i+7 < length && line[i+1] == '#' && isxdigit(line[i+2]) &&
+                    isxdigit(line[i+3]) && isxdigit(line[i+4]) &&
+                    isxdigit(line[i+5]) && isxdigit(line[i+6]) &&
+                    isxdigit(line[i+7])) {
+                    strncpy(color_text, line + i + 1, 7);
+                    color_text[MAX_COLOR_STRING_LENGTH - 1] = '\0';
+                    color_text[7] = '\0';
+                    color_from_text(color_text, &r, &g, &b);
+                } else if (i+4 < length && line[i+1] == '#' &&
+                           isxdigit(line[i+2]) && isxdigit(line[i+3]) &&
+                           isxdigit(line[i+4])) {
+                    strncpy(color_text, line + i + 1, 4);
+                    color_text[MAX_COLOR_STRING_LENGTH - 1] = '\0';
+                    color_text[4] = '\0';
+                    color_from_text(color_text, &r, &g, &b);
+                } else if (isalpha(line[i+1])) {
+                    strncpy(color_text, line + i + 1, 1);
+                    color_text[MAX_COLOR_STRING_LENGTH - 1] = '\0';
+                    color_text[1] = '\0';
+                    color_from_text(color_text, &r, &g, &b);
+                }
+                // eat all remaining markup text
+                while (line[i] != ' ' && i < length) {
+                    i++;
+                }
+                continue;  // do not process markup as displayable text
+            }
             int width = char_width(line[i]);
             line_width -= width;
             if (line_width < 0) {
@@ -956,7 +1006,8 @@ int _gen_sign_buffer(
             rz += dz * width / max_width / 2;
             if (line[i] != ' ') {
                 make_character_3d(
-                    data + count * 30, rx, ry, rz, n / 2, face, line[i]);
+                    data + count * 54, rx, ry, rz, n / 2, face, line[i],
+                    r, g, b);
                 count++;
             }
             rx += dx * width / max_width / 2;
@@ -985,16 +1036,16 @@ void gen_sign_buffer(Chunk *chunk) {
     }
 
     // second pass - generate geometry
-    GLfloat *data = malloc_faces(5, max_faces);
+    GLfloat *data = malloc_faces_with_rgba(5, max_faces);
     int faces = 0;
     for (int i = 0; i < signs->size; i++) {
         Sign *e = signs->data + i;
         faces += _gen_sign_buffer(
-            data + faces * 30, e->x, e->y, e->z, e->face, e->text);
+            data + faces * 54, e->x, e->y, e->z, e->face, e->text);
     }
 
     del_buffer(chunk->sign_buffer);
-    chunk->sign_buffer = gen_faces(5, faces, data);
+    chunk->sign_buffer = gen_faces_with_rgba(5, faces, data);
     chunk->sign_faces = faces;
 }
 
@@ -1876,9 +1927,9 @@ void render_sign(Attrib *attrib, LocalPlayer *local) {
     char text[MAX_SIGN_LENGTH];
     strncpy(text, g->typing_buffer + 1, MAX_SIGN_LENGTH);
     text[MAX_SIGN_LENGTH - 1] = '\0';
-    GLfloat *data = malloc_faces(5, strlen(text));
+    GLfloat *data = malloc_faces_with_rgba(5, strlen(text));
     int length = _gen_sign_buffer(data, x, y, z, face, text);
-    GLuint buffer = gen_faces(5, length, data);
+    GLuint buffer = gen_faces_with_rgba(5, length, data);
     draw_sign(attrib, buffer, length);
     del_buffer(buffer);
 }
@@ -3015,6 +3066,16 @@ void handle_key_press(unsigned char c, int mods, int keysym)
             p->typing = 1;
             g->typing_buffer[0] = CRAFT_KEY_SIGN;
             g->typing_buffer[1] = '\0';
+            int x, y, z, face;
+            if (hit_test_face(p->player, &x, &y, &z, &face)) {
+                const char *existing_sign = db_get_sign(
+                    chunked(x), chunked(z), x, y, z, face);
+                if (existing_sign) {
+                    strncpy(g->typing_buffer + 1, existing_sign,
+                            MAX_TEXT_LENGTH - 1);
+                    g->typing_buffer[MAX_TEXT_LENGTH - 1] = '\0';
+                }
+            }
             g->typing_start = g->typing_history[SIGN_HISTORY].line_start;
             g->text_cursor = g->typing_start;
         } else if (c == 13) {  // return
@@ -3045,9 +3106,8 @@ void handle_key_press(unsigned char c, int mods, int keysym)
             } else {
                 p->typing = 0;
                 if (g->typing_buffer[0] == CRAFT_KEY_SIGN) {
-                    Player *player = g->clients->players;
                     int x, y, z, face;
-                    if (hit_test_face(player, &x, &y, &z, &face)) {
+                    if (hit_test_face(p->player, &x, &y, &z, &face)) {
                         set_sign(x, y, z, face, g->typing_buffer + 1);
                     }
                 } else if (g->typing_buffer[0] == CRAFT_KEY_COMMAND) {
@@ -3741,6 +3801,7 @@ int main(int argc, char **argv) {
     text_attrib.program = program;
     text_attrib.position = glGetAttribLocation(program, "position");
     text_attrib.uv = glGetAttribLocation(program, "uv");
+    text_attrib.color = glGetAttribLocation(program, "color");
     text_attrib.matrix = glGetUniformLocation(program, "matrix");
     text_attrib.sampler = glGetUniformLocation(program, "sampler");
     text_attrib.extra1 = glGetUniformLocation(program, "is_sign");

@@ -17,6 +17,7 @@ static sqlite3_stmt *delete_signs_stmt;
 static sqlite3_stmt *load_blocks_stmt;
 static sqlite3_stmt *load_lights_stmt;
 static sqlite3_stmt *load_signs_stmt;
+static sqlite3_stmt *get_sign_stmt;
 static sqlite3_stmt *get_key_stmt;
 static sqlite3_stmt *set_key_stmt;
 
@@ -110,6 +111,8 @@ int db_init(char *path) {
         "select x, y, z, w from light where p = ? and q = ?;";
     static const char *load_signs_query =
         "select x, y, z, face, text from sign where p = ? and q = ?;";
+    static const char *get_sign_query =
+        "select text from sign where p = ? and q = ? and x = ? and y = ? and z = ? and face = ?;";
     static const char *get_key_query =
         "select key from key where p = ? and q = ?;";
     static const char *set_key_query =
@@ -141,6 +144,8 @@ int db_init(char *path) {
     if (rc) return rc;
     rc = sqlite3_prepare_v2(db, load_signs_query, -1, &load_signs_stmt, NULL);
     if (rc) return rc;
+    rc = sqlite3_prepare_v2(db, get_sign_query, -1, &get_sign_stmt, NULL);
+    if (rc) return rc;
     rc = sqlite3_prepare_v2(db, get_key_query, -1, &get_key_stmt, NULL);
     if (rc) return rc;
     rc = sqlite3_prepare_v2(db, set_key_query, -1, &set_key_stmt, NULL);
@@ -164,6 +169,7 @@ void db_close() {
     sqlite3_finalize(load_blocks_stmt);
     sqlite3_finalize(load_lights_stmt);
     sqlite3_finalize(load_signs_stmt);
+    sqlite3_finalize(get_sign_stmt);
     sqlite3_finalize(get_key_stmt);
     sqlite3_finalize(set_key_stmt);
     sqlite3_close(db);
@@ -416,6 +422,23 @@ void db_load_signs(SignList *list, int p, int q) {
             load_signs_stmt, 4);
         sign_list_add(list, x, y, z, face, text);
     }
+}
+
+const char *db_get_sign(int p, int q, int x, int y, int z, int face) {
+    if (!db_enabled) {
+        return NULL;
+    }
+    sqlite3_reset(get_sign_stmt);
+    sqlite3_bind_int(get_sign_stmt, 1, p);
+    sqlite3_bind_int(get_sign_stmt, 2, q);
+    sqlite3_bind_int(get_sign_stmt, 3, x);
+    sqlite3_bind_int(get_sign_stmt, 4, y);
+    sqlite3_bind_int(get_sign_stmt, 5, z);
+    sqlite3_bind_int(get_sign_stmt, 6, face);
+    if (sqlite3_step(get_sign_stmt) == SQLITE_ROW) {
+        return sqlite3_column_text(get_sign_stmt, 0);
+    }
+    return NULL;
 }
 
 int db_get_key(int p, int q) {

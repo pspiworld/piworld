@@ -25,6 +25,7 @@ BUFFER_SIZE = 4096
 COMMIT_INTERVAL = 5
 
 MAX_LOCAL_PLAYERS = 4
+MAX_SIGN_LENGTH = 256
 
 AUTH_REQUIRED = False
 
@@ -492,8 +493,9 @@ class Model(object):
             return
         if face < 0 or face > 7:
             return
-        if len(text) > 48:
-            return
+        if len(text) > MAX_SIGN_LENGTH:
+            text = text[:MAX_SIGN_LENGTH-1]
+            print("Truncating long sign text.")
         p, q = chunked(x), chunked(z)
         if text:
             query = (
@@ -691,6 +693,7 @@ class Model(object):
             if other == client:
                 continue
             other.send(SIGN, p, q, x, y, z, face, text)
+            other.send(REDRAW, p, q)
     def send_talk(self, text):
         log(text)
         for client in self.clients:

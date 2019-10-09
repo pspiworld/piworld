@@ -63,9 +63,20 @@ GLfloat *malloc_faces(int components, int faces) {
     return malloc(sizeof(GLfloat) * 6 * components * faces);
 }
 
+GLfloat *malloc_faces_with_rgba(int components, int faces) {
+    return malloc(sizeof(GLfloat) * 6 * components * faces * 4);
+}
+
 GLuint gen_faces(int components, int faces, GLfloat *data) {
     GLuint buffer = gen_buffer(
         sizeof(GLfloat) * 6 * components * faces, data);
+    free(data);
+    return buffer;
+}
+
+GLuint gen_faces_with_rgba(int components, int faces, GLfloat *data) {
+    GLuint buffer = gen_buffer(
+        sizeof(GLfloat) * 6 * components * faces * 4, data);
     free(data);
     return buffer;
 }
@@ -188,6 +199,14 @@ int string_width(const char *input) {
     int result = 0;
     int length = strlen(input);
     for (int i = 0; i < length; i++) {
+        if (input[i] == '\\' && input[i+1] != '\0' && input[i+1] != ' ') {
+            // ignore markup characters in string width
+            // run until next space or end.
+            while (input[i] != ' ' && i < length) {
+                i += 1;
+            }
+            continue;
+        }
         result += char_width(input[i]);
     }
     return result;
@@ -206,7 +225,7 @@ int wrap(const char *input, int max_width, char *output, int max_length) {
         char *token = tokenize(line, " ", &key2);
         while (token) {
             int token_width = string_width(token);
-            if (line_width) {
+            if (line_width && token[0] != '\\') {
                 if (line_width + token_width > max_width) {
                     line_width = 0;
                     line_number++;
@@ -217,7 +236,12 @@ int wrap(const char *input, int max_width, char *output, int max_length) {
                 }
             }
             strncat(output, token, max_length - strlen(output) - 1);
-            line_width += token_width + space_width;
+            if (token[0] != '\\') {
+                line_width += token_width + space_width;
+            } else {
+                // preserve space around markup
+                strncat(output, " ", max_length - strlen(output) - 1);
+            }
             token = tokenize(NULL, " ", &key2);
         }
         line_number++;
@@ -226,6 +250,77 @@ int wrap(const char *input, int max_width, char *output, int max_length) {
     }
     free(text);
     return line_number;
+}
+
+void color_from_text(const char *text, float *r, float *g, float *b) {
+    if (strlen(text) == 1) {
+        // Single letter colour codes
+        if (text[0] == 'r') {         // red
+            *r = 1.0;
+            *g = 0.0;
+            *b = 0.0;
+        } else if (text[0] == 'g') {  // green
+            *r = 0.0;
+            *g = 1.0;
+            *b = 0.0;
+        } else if (text[0] == 'b') {  // blue
+            *r = 0.0;
+            *g = 0.0;
+            *b = 1.0;
+        } else if (text[0] == 'o') {  // orange
+            *r = 1.0;
+            *g = 0.5;
+            *b = 0.0;
+        } else if (text[0] == 'p') {  // purple
+            *r = 0.5;
+            *g = 0.0;
+            *b = 0.5;
+        } else if (text[0] == 'y') {  // yellow
+            *r = 1.0;
+            *g = 1.0;
+            *b = 0.0;
+        } else if (text[0] == 'c') {  // cyan
+            *r = 0.0;
+            *g = 1.0;
+            *b = 1.0;
+        } else if (text[0] == 'm') {  // magenta
+            *r = 1.0;
+            *g = 0.0;
+            *b = 1.0;
+        } else if (text[0] == 'l') {  // black
+            *r = 0.0;
+            *g = 0.0;
+            *b = 0.0;
+        } else if (text[0] == 'w') {  // white
+            *r = 1.0;
+            *g = 1.0;
+            *b = 1.0;
+        } else if (text[0] == 's') {  // silver
+            *r = 0.75;
+            *g = 0.75;
+            *b = 0.75;
+        } else if (text[0] == 'e') {  // grey
+            *r = 0.5;
+            *g = 0.5;
+            *b = 0.5;
+        }
+    } else if (strlen(text) == 4) {
+        // #RGB
+        char col[1];
+        col[1] = '\0';
+        col[0] = text[1];
+        *r = (float)strtol(col, NULL, 16) / 15.0;
+        col[0] = text[2];
+        *g = (float)strtol(col, NULL, 16) / 15.0;
+        col[0] = text[3];
+        *b = (float)strtol(col, NULL, 16) / 15.0;
+    } else if (strlen(text) == 7) {
+        // #RRGGBB
+        int num = (int)strtol(text + 1, NULL, 16);
+        *r = (float)((unsigned char)(num >> (8 * 2))) / 255.0;
+        *g = (float)((unsigned char)(num >> 8)) / 255.0;
+        *b = (float)((unsigned char)(num)) / 255.0;
+    }
 }
 
 #ifdef DEBUG

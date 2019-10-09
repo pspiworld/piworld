@@ -13,6 +13,8 @@
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define SIGN(x) (((x) > 0) - ((x) < 0))
 
+#define MAX_COLOR_STRING_LENGTH 11
+
 #if DEBUG
     #define LOG(...) printf(__VA_ARGS__)
 #else
@@ -32,7 +34,9 @@ void update_fps(FPS *fps);
 GLuint gen_buffer(GLsizei size, GLfloat *data);
 void del_buffer(GLuint buffer);
 GLfloat *malloc_faces(int components, int faces);
+GLfloat *malloc_faces_with_rgba(int components, int faces);
 GLuint gen_faces(int components, int faces, GLfloat *data);
+GLuint gen_faces_with_rgba(int components, int faces, GLfloat *data);
 GLuint make_shader(GLenum type, const char *source);
 GLuint load_shader(GLenum type, const char *path);
 GLuint make_program(GLuint shader1, GLuint shader2);
@@ -42,6 +46,7 @@ char *tokenize(char *str, const char *delim, char **key);
 int char_width(char input);
 int string_width(const char *input);
 int wrap(const char *input, int max_width, char *output, int max_length);
+void color_from_text(const char *text, float *r, float *g, float *b);
 
 #ifdef DEBUG
 void _check_gl_error(const char *file, int line);

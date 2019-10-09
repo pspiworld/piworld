@@ -239,7 +239,8 @@ void make_character(
 }
 
 void make_character_3d(
-    float *data, float x, float y, float z, float n, int face, char c)
+    float *data, float x, float y, float z, float n, int face, char c,
+    float red, float green, float blue)
 {
     static const float positions[8][6][3] = {
         {{0, -2, -1}, {0, +2, +1}, {0, +2, -1},
@@ -294,6 +295,10 @@ void make_character_3d(
         *(d++) = z + n * positions[face][i][2];
         *(d++) = du + (uvs[face][i][0] ? u2 : u1);
         *(d++) = dv + (uvs[face][i][1] ? v2 : v1);
+        *(d++) = red;
+        *(d++) = green;
+        *(d++) = blue;
+        *(d++) = 1.0;  // alpha
     }
 }
 

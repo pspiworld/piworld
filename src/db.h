@@ -26,6 +26,7 @@ void db_delete_all_signs();
 void db_load_blocks(Map *map, int p, int q);
 void db_load_lights(Map *map, int p, int q);
 void db_load_signs(SignList *list, int p, int q);
+const char *db_get_sign(int p, int q, int x, int y, int z, int face);
 int db_get_key(int p, int q);
 void db_set_key(int p, int q, int key);
 void db_worker_start();

@@ -21,7 +21,7 @@ typedef union {
         unsigned char x;
         unsigned char y;
         unsigned char z;
-        int w;
+        signed char w;
     } e;
 } MapEntry;
 

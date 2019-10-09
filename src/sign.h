@@ -1,6 +1,6 @@
 #pragma once
 
-#define MAX_SIGN_LENGTH 64
+#define MAX_SIGN_LENGTH 256
 
 typedef struct {
     int x;
