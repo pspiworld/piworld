@@ -18,6 +18,8 @@ Zero can be fast enough.
 
 ![Screenshot](https://github.com/pspiworld/piworld/wiki/images/piworld-basic.png)
 
+[More screenshots](https://github.com/pspiworld/piworld/wiki/Screenshots)
+
 ### Features
 
 * Simple but nice looking terrain generation using perlin / simplex noise.
