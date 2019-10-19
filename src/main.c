@@ -2353,6 +2353,9 @@ void parse_command(const char *buffer, int forward) {
         config->show_chat_text = int_option;
     }
     else if (sscanf(buffer, "/show-clouds %d", &int_option) == 1) {
+        char value[2];
+        snprintf(value, 2, "%d", int_option);
+        db_set_option("show-clouds", value);
         config->show_clouds = int_option;
         g->mode_changed = 1;  // regenerate world
     }
@@ -2370,6 +2373,9 @@ void parse_command(const char *buffer, int forward) {
         g->mode_changed = 1;  // regenerate world
     }
     else if (sscanf(buffer, "/show-plants %d", &int_option) == 1) {
+        char value[2];
+        snprintf(value, 2, "%d", int_option);
+        db_set_option("show-plants", value);
         config->show_plants = int_option;
         g->mode_changed = 1;  // regenerate world
     }
@@ -2377,6 +2383,9 @@ void parse_command(const char *buffer, int forward) {
         config->show_player_names = int_option;
     }
     else if (sscanf(buffer, "/show-trees %d", &int_option) == 1) {
+        char value[2];
+        snprintf(value, 2, "%d", int_option);
+        db_set_option("show-trees", value);
         config->show_trees = int_option;
         g->mode_changed = 1;  // regenerate world
     }
@@ -2704,7 +2713,6 @@ void parse_buffer(char *buffer) {
             if (client) {
                 Player *player = &client->players[p - 1];
                 if (!player->is_active) {
-                    printf("P now active: %d\n", p);
                     // Add remote player
                     player->is_active = 1;
                     snprintf(player->name, MAX_NAME_LENGTH, "player%d-%d",
@@ -2798,6 +2806,34 @@ void parse_buffer(char *buffer) {
             Client *client = find_client(pid);
             if (client) {
                 strncpy(client->players[p - 1].name, name, MAX_NAME_LENGTH);
+            }
+            goto next_line;
+        }
+        char value[MAX_NAME_LENGTH];
+        snprintf(
+            format, sizeof(format), "O,%%%d[^,],%%%d[^,]", MAX_NAME_LENGTH - 1,
+            MAX_NAME_LENGTH - 1);
+        if (sscanf(line, format, name, value) == 2) {
+            printf("Got option from server %s = %s\n", name, value);
+            int int_value = atoi(value);
+            if (strncmp(name, "show-plants", 11) == 0 &&
+                (int_value == 0 || int_value == 1)) {
+                if (int_value != config->show_plants) {
+                    config->show_plants = int_value;
+                    g->mode_changed = 1;  // regenerate world
+                }
+            } else if (strncmp(name, "show-trees", 9) == 0 &&
+                       (int_value == 0 || int_value == 1)) {
+                if (int_value != config->show_trees) {
+                    config->show_trees = int_value;
+                    g->mode_changed = 1;  // regenerate world
+                }
+            } else if (strncmp(name, "show-clouds", 11) == 0 &&
+                       (int_value == 0 || int_value == 1)) {
+                if (int_value != config->show_clouds) {
+                    config->show_clouds = int_value;
+                    g->mode_changed = 1;  // regenerate world
+                }
             }
             goto next_line;
         }
@@ -3848,6 +3884,20 @@ int main(int argc, char **argv) {
             if (g->mode == MODE_ONLINE) {
                 // TODO: support proper caching of signs (handle deletions)
                 db_delete_all_signs();
+            } else {
+                const char *value;
+                value = db_get_option("show-clouds");
+                if (value != NULL) {
+                    config->show_clouds = atoi(value);
+                }
+                value = db_get_option("show-plants");
+                if (value != NULL) {
+                    config->show_plants = atoi(value);
+                }
+                value = db_get_option("show-trees");
+                if (value != NULL) {
+                    config->show_trees = atoi(value);
+                }
             }
         }
 

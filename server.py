@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 from math import floor
-from world import World
+from world import World, show_clouds, show_plants, show_trees
 import Queue
 import SocketServer
 import atexit
@@ -49,6 +49,7 @@ GOTO = 'G'
 KEY = 'K'
 LIGHT = 'L'
 NICK = 'N'
+OPTION = 'O'
 POSITION = 'P'
 PQ = 'Q'
 REDRAW = 'R'
@@ -221,6 +222,19 @@ class Model(object):
         self.connection = sqlite3.connect(DB_PATH)
         self.create_tables()
         self.commit()
+        query = (
+            'select value from option where '
+            'name = :name;'
+        )
+        rows = list(self.execute(query, dict(name="show-clouds")))
+        if rows:
+            show_clouds.value = int(rows[0][0])
+        rows = list(self.execute(query, dict(name="show-plants")))
+        if rows:
+            show_plants.value = int(rows[0][0])
+        rows = list(self.execute(query, dict(name="show-trees")))
+        if rows:
+            show_trees.value = int(rows[0][0])
         while self.running:
             try:
                 if time.time() - self.last_commit > COMMIT_INTERVAL:
@@ -286,6 +300,11 @@ class Model(object):
             '   z int not null,'
             '   w int not null'
             ');',
+            'create table if not exists option ('
+            '    name text not null,'
+            '    value text not null'
+            ');',
+            'create unique index if not exists option_idx on option (name);',
         ]
         for query in queries:
             self.execute(query)
@@ -326,6 +345,7 @@ class Model(object):
         for i in range(MAX_LOCAL_PLAYERS):
             self.send_positions(client, i + 1)
         self.send_nicks(client)
+        self.send_options(client)
     def on_data(self, client, data):
         #log('RECV', client.client_id, data)
         args = data.split(',')
@@ -667,6 +687,13 @@ class Model(object):
                 continue
             for i in range(MAX_LOCAL_PLAYERS):
                 client.send(NICK, other.client_id, i+1, other.players[i].nick)
+    def send_options(self, client):
+        query = (
+            'select name, value from option;'
+        )
+        rows = list(self.execute(query))
+        for name, value in rows:
+            client.send(OPTION, name, value)
     def send_nick(self, client, player_index):
         for other in self.clients:
             other.send(NICK, client.client_id, player_index,

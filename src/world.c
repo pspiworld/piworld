@@ -5,6 +5,12 @@
 
 #define BEDROCK COLOR_11  // A Raspberry base
 
+#ifdef SERVER
+int show_clouds = SHOW_CLOUDS;
+int show_plants = SHOW_PLANTS;
+int show_trees = SHOW_TREES;
+#endif
+
 void create_world(int p, int q, world_func func, void *arg) {
     int pad = 1;
     for (int dx = -pad; dx < CHUNK_SIZE + pad; dx++) {
@@ -34,7 +40,7 @@ void create_world(int p, int q, world_func func, void *arg) {
             }
             if (w == GRASS) {
 #ifdef SERVER
-                if (SHOW_PLANTS) {
+                if (show_plants) {
 #else
                 if (config->show_plants) {
 #endif
@@ -50,7 +56,7 @@ void create_world(int p, int q, world_func func, void *arg) {
                 }
                 // trees
 #ifdef SERVER
-                int ok = SHOW_TREES;
+                int ok = show_trees;
 #else
                 int ok = config->show_trees;
 #endif
@@ -80,7 +86,7 @@ void create_world(int p, int q, world_func func, void *arg) {
             }
             // clouds
 #ifdef SERVER
-                if (SHOW_CLOUDS) {
+                if (show_clouds) {
 #else
                 if (config->show_clouds) {
 #endif

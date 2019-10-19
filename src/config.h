@@ -8,7 +8,7 @@
 #define VSYNC 1
 #define MAX_MESSAGES 4
 #define DB_FILENAME "my.piworld"
-#define USE_CACHE 1
+#define USE_CACHE 0
 #define DAY_LENGTH 600
 #define INVERT_MOUSE 0
 

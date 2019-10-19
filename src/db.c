@@ -20,6 +20,8 @@ static sqlite3_stmt *load_signs_stmt;
 static sqlite3_stmt *get_sign_stmt;
 static sqlite3_stmt *get_key_stmt;
 static sqlite3_stmt *set_key_stmt;
+static sqlite3_stmt *get_option_stmt;
+static sqlite3_stmt *set_option_stmt;
 
 static Ring ring;
 static thrd_t thrd;
@@ -87,9 +89,14 @@ int db_init(char *path) {
         "    face int not null,"
         "    text text not null"
         ");"
+        "create table if not exists option ("
+        "    name text not null,"
+        "    value text not null"
+        ");"
         "create unique index if not exists block_pqxyz_idx on block (p, q, x, y, z);"
         "create unique index if not exists light_pqxyz_idx on light (p, q, x, y, z);"
         "create unique index if not exists key_pq_idx on key (p, q);"
+        "create unique index if not exists option_idx on option (name);"
         "create unique index if not exists sign_xyzface_idx on sign (x, y, z, face);"
         "create index if not exists sign_pq_idx on sign (p, q);";
     static const char *insert_block_query =
@@ -118,6 +125,11 @@ int db_init(char *path) {
     static const char *set_key_query =
         "insert or replace into key (p, q, key) "
         "values (?, ?, ?);";
+    static const char *get_option_query =
+        "select value from option where name = ?;";
+    static const char *set_option_query =
+        "insert or replace into option (name, value) "
+        "values (?, ?);";
     int rc;
     rc = sqlite3_open(path, &db);
     if (rc) return rc;
@@ -150,6 +162,10 @@ int db_init(char *path) {
     if (rc) return rc;
     rc = sqlite3_prepare_v2(db, set_key_query, -1, &set_key_stmt, NULL);
     if (rc) return rc;
+    rc = sqlite3_prepare_v2(db, get_option_query, -1, &get_option_stmt, NULL);
+    if (rc) return rc;
+    rc = sqlite3_prepare_v2(db, set_option_query, -1, &set_option_stmt, NULL);
+    if (rc) return rc;
     sqlite3_exec(db, "begin;", NULL, NULL, NULL);
     db_worker_start();
     return 0;
@@ -172,6 +188,8 @@ void db_close() {
     sqlite3_finalize(get_sign_stmt);
     sqlite3_finalize(get_key_stmt);
     sqlite3_finalize(set_key_stmt);
+    sqlite3_finalize(get_option_stmt);
+    sqlite3_finalize(set_option_stmt);
     sqlite3_close(db);
 }
 
@@ -470,6 +488,28 @@ void _db_set_key(int p, int q, int key) {
     sqlite3_bind_int(set_key_stmt, 2, q);
     sqlite3_bind_int(set_key_stmt, 3, key);
     sqlite3_step(set_key_stmt);
+}
+
+void db_set_option(char *name, char *value) {
+    if (!db_enabled) {
+        return;
+    }
+    sqlite3_reset(set_option_stmt);
+    sqlite3_bind_text(set_option_stmt, 1, name, -1, NULL);
+    sqlite3_bind_text(set_option_stmt, 2, value, -1, NULL);
+    sqlite3_step(set_option_stmt);
+}
+
+const char *db_get_option(char *name) {
+    if (!db_enabled) {
+        return NULL;
+    }
+    sqlite3_reset(get_option_stmt);
+    sqlite3_bind_text(get_option_stmt, 1, name, -1, NULL);
+    if (sqlite3_step(get_option_stmt) == SQLITE_ROW) {
+        return sqlite3_column_text(get_option_stmt, 0);
+    }
+    return NULL;
 }
 
 void db_worker_start(char *path) {

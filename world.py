@@ -6,6 +6,10 @@ from collections import OrderedDict
 
 dll = CDLL('./world')
 
+show_clouds = c_int.in_dll(dll, "show_clouds")
+show_plants = c_int.in_dll(dll, "show_plants")
+show_trees = c_int.in_dll(dll, "show_trees")
+
 WORLD_FUNC = CFUNCTYPE(None, c_int, c_int, c_int, c_int, c_void_p)
 
 def dll_seed(x):
