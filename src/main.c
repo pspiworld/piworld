@@ -3018,12 +3018,9 @@ void handle_key_press(unsigned char c, int mods, int keysym)
         } else if (c == '0' && c <= '9') {
             p->item_index = 9;
         } else if (c == CRAFT_KEY_ITEM_NEXT) {
-            p->item_index = (p->item_index + 1) % item_count;
+            cycle_item_in_hand_up(p);
         } else if (c == CRAFT_KEY_ITEM_PREV) {
-            p->item_index--;
-            if (p->item_index < 0) {
-                p->item_index = item_count - 1;
-            }
+            cycle_item_in_hand_down(p);
         } else if (c == CRAFT_KEY_OBSERVE) {
             int start = ((p->observe1 == 0) ?  p->player->id : p->observe1) - 1;
             if (p->observe1_client_id == 0) {
@@ -3200,13 +3197,9 @@ void handle_mouse_release(int b, int mods)
             set_block_under_crosshair(g->mouse_player);
         }
     } else if (b == 4) {
-        g->keyboard_player->item_index =
-            (g->keyboard_player->item_index + 1) % item_count;
+        cycle_item_in_hand_up(g->mouse_player);
     } else if (b == 5) {
-        g->keyboard_player->item_index--;
-        if (g->keyboard_player->item_index < 0) {
-            g->keyboard_player->item_index = item_count - 1;
-        }
+        cycle_item_in_hand_down(g->mouse_player);
     }
 }
 
