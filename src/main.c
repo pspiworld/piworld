@@ -3021,6 +3021,8 @@ void handle_key_press(unsigned char c, int mods, int keysym)
             cycle_item_in_hand_up(p);
         } else if (c == CRAFT_KEY_ITEM_PREV) {
             cycle_item_in_hand_down(p);
+        } else if (c == 'g') {
+            set_item_in_hand_to_item_under_crosshair(p);
         } else if (c == CRAFT_KEY_OBSERVE) {
             int start = ((p->observe1 == 0) ?  p->player->id : p->observe1) - 1;
             if (p->observe1_client_id == 0) {
