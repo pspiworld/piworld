@@ -2526,43 +2526,6 @@ void on_light(LocalPlayer *local) {
     }
 }
 
-void on_left_click(LocalPlayer *local) {
-    State *s = &local->player->state;
-    int hx, hy, hz;
-    int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
-    if (hy > 0 && hy < 256 && is_destructable(hw)) {
-        set_block(hx, hy, hz, 0);
-        record_block(hx, hy, hz, 0, local);
-        if (is_plant(get_block(hx, hy + 1, hz))) {
-            set_block(hx, hy + 1, hz, 0);
-        }
-    }
-}
-
-void on_right_click(LocalPlayer *local) {
-    State *s = &local->player->state;
-    int hx, hy, hz;
-    int hw = hit_test(1, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
-    if (hy > 0 && hy < 256 && is_obstacle(hw)) {
-        if (!player_intersects_block(2, s->x, s->y, s->z, hx, hy, hz)) {
-            set_block(hx, hy, hz, items[local->item_index]);
-            record_block(hx, hy, hz, items[local->item_index], local);
-        }
-    }
-}
-
-void on_middle_click(LocalPlayer *local) {
-    State *s = &local->player->state;
-    int hx, hy, hz;
-    int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
-    for (int i = 0; i < item_count; i++) {
-        if (items[i] == hw) {
-            local->item_index = i;
-            break;
-        }
-    }
-}
-
 void handle_mouse_input(LocalPlayer *local) {
     static double px = 0;
     static double py = 0;
@@ -3116,9 +3079,9 @@ void handle_key_press(unsigned char c, int mods, int keysym)
             g->text_cursor = g->typing_start;
         } else if (c == 13) {  // return
             if (mods & ControlMask) {
-                on_right_click(g->mouse_player);
+                set_block_under_crosshair(g->mouse_player);
             } else {
-                on_left_click(g->mouse_player);
+                clear_block_under_crosshair(g->mouse_player);
             }
         }
     } else {
@@ -3224,17 +3187,17 @@ void handle_mouse_release(int b, int mods)
 {
     if (b == 1) {
         if (mods & ControlMask) {
-            on_right_click(g->mouse_player);
+            set_block_under_crosshair(g->mouse_player);
         } else {
-            on_left_click(g->mouse_player);
+            clear_block_under_crosshair(g->mouse_player);
         }
     } else if (b == 2) {
-        on_middle_click(g->mouse_player);
+        set_item_in_hand_to_item_under_crosshair(g->mouse_player);
     } else if (b == 3) {
         if (mods & ControlMask) {
             on_light(g->mouse_player);
         } else {
-            on_right_click(g->mouse_player);
+            set_block_under_crosshair(g->mouse_player);
         }
     } else if (b == 4) {
         g->keyboard_player->item_index =
