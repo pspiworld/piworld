@@ -31,18 +31,18 @@ typedef struct
 } X11_EVENT_STATE_T;
 
 void x11_event_init(Display *display, Window window, int x, int y, int w, int h);
-void set_mouse_relative();
-void set_mouse_absolute();
+void set_mouse_relative(void);
+void set_mouse_absolute(void);
 
-void pg_next_event();
+void pg_next_event(void);
 
 typedef void (*KeyPressHandler)(unsigned char, int mods, int keysym);
 typedef void (*KeyReleaseHandler)(unsigned char, int keysym);
 typedef void (*MotionHandler)(int diff_x, int diff_y);
 typedef void (*MousePressHandler)(int button, int mods);
 typedef void (*MouseReleaseHandler)(int button, int mods);
-typedef void (*WindowCloseHandler)();
-typedef void (*FocusOutHandler)();
+typedef void (*WindowCloseHandler)(void);
+typedef void (*FocusOutHandler)(void);
 
 void set_key_press_handler(KeyPressHandler key_press_handler);
 void set_key_release_handler(KeyReleaseHandler key_release_handler);
@@ -57,7 +57,7 @@ void pg_move_window(int x, int y);
 void pg_resize_window(int width, int height);
 void pg_set_window_title(char *title);
 void pg_fullscreen(int fullscreen);
-void pg_toggle_fullscreen();
+void pg_toggle_fullscreen(void);
 
 void _pg_fatal(char *format, ...);
 

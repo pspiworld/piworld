@@ -45,13 +45,15 @@
 #define CHUNK_SIZE 16
 #define COMMIT_INTERVAL 5
 #define DEFAULT_PORT 4080
-#define MAX_ADDR_LENGTH 256
-#define MAX_PATH_LENGTH 256
+#define MAX_ADDR_LENGTH 196
+#define MAX_PATH_LENGTH 512
+#define MAX_DIR_LENGTH 256
+#define MAX_FILENAME_LENGTH 196
 #define MAX_TITLE_LENGTH 256
 #define AUTO_PICK_VIEW_RADIUS 0
 
 typedef struct {
-    char path[MAX_PATH_LENGTH];
+    char path[MAX_DIR_LENGTH];
     char db_path[MAX_PATH_LENGTH];
     int fullscreen;
     int players;
@@ -80,7 +82,7 @@ typedef struct {
 
 extern Config *config;
 
-void reset_config();
+void reset_config(void);
 void get_config_path(char *path);
 void get_default_db_path(char *path);
 void get_server_db_cache_path(char *path);

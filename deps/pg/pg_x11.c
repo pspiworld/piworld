@@ -20,7 +20,7 @@ EGLNativeDisplayType get_egl_display_id()
 
 EGLNativeWindowType
 get_egl_window_id(EGLConfig config, EGLDisplay display,
-                  uint32_t *x, uint32_t *y,
+                  int *x, int *y,
                   uint32_t *w, uint32_t *h, char *title)
 {
     XVisualInfo *visInfo, visTemplate;
@@ -90,17 +90,17 @@ get_egl_window_id(EGLConfig config, EGLDisplay display,
     return xwin;
 }
 
-void pg_end()
+void pg_end(void)
 {
     XCloseDisplay(x11_state->native_dpy);
 }
 
-EGLNativeDisplayType get_x11_display()
+EGLNativeDisplayType get_x11_display(void)
 {
     return x11_state->native_dpy;
 }
 
-int pg_get_gpu_mem_size()
+int pg_get_gpu_mem_size(void)
 {
     // assume gpu has at least 512MiB available to it
     return 512;

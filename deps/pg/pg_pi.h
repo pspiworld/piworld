@@ -20,18 +20,18 @@ typedef struct
     DISPMANX_ELEMENT_HANDLE_T dispman_element;
     EGLNativeWindowType nativewindow;
     VC_RECT_T dst_rect;
-    int screen_w, screen_h;
+    uint32_t screen_w, screen_h;
 
     // X11 stuff
     EGLNativeDisplayType x11_display;
     const char *x11_display_name;
 } PI_STATE_T;
 
-EGLNativeDisplayType get_egl_display_id();
+EGLNativeDisplayType get_egl_display_id(void);
 EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
-                                      uint32_t *x, uint32_t *y,
+                                      int *x, int *y,
                                       uint32_t *w, uint32_t *h, char *title);
-void platform_exit();
-EGLNativeDisplayType get_x11_display();
-void pi_set_window_geometry(int *x, int *y, int *w, int *h);
+void platform_exit(void);
+EGLNativeDisplayType get_x11_display(void);
+void pi_set_window_geometry(int *x, int *y, uint32_t *w, uint32_t *h);
 

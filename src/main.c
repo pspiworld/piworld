@@ -200,7 +200,7 @@ typedef struct {
     char lines[MAX_HISTORY_SIZE][MAX_TEXT_LENGTH];
     int size;
     int end;
-    int line_start;
+    size_t line_start;
 } TextLineHistory;
 
 typedef struct {
@@ -219,8 +219,8 @@ typedef struct {
     char typing_buffer[MAX_TEXT_LENGTH];
     TextLineHistory typing_history[NUM_HISTORIES];
     int history_position;
-    int text_cursor;
-    int typing_start;
+    size_t text_cursor;
+    size_t typing_start;
     int message_index;
     char messages[MAX_MESSAGES][MAX_TEXT_LENGTH];
     int width;
@@ -245,7 +245,7 @@ void set_players_view_size(int w, int h);
 Client *find_client(int id);
 void set_view_radius(int requested_size);
 
-void limit_player_count_to_fit_gpu_mem()
+void limit_player_count_to_fit_gpu_mem(void)
 {
     if (pg_get_gpu_mem_size() < 128 && config->players > 2) {
         printf("More GPU memory needed for more players.\n");
@@ -291,7 +291,7 @@ int get_next_local_player(Client *client, int start)
     return next;
 }
 
-int get_next_player(int *player_index, int *client_id)
+void get_next_player(int *player_index, int *client_id)
 {
     Client *client = find_client(*client_id);
     if (!client) {
@@ -319,7 +319,7 @@ int chunked(float x) {
     return floorf(roundf(x) / CHUNK_SIZE);
 }
 
-float time_of_day() {
+float time_of_day(void) {
     if (g->day_length <= 0) {
         return 0.5;
     }
@@ -330,7 +330,7 @@ float time_of_day() {
     return t;
 }
 
-float get_daylight() {
+float get_daylight(void) {
     float timer = time_of_day();
     if (timer < 0.5) {
         float t = (timer - 0.25) * 100;
@@ -342,7 +342,7 @@ float get_daylight() {
     }
 }
 
-float get_scale_factor() {
+float get_scale_factor(void) {
     return 1.0;
 }
 
@@ -381,7 +381,7 @@ void get_motion_vector(int flying, float sz, float sx, float rx, float ry,
     }
 }
 
-GLuint gen_crosshair_buffer() {
+GLuint gen_crosshair_buffer(void) {
     int x = g->width / 2;
     int y = g->height / 2;
     int p = 10 * g->scale;
@@ -398,7 +398,7 @@ GLuint gen_wireframe_buffer(float x, float y, float z, float n) {
     return gen_buffer(sizeof(data), data);
 }
 
-GLuint gen_sky_buffer() {
+GLuint gen_sky_buffer(void) {
     float data[12288];
     make_sphere(data, 1, 3);
     return gen_buffer(sizeof(data), data);
@@ -628,7 +628,7 @@ void delete_client(int id) {
     g->client_count = count;
 }
 
-void delete_all_players() {
+void delete_all_players(void) {
     for (int i = 0; i < g->client_count; i++) {
         Client *client = g->clients + i;
         for (int j = 0; j < MAX_LOCAL_PLAYERS; j++) {
@@ -930,16 +930,9 @@ int _gen_sign_buffer(
     }
     float font_scaling = 1.0;
     float r = 0.0, g = 0.0, b = 0.0;
-    const char *start_of_text = text;
     if (strlen(text) > 2 && text[0] == '\\' &&
         (isdigit(text[1]) || text[1] == '.')) {
         font_scaling = atof(&text[1]);
-        char *first_space_char = strchr(text, ' ');
-        if (first_space_char != NULL) {
-            start_of_text = first_space_char + 1;
-        } else {
-            start_of_text = text + 3;
-        }
     }
     int count = 0;
     float max_width = 64 / font_scaling;
@@ -1030,7 +1023,7 @@ void gen_sign_buffer(Chunk *chunk) {
 
     // first pass - count characters
     int max_faces = 0;
-    for (int i = 0; i < signs->size; i++) {
+    for (size_t i = 0; i < signs->size; i++) {
         Sign *e = signs->data + i;
         max_faces += strlen(e->text);
     }
@@ -1038,7 +1031,7 @@ void gen_sign_buffer(Chunk *chunk) {
     // second pass - generate geometry
     GLfloat *data = malloc_faces_with_rgba(5, max_faces);
     int faces = 0;
-    for (int i = 0; i < signs->size; i++) {
+    for (size_t i = 0; i < signs->size; i++) {
         Sign *e = signs->data + i;
         faces += _gen_sign_buffer(
             data + faces * 54, e->x, e->y, e->z, e->face, e->text);
@@ -1431,7 +1424,7 @@ void create_chunk(Chunk *chunk, int p, int q) {
     request_chunk(p, q);
 }
 
-void delete_chunks() {
+void delete_chunks(void) {
     int count = g->chunk_count;
     int states_count = 0;
     // Maximum states include the basic player view and 2 observe views.
@@ -1486,7 +1479,7 @@ void delete_chunks() {
     g->chunk_count = count;
 }
 
-void delete_all_chunks() {
+void delete_all_chunks(void) {
     for (int i = 0; i < g->chunk_count; i++) {
         Chunk *chunk = g->chunks + i;
         map_free(&chunk->map);
@@ -1498,7 +1491,7 @@ void delete_all_chunks() {
     g->chunk_count = 0;
 }
 
-void check_workers() {
+void check_workers(void) {
     for (int i = 0; i < WORKERS; i++) {
         Worker *worker = g->workers + i;
         mtx_lock(&worker->mtx);
@@ -2065,7 +2058,7 @@ void add_message(const char *text) {
     g->message_index = (g->message_index + 1) % MAX_MESSAGES;
 }
 
-void login() {
+void login(void) {
     printf("Logging in anonymously\n");
     client_login("", "");
 }
@@ -2260,7 +2253,7 @@ void tree(Block *block) {
 void parse_command(const char *buffer, int forward) {
     char server_addr[MAX_ADDR_LENGTH];
     int server_port = DEFAULT_PORT;
-    char filename[MAX_PATH_LENGTH];
+    char filename[MAX_FILENAME_LENGTH];
     char name[MAX_NAME_LENGTH];
     int int_option, radius, count, p, q, xc, yc, zc;
     char window_title[MAX_TITLE_LENGTH];
@@ -2282,7 +2275,7 @@ void parse_command(const char *buffer, int forward) {
         g->mode_changed = 1;
         g->mode = MODE_OFFLINE;
         snprintf(g->db_path, MAX_PATH_LENGTH, "%s/%s.piworld", config->path,
-            filename);
+                 filename);
     }
     else if (strcmp(buffer, "/offline") == 0) {
         g->mode_changed = 1;
@@ -2527,22 +2520,19 @@ void on_light(LocalPlayer *local) {
 }
 
 void handle_mouse_input(LocalPlayer *local) {
-    static double px = 0;
-    static double py = 0;
+    static int px = 0;
+    static int py = 0;
     State *s = &local->player->state;
     if ((px || py)) {
-        double mx, my;
-        int mix, miy;
-        get_x11_accumulative_mouse_motion(&mix, &miy);
-        mx = (float)mix;
-        my = (float)miy;
+        int mx, my;
+        get_x11_accumulative_mouse_motion(&mx, &my);
         float m = 0.0025;
         s->rx -= (mx - px) * m;
-            s->ry += (my - py) * m;
+        s->ry += (my - py) * m;
         if (s->rx < 0) {
             s->rx += RADIANS(360);
         }
-        if (s->rx >= RADIANS(360)){
+        if (s->rx >= RADIANS(360)) {
             s->rx -= RADIANS(360);
         }
         s->ry = MAX(s->ry, -RADIANS(90));
@@ -2551,10 +2541,7 @@ void handle_mouse_input(LocalPlayer *local) {
         py = my;
     }
     else {
-        int pix, piy;
-        get_x11_accumulative_mouse_motion(&pix, &piy);
-        px = (float)pix;
-        py = (float)piy;
+        get_x11_accumulative_mouse_motion(&px, &py);
     }
 }
 
@@ -2817,7 +2804,7 @@ next_line:
     }
 }
 
-void reset_model() {
+void reset_model(void) {
     memset(g->chunks, 0, sizeof(Chunk) * MAX_CHUNKS);
     g->chunk_count = 0;
     memset(g->clients, 0, sizeof(Client) * MAX_CLIENTS);
@@ -2842,7 +2829,7 @@ void reset_model() {
 }
 
 void insert_into_typing_buffer(unsigned char c) {
-    int n = strlen(g->typing_buffer);
+    size_t n = strlen(g->typing_buffer);
     if (n < MAX_TEXT_LENGTH - 1) {
         if (g->text_cursor != n) {
             // Shift text after the text cursor to the right
@@ -2917,7 +2904,7 @@ void history_next(TextLineHistory *history, char *line, int *position)
     snprintf(line, MAX_TEXT_LENGTH, "%s", history->lines[*position]);
 }
 
-TextLineHistory* current_history()
+TextLineHistory* current_history(void)
 {
     if (g->typing_buffer[0] == CRAFT_KEY_SIGN) {
         return &g->typing_history[SIGN_HISTORY];
@@ -2928,7 +2915,7 @@ TextLineHistory* current_history()
     }
 }
 
-void move_primary_focus_to_active_player()
+void move_primary_focus_to_active_player(void)
 {
     int focus = 0;
     for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
@@ -2941,7 +2928,7 @@ void move_primary_focus_to_active_player()
     g->mouse_player = &g->local_players[focus];
 }
 
-void cycle_primary_focus_around_local_players()
+void cycle_primary_focus_around_local_players(void)
 {
     int first_active_player = 0;
     for (int i=0; i<MAX_LOCAL_PLAYERS-1; i++) {
@@ -3066,10 +3053,10 @@ void handle_key_press(unsigned char c, int mods, int keysym)
             g->typing_buffer[1] = '\0';
             int x, y, z, face;
             if (hit_test_face(p->player, &x, &y, &z, &face)) {
-                const char *existing_sign = db_get_sign(
+                const unsigned char *existing_sign = db_get_sign(
                     chunked(x), chunked(z), x, y, z, face);
                 if (existing_sign) {
-                    strncpy(g->typing_buffer + 1, existing_sign,
+                    strncpy(g->typing_buffer + 1, (char *)existing_sign,
                             MAX_TEXT_LENGTH - 1);
                     g->typing_buffer[MAX_TEXT_LENGTH - 1] = '\0';
                 }
@@ -3088,7 +3075,7 @@ void handle_key_press(unsigned char c, int mods, int keysym)
             p->typing = 0;
             g->history_position = NOT_IN_HISTORY;
         } else if (c == 8) {  // backspace
-            int n = strlen(g->typing_buffer);
+            size_t n = strlen(g->typing_buffer);
             if (n > 0 && g->text_cursor > g->typing_start) {
                 if (g->text_cursor < n) {
                     memmove(g->typing_buffer + g->text_cursor - 1,
@@ -3117,7 +3104,7 @@ void handle_key_press(unsigned char c, int mods, int keysym)
                 g->history_position = NOT_IN_HISTORY;
             }
         } else if (keysym == XK_Delete) {
-            int n = strlen(g->typing_buffer);
+            size_t n = strlen(g->typing_buffer);
             if (n > 0 && g->text_cursor < n) {
                 memmove(g->typing_buffer + g->text_cursor,
                         g->typing_buffer + g->text_cursor + 1,
@@ -3205,12 +3192,12 @@ void handle_mouse_release(int b, int mods)
     }
 }
 
-void handle_window_close()
+void handle_window_close(void)
 {
     terminate = True;
 }
 
-void handle_focus_out() {
+void handle_focus_out(void) {
     for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
         LocalPlayer *p = &g->local_players[i];
         p->forward_is_pressed = 0;
@@ -3230,7 +3217,7 @@ void handle_focus_out() {
     pg_fullscreen(0);
 }
 
-void reset_history()
+void reset_history(void)
 {
     g->history_position = NOT_IN_HISTORY;
     for (int i=0; i<NUM_HISTORIES; i++) {
@@ -3242,7 +3229,7 @@ void reset_history()
     g->typing_history[SIGN_HISTORY].line_start = 1;
 }
 
-LocalPlayer *map_joystick_to_player(PG_Joystick *j, int j_num) {
+LocalPlayer *map_joystick_to_player(int j_num) {
     LocalPlayer *p = g->local_players;
     int joystick_count = pg_joystick_count();
 
@@ -3260,7 +3247,7 @@ LocalPlayer *map_joystick_to_player(PG_Joystick *j, int j_num) {
 
 void handle_joystick_axis(PG_Joystick *j, int j_num, int axis, float value)
 {
-    LocalPlayer *p = map_joystick_to_player(j, j_num);
+    LocalPlayer *p = map_joystick_to_player(j_num);
 
     if (j->axis_count < 4) {
         if (axis == 0) {
@@ -3303,7 +3290,7 @@ void handle_joystick_axis(PG_Joystick *j, int j_num, int axis, float value)
 
 void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
 {
-    LocalPlayer *p = map_joystick_to_player(j, j_num);
+    LocalPlayer *p = map_joystick_to_player(j_num);
 
     if (j->axis_count < 4) {
         if (button == 0) {
@@ -3629,7 +3616,7 @@ void set_players_view_size(int w, int h)
     }
 }
 
-void set_players_to_match_joysticks()
+void set_players_to_match_joysticks(void)
 {
     int joystick_count = pg_joystick_count();
     if (joystick_count != config->players) {
@@ -3843,18 +3830,18 @@ int main(int argc, char **argv) {
                 // TODO: support proper caching of signs (handle deletions)
                 db_delete_all_signs();
             } else {
-                const char *value;
+                const unsigned char *value;
                 value = db_get_option("show-clouds");
                 if (value != NULL) {
-                    config->show_clouds = atoi(value);
+                    config->show_clouds = atoi((char *)value);
                 }
                 value = db_get_option("show-plants");
                 if (value != NULL) {
-                    config->show_plants = atoi(value);
+                    config->show_plants = atoi((char *)value);
                 }
                 value = db_get_option("show-trees");
                 if (value != NULL) {
-                    config->show_trees = atoi(value);
+                    config->show_trees = atoi((char *)value);
                 }
             }
         }

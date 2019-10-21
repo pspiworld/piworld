@@ -19,10 +19,10 @@ typedef struct
     const char *display_name;
 } X11_STATE_T;
 
-EGLNativeDisplayType get_egl_display_id();
+EGLNativeDisplayType get_egl_display_id(void);
 EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
-                                      uint32_t *x, uint32_t *y,
+                                      int *x, int *y,
                                       uint32_t *w, uint32_t *h, char *title);
-void platform_exit();
-EGLNativeDisplayType get_x11_display();
+void platform_exit(void);
+EGLNativeDisplayType get_x11_display(void);
 

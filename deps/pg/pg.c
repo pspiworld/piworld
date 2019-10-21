@@ -11,8 +11,8 @@
 
 typedef struct
 {
-    uint32_t window_x;
-    uint32_t window_y;
+    int window_x;
+    int window_y;
     uint32_t window_width;
     uint32_t window_height;
     EGLDisplay display;
@@ -138,7 +138,7 @@ void pg_get_window_size(int *width, int *height)
     *height = pg_state->window_height;
 }
 
-void pg_set_window_geometry(int x, int y, int width, int height)
+void pg_set_window_geometry(int x, int y, uint32_t width, uint32_t height)
 {
     #ifndef MESA
     // Call extra setup function for brcm driver

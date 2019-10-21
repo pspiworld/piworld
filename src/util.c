@@ -35,10 +35,10 @@ char *load_file(const char *path) {
         exit(1);
     }
     fseek(file, 0, SEEK_END);
-    int length = ftell(file);
+    long length = ftell(file);
     rewind(file);
     char *data = calloc(length + 1, sizeof(char));
-    if (fread(data, 1, length, file) != length) {
+    if (fread(data, 1, length, file) != (size_t)length) {
         fprintf(stderr, "fread failed: %s\n", path);
         exit(-1);
     }
@@ -181,7 +181,7 @@ char *tokenize(char *str, const char *delim, char **key) {
     return result;
 }
 
-int char_width(char input) {
+int char_width(unsigned char input) {
     static const int lookup[128] = {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -306,7 +306,7 @@ void color_from_text(const char *text, float *r, float *g, float *b) {
         }
     } else if (strlen(text) == 4) {
         // #RGB
-        char col[1];
+        char col[2];
         col[1] = '\0';
         col[0] = text[1];
         *r = (float)strtol(col, NULL, 16) / 15.0;

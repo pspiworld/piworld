@@ -213,7 +213,7 @@ char *client_recv() {
     return result;
 }
 
-int recv_worker(void *arg) {
+int recv_worker(__attribute__((unused)) void *arg) {
     char *data = malloc(sizeof(char) * RECV_SIZE);
     while (1) {
         int length;

@@ -29,15 +29,15 @@ static mtx_t mtx;
 static cnd_t cnd;
 static mtx_t load_mtx;
 
-void db_enable() {
+void db_enable(void) {
     db_enabled = 1;
 }
 
-void db_disable() {
+void db_disable(void) {
     db_enabled = 0;
 }
 
-int get_db_enabled() {
+int get_db_enabled(void) {
     return db_enabled;
 }
 
@@ -171,7 +171,7 @@ int db_init(char *path) {
     return 0;
 }
 
-void db_close() {
+void db_close(void) {
     if (!db_enabled) {
         return;
     }
@@ -193,7 +193,7 @@ void db_close() {
     sqlite3_close(db);
 }
 
-void db_commit() {
+void db_commit(void) {
     if (!db_enabled) {
         return;
     }
@@ -203,11 +203,11 @@ void db_commit() {
     mtx_unlock(&mtx);
 }
 
-void _db_commit() {
+void _db_commit(void) {
     sqlite3_exec(db, "commit; begin;", NULL, NULL, NULL);
 }
 
-void db_clear_state() {
+void db_clear_state(void) {
     if (!db_enabled) {
         return;
     }
@@ -258,7 +258,7 @@ int db_load_state(float *x, float *y, float *z, float *rx, float *ry,
     return result;
 }
 
-void db_clear_player_names() {
+void db_clear_player_names(void) {
     if (!db_enabled) {
         return;
     }
@@ -289,7 +289,7 @@ int db_load_player_name(char *name, int max_name_length, int player) {
         result = sqlite3_step(stmt);
     }
     if (result == SQLITE_ROW) {
-        strncpy(name, sqlite3_column_text(stmt, 0), max_name_length);
+        strncpy(name, (char *)sqlite3_column_text(stmt, 0), max_name_length);
         name[max_name_length-1] = '\0';
         result = 1;
     } else {
@@ -381,7 +381,7 @@ void db_delete_signs(int x, int y, int z) {
     sqlite3_step(delete_signs_stmt);
 }
 
-void db_delete_all_signs() {
+void db_delete_all_signs(void) {
     if (!db_enabled) {
         return;
     }
@@ -442,7 +442,7 @@ void db_load_signs(SignList *list, int p, int q) {
     }
 }
 
-const char *db_get_sign(int p, int q, int x, int y, int z, int face) {
+const unsigned char *db_get_sign(int p, int q, int x, int y, int z, int face) {
     if (!db_enabled) {
         return NULL;
     }
@@ -500,7 +500,7 @@ void db_set_option(char *name, char *value) {
     sqlite3_step(set_option_stmt);
 }
 
-const char *db_get_option(char *name) {
+const unsigned char *db_get_option(char *name) {
     if (!db_enabled) {
         return NULL;
     }
@@ -512,7 +512,7 @@ const char *db_get_option(char *name) {
     return NULL;
 }
 
-void db_worker_start(char *path) {
+void db_worker_start(void) {
     if (!db_enabled) {
         return;
     }
@@ -520,10 +520,10 @@ void db_worker_start(char *path) {
     mtx_init(&mtx, mtx_plain);
     mtx_init(&load_mtx, mtx_plain);
     cnd_init(&cnd);
-    thrd_create(&thrd, db_worker_run, path);
+    thrd_create(&thrd, db_worker_run, NULL);
 }
 
-void db_worker_stop() {
+void db_worker_stop(void) {
     if (!db_enabled) {
         return;
     }
@@ -538,7 +538,7 @@ void db_worker_stop() {
     ring_free(&ring);
 }
 
-int db_worker_run(void *arg) {
+int db_worker_run(__attribute__((unused)) void *arg) {
     int running = 1;
     while (running) {
         RingEntry e;

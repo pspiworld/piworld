@@ -1,3 +1,3 @@
 
-void pg_time_init();
+void pg_time_init(void);
 

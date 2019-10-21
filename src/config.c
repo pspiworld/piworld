@@ -35,7 +35,8 @@ void reset_config() {
     config->verbose = 0;
     config->view = AUTO_PICK_VIEW_RADIUS;
     config->vsync = VSYNC;
-    strncpy(config->window_title, WINDOW_TITLE, strlen(WINDOW_TITLE));
+    strncpy(config->window_title, WINDOW_TITLE, sizeof(WINDOW_TITLE) - 1);
+    config->window_title[sizeof(WINDOW_TITLE)] = '\0';
     config->window_x = CENTRE_IN_SCREEN;
     config->window_y = CENTRE_IN_SCREEN;
     config->window_width = WINDOW_WIDTH;
@@ -45,11 +46,11 @@ void reset_config() {
 void get_config_path(char *path)
 {
 #ifdef RELEASE
-    snprintf(path, MAX_PATH_LENGTH, "%s/.piworld", getenv("HOME"));
+    snprintf(path, MAX_DIR_LENGTH, "%s/.piworld", getenv("HOME"));
     mkdir(path, 0755);
 #else
     // Keep the config and world database in the current dir for dev builds
-    snprintf(path, MAX_PATH_LENGTH, ".");
+    snprintf(path, MAX_DIR_LENGTH, ".");
 #endif
 }
 
@@ -168,7 +169,7 @@ void parse_startup_config(int argc, char **argv) {
     }
 
     if (optind < argc) {
-        strncpy(config->db_path, argv[optind++], MAX_PATH_LENGTH);
+        strncpy(config->db_path, argv[optind++], MAX_DIR_LENGTH);
         if (optind < argc) {
             // Exit on extra unnamed arguments
             printf("unused ARGV-elements: ");

@@ -47,7 +47,7 @@ WindowCloseHandler _window_close_handler;
 FocusOutHandler _focus_out_handler;
 
 static Cursor createInvisibleCursor(void);
-void move_mouse_to_window_centre();
+void move_mouse_to_window_centre(void);
 
 
 void x11_event_init(Display *display, Window window, int x, int y, int w, int h)
@@ -89,11 +89,10 @@ void set_mouse_relative()
 {
     Window root;
     root = XDefaultRootWindow(x11_event_state->display);
-    int r;
-    r = XGrabPointer(x11_event_state->display, root, False,
-                     ButtonMotionMask | ButtonPressMask | ButtonReleaseMask |
-                     PointerMotionMask, GrabModeAsync, GrabModeAsync,
-                     root, x11_event_state->invisible_cursor, CurrentTime);
+    XGrabPointer(x11_event_state->display, root, False,
+                 ButtonMotionMask | ButtonPressMask | ButtonReleaseMask |
+                 PointerMotionMask, GrabModeAsync, GrabModeAsync,
+                 root, x11_event_state->invisible_cursor, CurrentTime);
     move_mouse_to_window_centre();
     x11_event_state->mouse_is_relative = True;
 }
@@ -104,20 +103,17 @@ void set_mouse_absolute()
     x11_event_state->mouse_is_relative = False;
 }
 
-int relative_mouse_in_use() {
+int relative_mouse_in_use(void) {
     return x11_event_state->mouse_is_relative && x11_event_state->has_focus;
 }
 
 void pg_next_event()
 {
     XEvent event;
-    int keySym;
 
     /* block for next event */
     while (XPending(x11_event_state->display)) {
         XNextEvent(x11_event_state->display, &event);
-        Window root;
-        root = XDefaultRootWindow(x11_event_state->display);
 
         switch (event.type) {
         case ConfigureNotify:
@@ -179,10 +175,9 @@ void pg_next_event()
         {
             char buffer[1];
             KeySym sym;
-            int r;
 
-            r = XLookupString(&event.xkey,
-                              buffer, sizeof(buffer), &sym, NULL);
+            XLookupString(&event.xkey,
+                          buffer, sizeof(buffer), &sym, NULL);
             if (_key_press_handler) {
                 _key_press_handler(buffer[0], event.xkey.state, sym);
             }
@@ -192,10 +187,9 @@ void pg_next_event()
         {
             char buffer[1];
             KeySym sym;
-            int r;
 
-            r = XLookupString(&event.xkey,
-                              buffer, sizeof(buffer), &sym, NULL);
+            XLookupString(&event.xkey,
+                          buffer, sizeof(buffer), &sym, NULL);
             if (_key_release_handler) {
                 _key_release_handler(buffer[0], sym);
             }
@@ -329,7 +323,7 @@ static Cursor createInvisibleCursor(void)
     return cursor;
 }
 
-void move_mouse_to_window_centre()
+void move_mouse_to_window_centre(void)
 {
     Window root;
     root = XDefaultRootWindow(x11_event_state->display);

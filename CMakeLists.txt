@@ -28,6 +28,8 @@ else()
         bcm_host openmaxil vcos vchiq_arm)
 endif()
 
+add_definitions(-Wall -Wextra -Wstrict-prototypes)
+
 if(RASPI EQUAL 1)
     add_definitions(-mtune=arm1176jzf-s -mfpu=vfp -mfloat-abi=hard)
 elseif(RASPI EQUAL 2)

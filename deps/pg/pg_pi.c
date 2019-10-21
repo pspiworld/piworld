@@ -16,7 +16,7 @@ void _open_x11_window(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                       char *title);
 
 
-EGLNativeDisplayType get_egl_display_id()
+EGLNativeDisplayType get_egl_display_id(void)
 {
     bcm_host_init();
 
@@ -39,8 +39,9 @@ int get_reduction_factor(int w, int h) {
     return reduction;
 }
 
-EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
-                                      uint32_t *x, uint32_t *y,
+EGLNativeWindowType get_egl_window_id(__attribute__((unused)) EGLConfig config,
+                                      __attribute__((unused)) EGLDisplay display,
+                                      int *x, int *y,
                                       uint32_t *w, uint32_t *h,
                                       char *title)
 {
@@ -106,7 +107,7 @@ EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
 }
 
 
-void pg_end()
+void pg_end(void)
 {
     DISPMANX_UPDATE_HANDLE_T dispman_update;
     int s;
@@ -166,12 +167,12 @@ void _open_x11_window(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
     x11_event_init(pi_state->x11_display, xwin, x, y, w, h);
 }
 
-EGLNativeDisplayType get_x11_display()
+EGLNativeDisplayType get_x11_display(void)
 {
     return pi_state->x11_display;
 }
 
-int pg_get_gpu_mem_size()
+int pg_get_gpu_mem_size(void)
 {
     char response[80] = "";
     int gpu_mem = 0;
@@ -180,27 +181,16 @@ int pg_get_gpu_mem_size()
     return gpu_mem;
 }
 
-void pi_set_window_geometry(int *x, int *y, int *w, int *h)
+void pi_set_window_geometry(int *x, int *y, uint32_t *w, uint32_t *h)
 {
-    int wx;
-    int wy;
     DISPMANX_UPDATE_HANDLE_T dispman_update;
     VC_RECT_T src_rect;
-    int failure;
     Screen *screen;
 
     // Account for screen offset
     screen = DefaultScreenOfDisplay(pi_state->x11_display);
     *x += (pi_state->screen_w - WidthOfScreen(screen)) / 2;
     *y += (pi_state->screen_h - HeightOfScreen(screen)) / 2;
-
-    // Keep the ES2 window on-screen - brcmGLES does not like going off-screen
-    *w = MIN(*w, pi_state->screen_w);
-    *h = MIN(*h, pi_state->screen_h);
-    *x = MAX(0, *x);
-    *y = MAX(0, *y);
-    *x = (*x + *w > pi_state->screen_w) ? pi_state->screen_w - *w : *x;
-    *y = (*y + *h > pi_state->screen_h) ? pi_state->screen_h - *h : *y;
 
     int reduction = get_reduction_factor(*w, *h);
 
@@ -212,7 +202,7 @@ void pi_set_window_geometry(int *x, int *y, int *w, int *h)
     *h = (*h/reduction);
 
     dispman_update = vc_dispmanx_update_start(0);
-    failure = vc_dispmanx_element_change_attributes(dispman_update,
+    vc_dispmanx_element_change_attributes(dispman_update,
         pi_state->dispman_element, 0, 0, 0, &pi_state->dst_rect, &src_rect, 0,
         DISPMANX_NO_ROTATE);
     vc_dispmanx_update_submit_sync(dispman_update);

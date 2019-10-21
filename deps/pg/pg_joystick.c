@@ -233,7 +233,7 @@ int pg_init_joysticks(void)
         struct dirent* entry;
 
         while ((entry = readdir(dir))) {
-            char path[20];
+            char path[267];
             regmatch_t match;
 
             if (regexec(&pg_js.regex, entry->d_name, 1, &match, 0) != 0) {
