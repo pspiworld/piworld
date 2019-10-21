@@ -2526,7 +2526,10 @@ void handle_mouse_input(LocalPlayer *local) {
     if ((px || py)) {
         int mx, my;
         get_x11_accumulative_mouse_motion(&mx, &my);
-        float m = 0.0025;
+        float m = 0.0015;
+        if (local->zoom_is_pressed) {
+            m = 0.0005;
+        }
         s->rx -= (mx - px) * m;
         s->ry += (my - py) * m;
         if (s->rx < 0) {
