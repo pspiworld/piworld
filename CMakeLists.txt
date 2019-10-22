@@ -44,7 +44,7 @@ endif()
 if(DEBUG)
     add_definitions(-DDEBUG=1 -Og -g)
 else()
-    add_definitions(-O3)
+    add_definitions(-O3 -flto)
 endif()
 
 if(RELEASE)
