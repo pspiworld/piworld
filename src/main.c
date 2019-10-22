@@ -3678,6 +3678,20 @@ int main(int argc, char **argv) {
     reset_history();
     parse_startup_config(argc, argv);
 
+    if (config->benchmark_create_chunks) {
+        if (config->benchmark_create_chunks < MAX_CHUNKS &&
+            config->benchmark_create_chunks > 0) {
+            for (int i=0; i<config->benchmark_create_chunks; i++) {
+                Chunk *chunk = g->chunks + i;
+                create_chunk(chunk, i, i);
+            }
+        } else {
+            printf("Invalid chunk count: %d\n",
+                   config->benchmark_create_chunks);
+        }
+        exit(1);
+    }
+
     // WINDOW INITIALIZATION //
     g->width = config->window_width;
     g->height = config->window_height;
