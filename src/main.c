@@ -1406,7 +1406,7 @@ void init_chunk(Chunk *chunk, int p, int q) {
     int dx = p * CHUNK_SIZE - 1;
     int dy = 0;
     int dz = q * CHUNK_SIZE - 1;
-    map_alloc(block_map, dx, dy, dz, 0x1fff);
+    map_alloc(block_map, dx, dy, dz, 0x3fff);
     map_alloc(light_map, dx, dy, dz, 0xf);
 }
 
