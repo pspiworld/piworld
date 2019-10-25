@@ -2580,6 +2580,7 @@ void handle_mouse_input(LocalPlayer *local) {
 
 void handle_movement(double dt, LocalPlayer *local) {
     State *s = &local->player->state;
+    int stay_in_crouch = 0;
     float sz = 0;
     float sx = 0;
     if (!local->typing) {
@@ -2617,17 +2618,23 @@ void handle_movement(double dt, LocalPlayer *local) {
             }
         } else {
             // If previously in a crouch, move to standing position
-            int block_under_player_head = get_block(roundf(s->x), s->y,
-                                                    roundf(s->z));
+            int block_under_player_head = get_block(
+                roundf(s->x), s->y, roundf(s->z));
+            int block_above_player_head = get_block(
+                roundf(s->x), s->y + 2, roundf(s->z));
             if (is_obstacle(block_under_player_head)) {
-                local->dy = 8;
+                if (is_obstacle(block_above_player_head)) {
+                    stay_in_crouch = 1;
+                } else {
+                    local->dy = 8;
+                }
             }
         }
     }
     float speed = 5;  // walking speed
     if (local->flying) {
         speed = 20;
-    } else if (local->crouch_is_pressed) {
+    } else if (local->crouch_is_pressed || stay_in_crouch) {
         speed = 2;
     }
     int estimate = roundf(sqrtf(
@@ -2653,7 +2660,7 @@ void handle_movement(double dt, LocalPlayer *local) {
         int player_standing_height = 2;
         int player_couching_height = 1;
         int player_min_height = player_standing_height;
-        if (local->crouch_is_pressed) {
+        if (local->crouch_is_pressed || stay_in_crouch) {
             player_min_height = player_couching_height;
         }
         if (collide(player_min_height, &s->x, &s->y, &s->z)) {
