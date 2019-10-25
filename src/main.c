@@ -897,6 +897,36 @@ int collide(int height, float *x, float *y, float *z) {
         if (pz > pad && is_obstacle(map_get(map, nx, ny - dy, nz + 1))) {
             *z = nz + pad;
         }
+
+        // check the 4 diagonally neighboring blocks for obstacle as well
+        if (px < -pad && pz > pad && is_obstacle(map_get(map, nx - 1, ny - dy, nz + 1))) {
+            if(ABS(px) < ABS(pz)) {
+                *x = nx - pad;
+            } else {
+                *z = nz + pad;
+            }
+        }
+        if (px > pad && pz > pad && is_obstacle(map_get(map, nx + 1, ny - dy, nz + 1))) {
+            if(ABS(px) < ABS(pz)) {
+                *x = nx + pad;
+            } else {
+                *z = nz + pad;
+            }
+        }
+        if (px < -pad && pz < -pad && is_obstacle(map_get(map, nx - 1, ny - dy, nz - 1))) {
+            if(ABS(px) < ABS(pz)) {
+                *x = nx - pad;
+            } else {
+                *z = nz - pad;
+            }
+        }
+        if (px > pad && pz < -pad && is_obstacle(map_get(map, nx + 1, ny - dy, nz - 1))) {
+            if(ABS(px) < ABS(pz)) {
+                *x = nx + pad;
+            } else {
+                *z = nz - pad;
+            }
+        }
     }
     return result;
 }
