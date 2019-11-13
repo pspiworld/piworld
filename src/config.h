@@ -25,18 +25,6 @@
 #define SHOW_PLAYER_NAMES 1
 
 // key bindings
-#define CRAFT_KEY_FORWARD 'w'
-#define CRAFT_KEY_BACKWARD 's'
-#define CRAFT_KEY_LEFT 'a'
-#define CRAFT_KEY_RIGHT 'd'
-#define CRAFT_KEY_JUMP GLFW_KEY_SPACE
-#define CRAFT_KEY_FLY GLFW_KEY_TAB
-#define CRAFT_KEY_OBSERVE 'o'
-#define CRAFT_KEY_OBSERVE_INSET 'p'
-#define CRAFT_KEY_ITEM_NEXT 'e'
-#define CRAFT_KEY_ITEM_PREV 'r'
-#define CRAFT_KEY_ZOOM GLFW_KEY_LEFT_SHIFT
-#define CRAFT_KEY_ORTHO 'f'
 #define CRAFT_KEY_CHAT 't'
 #define CRAFT_KEY_COMMAND '/'
 #define CRAFT_KEY_SIGN '`'

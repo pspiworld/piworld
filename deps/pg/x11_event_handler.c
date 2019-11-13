@@ -29,7 +29,9 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <X11/extensions/XInput2.h>
 #include <X11/Xcursor/Xcursor.h>
+#include <X11/XKBlib.h>
 #include "pg.h"
 #include "x11_event_handler.h"
 
@@ -37,25 +39,28 @@
 #define _NET_WM_STATE_ADD     1    /* add/set property */
 #define _NET_WM_STATE_TOGGLE  2    /* toggle property  */
 
+static int xi2_opcode = 0;
+static int events_selected = 0;
+
 static X11_EVENT_STATE_T _x11_event_state, *x11_event_state=&_x11_event_state;
 KeyPressHandler _key_press_handler;
 KeyReleaseHandler _key_release_handler;
-MotionHandler _motion_handler;
+MouseMotionHandler _mouse_motion_handler;
 MousePressHandler _mouse_press_handler;
 MouseReleaseHandler _mouse_release_handler;
 WindowCloseHandler _window_close_handler;
 FocusOutHandler _focus_out_handler;
 
+void select_events(void);
+void deselect_events(void);
 static Cursor createInvisibleCursor(void);
-void move_mouse_to_window_centre(void);
-
+void handle_xinput2_event(const XIRawEvent *e);
 
 void x11_event_init(Display *display, Window window, int x, int y, int w, int h)
 {
     x11_event_state->display = display;
     x11_event_state->window = window;
     x11_event_state->invisible_cursor = createInvisibleCursor();
-    x11_event_state->ignore_next_motion_event = False;
     x11_event_state->x = x;
     x11_event_state->y = y;
     x11_event_state->width = w;
@@ -83,23 +88,100 @@ void x11_event_init(Display *display, Window window, int x, int y, int w, int h)
     }
 
     set_mouse_relative();
+
+    /* XInput Extension available? */
+    int event, error;
+    if (!XQueryExtension(display, "XInputExtension", &xi2_opcode, &event,
+                         &error)) {
+        printf("X Input extension not available.\n");
+        return;
+    }
+
+    /* Which version of XI2? We support 2.2 */
+    int major = 2, minor = 2;
+    if (XIQueryVersion(display, &major, &minor) == BadRequest) {
+        printf("XI2 not available. Server supports %d.%d\n", major, minor);
+        return;
+    }
+
+    select_events();
+}
+
+void select_events(void)
+{
+    if (events_selected) {
+        // do not double select events
+        return;
+    }
+    events_selected = 1;
+
+    XIEventMask eventmask;
+    unsigned char mask[3] = { 0, 0, 0 } ; /* the actual mask */
+
+    eventmask.deviceid = XIAllDevices;
+    eventmask.mask_len = sizeof(mask); /* always in bytes */
+    eventmask.mask = mask;
+    /* now set the mask */
+    XISetMask(mask, XI_RawButtonPress);
+    XISetMask(mask, XI_RawButtonRelease);
+    XISetMask(mask, XI_RawKeyPress);
+    XISetMask(mask, XI_RawKeyRelease);
+    XISetMask(mask, XI_RawMotion);
+
+    XISelectEvents(x11_event_state->display,
+                   DefaultRootWindow(x11_event_state->display), &eventmask, 1);
+}
+
+void deselect_events(void)
+{
+    if (!events_selected) {
+        // do not double deselect events
+        return;
+    }
+    events_selected = 0;
+
+    XIEventMask eventmask;
+    unsigned char mask[1] = { 0 } ; /* the actual mask */
+
+    eventmask.deviceid = XIAllDevices;
+    eventmask.mask_len = sizeof(mask); /* always in bytes */
+    eventmask.mask = mask;
+
+    XISelectEvents(x11_event_state->display,
+                   DefaultRootWindow(x11_event_state->display), &eventmask, 1);
+
+    // Clear modifiers
+    memset(x11_event_state->keyboard_mods, 0,
+           sizeof(x11_event_state->keyboard_mods));
 }
 
 void set_mouse_relative()
 {
     Window root;
     root = XDefaultRootWindow(x11_event_state->display);
-    XGrabPointer(x11_event_state->display, root, False,
-                 ButtonMotionMask | ButtonPressMask | ButtonReleaseMask |
-                 PointerMotionMask, GrabModeAsync, GrabModeAsync,
-                 root, x11_event_state->invisible_cursor, CurrentTime);
-    move_mouse_to_window_centre();
+    int rc;
+    XIEventMask eventmask;
+    unsigned char mask[3] = { 0, 0, 0 } ; /* the actual mask */
+
+    eventmask.deviceid = XIAllDevices;
+    eventmask.mask_len = sizeof(mask); /* always in bytes */
+    eventmask.mask = mask;
+    XISetMask(eventmask.mask, XI_RawMotion);
+    XISetMask(eventmask.mask, XI_RawButtonPress);
+    XISetMask(eventmask.mask, XI_RawButtonRelease);
+    if ((rc = XIGrabDevice(x11_event_state->display, 2, root, CurrentTime,
+                          x11_event_state->invisible_cursor, GrabModeAsync,
+                          GrabModeAsync, False, &eventmask)) != GrabSuccess) {
+        fprintf(stderr, "Grab failed with %d\n", rc);
+        return;
+    }
+
     x11_event_state->mouse_is_relative = True;
 }
 
 void set_mouse_absolute()
 {
-    XUngrabPointer(x11_event_state->display, CurrentTime);
+    XIUngrabDevice(x11_event_state->display, 2, CurrentTime);
     x11_event_state->mouse_is_relative = False;
 }
 
@@ -131,11 +213,6 @@ void pg_next_event()
             }
             pg_set_window_geometry(x11_event_state->x, x11_event_state->y,
                 x11_event_state->width, x11_event_state->height);
-            if (relative_mouse_in_use()) {
-                // Reset mouse cursor as window manager may of changed it when
-                // moving the window.
-                set_mouse_relative();
-            }
             break;
         }
         case ClientMessage:
@@ -157,95 +234,112 @@ void pg_next_event()
             if (x11_event_state->mouse_is_relative) {
                 set_mouse_relative();
             }
+            select_events();
             break;
         }
         case FocusOut:
         {
+            deselect_events();
             x11_event_state->has_focus = 0;
             if (x11_event_state->mouse_is_relative) {
                 // release the mouse pointer when switching to another window
-                XUngrabPointer(x11_event_state->display, CurrentTime);
+                XIUngrabDevice(x11_event_state->display, 2, CurrentTime);
             }
             if (_focus_out_handler) {
                 _focus_out_handler();
             }
             break;
         }
-        case KeyPress:
+        case GenericEvent:
         {
-            char buffer[1];
-            KeySym sym;
-
-            XLookupString(&event.xkey,
-                          buffer, sizeof(buffer), &sym, NULL);
-            if (_key_press_handler) {
-                _key_press_handler(buffer[0], event.xkey.state, sym);
-            }
-            break;
-        }
-        case KeyRelease:
-        {
-            char buffer[1];
-            KeySym sym;
-
-            XLookupString(&event.xkey,
-                          buffer, sizeof(buffer), &sym, NULL);
-            if (_key_release_handler) {
-                _key_release_handler(buffer[0], sym);
-            }
-            break;
-        }
-        case ButtonPress:
-        {
-            if (_mouse_press_handler) {
-                _mouse_press_handler(event.xbutton.button, event.xkey.state);
-            }
-            break;
-        }
-        case ButtonRelease:
-        {
-            if (_mouse_release_handler) {
-                _mouse_release_handler(event.xbutton.button, event.xkey.state);
-            }
-            break;
-        }
-        case MotionNotify:
-        {
-            if (relative_mouse_in_use()) {
-                XWindowAttributes window_attrs;
-                XGetWindowAttributes(x11_event_state->display,
-                                     x11_event_state->window, &window_attrs);
-                int cx = window_attrs.width / 2;
-                int cy = window_attrs.height / 2;
-                if ((event.xmotion.x == cx && event.xmotion.y == cy)
-                        || x11_event_state->ignore_next_motion_event) {
-                    // No mouse motion to report (mouse is at window centre)
-                    if (x11_event_state->ignore_next_motion_event) {
-                        x11_event_state->ignore_next_motion_event--;
-                        if (x11_event_state->ignore_next_motion_event < 0) {
-                            x11_event_state->ignore_next_motion_event = 0;
-                        }
-                    }
+            if (event.xcookie.extension == xi2_opcode &&
+                XGetEventData(x11_event_state->display, &event.xcookie)) {
+                const XIRawEvent *e = (const XIRawEvent *) event.xcookie.data;
+                if (e->deviceid > 3) {
+                    handle_xinput2_event(e);
                 }
-                else {
-                    int diff_x = cx - event.xmotion.x;
-                    int diff_y = cy - event.xmotion.y;
-                    if (_motion_handler) {
-                        _motion_handler(diff_x, diff_y);
-                    }
-                    x11_event_state->accumulative_mouse_motion_x +=
-                        diff_x;  // adds to the motion - until handled
-                    x11_event_state->accumulative_mouse_motion_y += diff_y;
-                    // Move mouse back to window centre
-                    XWarpPointer(x11_event_state->display, None,
-                                 event.xmotion.window, 0, 0, 0, 0, cx, cy);
-                }
+                XFreeEventData(x11_event_state->display, &event.xcookie);
             }
             break;
         }
         default:
             ; /*no-op*/
         }
+    }
+}
+
+void handle_xinput2_event(const XIRawEvent *e)
+{
+    switch(e->evtype)
+    {
+    case XI_RawButtonPress:
+        if (_mouse_press_handler) {
+            _mouse_press_handler(e->deviceid, e->detail,
+                x11_event_state->keyboard_mods[e->deviceid]);
+        }
+        break;
+    case XI_RawButtonRelease:
+        if (_mouse_release_handler) {
+            _mouse_release_handler(e->deviceid, e->detail,
+                x11_event_state->keyboard_mods[e->deviceid]);
+        }
+        break;
+    case XI_RawMotion:
+        if (relative_mouse_in_use()) {
+            if (_mouse_motion_handler) {
+                int x = 0;
+                int y = 0;
+                double *value = e->raw_values;
+                if (XIMaskIsSet(e->valuators.mask, 0)) {
+                    x = (int) *value;
+                    value++;
+                }
+                if (XIMaskIsSet(e->valuators.mask, 1)) {
+                    y = (int) *value;
+                }
+                _mouse_motion_handler(e->sourceid, -x, -y);
+            }
+        }
+        break;
+    case XI_RawKeyPress:
+        if (_key_press_handler) {
+            KeySym sym;
+            XkbLookupKeySym(x11_event_state->display, e->detail,
+                x11_event_state->keyboard_mods[e->deviceid], NULL, &sym);
+
+            if (sym >= XK_Shift_L && sym <= XK_Hyper_R) {
+                int key_mask = 0;
+                if (sym == XK_Shift_L || sym == XK_Shift_R) {
+                    key_mask = ShiftMask;
+                } else if (sym == XK_Control_L || sym == XK_Control_R) {
+                    key_mask = ControlMask;
+                }
+                x11_event_state->keyboard_mods[e->deviceid] |= key_mask;
+            }
+
+            _key_press_handler(e->deviceid,
+                x11_event_state->keyboard_mods[e->deviceid], sym);
+        }
+        break;
+    case XI_RawKeyRelease:
+        if (_key_release_handler) {
+            KeySym sym;
+            XkbLookupKeySym(x11_event_state->display, e->detail,
+                x11_event_state->keyboard_mods[e->deviceid], NULL, &sym);
+
+            if (sym >= XK_Shift_L && sym <= XK_Hyper_R) {
+                int key_mask = 0;
+                if (sym == XK_Shift_L || sym == XK_Shift_R) {
+                    key_mask = ShiftMask;
+                } else if (sym == XK_Control_L || sym == XK_Control_R) {
+                    key_mask = ControlMask;
+                }
+                x11_event_state->keyboard_mods[e->deviceid] &= ~key_mask;
+            }
+
+            _key_release_handler(e->deviceid, sym);
+        }
+        break;
     }
 }
 
@@ -259,9 +353,9 @@ void set_key_release_handler(KeyReleaseHandler key_release_handler)
     _key_release_handler = key_release_handler;
 }
 
-void set_motion_handler(MotionHandler motion_handler)
+void set_mouse_motion_handler(MouseMotionHandler mouse_motion_handler)
 {
-    _motion_handler = motion_handler;
+    _mouse_motion_handler = mouse_motion_handler;
 }
 
 void set_mouse_press_handler(MousePressHandler mouse_press_handler)
@@ -282,12 +376,6 @@ void set_window_close_handler(WindowCloseHandler window_close_handler)
 void set_focus_out_handler(FocusOutHandler focus_out_handler)
 {
     _focus_out_handler = focus_out_handler;
-}
-
-void get_x11_accumulative_mouse_motion(int *x, int *y)
-{
-    *x = x11_event_state->accumulative_mouse_motion_x;
-    *y = x11_event_state->accumulative_mouse_motion_y;
 }
 
 // Create a blank cursor for hidden and disabled cursor modes
@@ -321,20 +409,6 @@ static Cursor createInvisibleCursor(void)
     XcursorImageDestroy(native);
 
     return cursor;
-}
-
-void move_mouse_to_window_centre(void)
-{
-    Window root;
-    root = XDefaultRootWindow(x11_event_state->display);
-    XWindowAttributes window_attrs;
-    XGetWindowAttributes(x11_event_state->display, x11_event_state->window,
-                         &window_attrs);
-    int x = window_attrs.width / 2;
-    int y = window_attrs.height / 2;
-    x11_event_state->ignore_next_motion_event++;
-    XWarpPointer(x11_event_state->display, None, root, 0, 0, 0, 0, x, y);
-    XSync(x11_event_state->display, False);
 }
 
 void pg_move_window(int x, int y)

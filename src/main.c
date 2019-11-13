@@ -49,6 +49,8 @@
 #define WORKER_BUSY 1
 #define WORKER_DONE 2
 
+#define UNASSIGNED -1
+
 #define DEADZONE 0.0
 
 #define CROUCH_JUMP 0
@@ -140,11 +142,24 @@ typedef struct {
 } Client;
 
 typedef struct {
+    char lines[MAX_HISTORY_SIZE][MAX_TEXT_LENGTH];
+    int size;
+    int end;
+    size_t line_start;
+} TextLineHistory;
+
+typedef struct {
     Player *player;
     int item_index;
     int flying;
     float dy;
+
     int typing;
+    char typing_buffer[MAX_TEXT_LENGTH];
+    TextLineHistory typing_history[NUM_HISTORIES];
+    int history_position;
+    size_t text_cursor;
+    size_t typing_start;
 
     int view_x;
     int view_y;
@@ -178,6 +193,10 @@ typedef struct {
     int observe1_client_id;
     int observe2;
     int observe2_client_id;
+
+    int mouse_id;
+    int keyboard_id;
+    int joystick_id;
 } LocalPlayer;
 
 typedef struct {
@@ -197,13 +216,6 @@ typedef struct {
 } Attrib;
 
 typedef struct {
-    char lines[MAX_HISTORY_SIZE][MAX_TEXT_LENGTH];
-    int size;
-    int end;
-    size_t line_start;
-} TextLineHistory;
-
-typedef struct {
     Worker workers[WORKERS];
     Chunk chunks[MAX_CHUNKS];
     int chunk_count;
@@ -213,14 +225,7 @@ typedef struct {
     int sign_radius;
     Client clients[MAX_CLIENTS];
     LocalPlayer local_players[MAX_LOCAL_PLAYERS];
-    LocalPlayer *keyboard_player;
-    LocalPlayer *mouse_player;
     int client_count;
-    char typing_buffer[MAX_TEXT_LENGTH];
-    TextLineHistory typing_history[NUM_HISTORIES];
-    int history_position;
-    size_t text_cursor;
-    size_t typing_start;
     int message_index;
     char messages[MAX_MESSAGES][MAX_TEXT_LENGTH];
     int width;
@@ -234,23 +239,28 @@ typedef struct {
     char db_path[MAX_PATH_LENGTH];
     int day_length;
     int time_changed;
-    int auto_match_players_to_joysticks;
+    int auto_add_players_on_new_devices;
 } Model;
 
 static Model model;
 static Model *g = &model;
 
-void move_primary_focus_to_active_player(void);
 void set_players_view_size(int w, int h);
 Client *find_client(int id);
 void set_view_radius(int requested_size);
+LocalPlayer* player_for_keyboard(int keyboard_id);
+LocalPlayer* player_for_mouse(int mouse_id);
+LocalPlayer* player_for_joystick(int joystick_id);
 
-void limit_player_count_to_fit_gpu_mem(void)
+// returns 1 if limit applied, 0 if no limit applied
+int limit_player_count_to_fit_gpu_mem(void)
 {
     if (pg_get_gpu_mem_size() < 128 && config->players > 2) {
         printf("More GPU memory needed for more players.\n");
         config->players = 2;
+        return 1;
     }
+    return 0;
 }
 
 void set_player_count(Client *client, int count)
@@ -1931,7 +1941,7 @@ void render_signs(Attrib *attrib, Player *player) {
 }
 
 void render_sign(Attrib *attrib, LocalPlayer *local) {
-    if (!local->typing || g->typing_buffer[0] != CRAFT_KEY_SIGN) {
+    if (!local->typing || local->typing_buffer[0] != CRAFT_KEY_SIGN) {
         return;
     }
     int x, y, z, face;
@@ -1948,7 +1958,7 @@ void render_sign(Attrib *attrib, LocalPlayer *local) {
     glUniform1i(attrib->sampler, 3);
     glUniform1i(attrib->extra1, 1);
     char text[MAX_SIGN_LENGTH];
-    strncpy(text, g->typing_buffer + 1, MAX_SIGN_LENGTH);
+    strncpy(text, local->typing_buffer + 1, MAX_SIGN_LENGTH);
     text[MAX_SIGN_LENGTH - 1] = '\0';
     GLfloat *data = malloc_faces_with_rgba(5, strlen(text));
     int length = _gen_sign_buffer(data, x, y, z, face, text);
@@ -2280,15 +2290,14 @@ void tree(Block *block) {
     }
 }
 
-void parse_command(const char *buffer, int forward) {
+void parse_command(LocalPlayer *local, const char *buffer, int forward) {
     char server_addr[MAX_ADDR_LENGTH];
     int server_port = DEFAULT_PORT;
     char filename[MAX_FILENAME_LENGTH];
     char name[MAX_NAME_LENGTH];
     int int_option, radius, count, p, q, xc, yc, zc;
     char window_title[MAX_TITLE_LENGTH];
-    LocalPlayer *local = g->keyboard_player;
-    Player *player = g->keyboard_player->player;
+    Player *player = local->player;
     if (strcmp(buffer, "/fullscreen") == 0) {
         pg_toggle_fullscreen();
     }
@@ -2340,11 +2349,10 @@ void parse_command(const char *buffer, int forward) {
     }
     else if (sscanf(buffer, "/players %d", &int_option) == 1) {
         if (int_option >= 1 && int_option <= MAX_LOCAL_PLAYERS) {
-            g->auto_match_players_to_joysticks = 0;
+            g->auto_add_players_on_new_devices = 0;
             if (config->players != int_option) {
                 config->players = int_option;
                 limit_player_count_to_fit_gpu_mem();
-                move_primary_focus_to_active_player();
                 set_player_count(g->clients, config->players);
                 set_view_radius(g->render_radius);
             }
@@ -2359,9 +2367,11 @@ void parse_command(const char *buffer, int forward) {
         } else {
             client_remove_player(player->id);
             player->is_active = 0;
-            g->auto_match_players_to_joysticks = 0;
+            g->auto_add_players_on_new_devices = 0;
             config->players -= 1;
-            move_primary_focus_to_active_player();
+            local->keyboard_id = UNASSIGNED;
+            local->mouse_id = UNASSIGNED;
+            local->joystick_id = UNASSIGNED;
             set_players_view_size(g->width, g->height);
             set_view_radius(g->render_radius);
         }
@@ -2497,8 +2507,17 @@ void clear_block_under_crosshair(LocalPlayer *local)
     if (hy > 0 && hy < 256 && is_destructable(hw)) {
         set_block(hx, hy, hz, 0);
         record_block(hx, hy, hz, 0, local);
-        if (is_plant(get_block(hx, hy + 1, hz))) {
+        if (config->verbose) {
+            printf("%s cleared: x: %d y: %d z: %d w: %d\n",
+                   local->player->name, hx, hy, hz, hw);
+        }
+        int hw_above = get_block(hx, hy + 1, hz);
+        if (is_plant(hw_above)) {
             set_block(hx, hy + 1, hz, 0);
+            if (config->verbose) {
+                printf("%s cleared: x: %d y: %d z: %d w: %d\n",
+                       local->player->name, hx, hy + 1, hz, hw_above);
+            }
         }
     }
 }
@@ -2513,6 +2532,10 @@ void set_block_under_crosshair(LocalPlayer *local)
             set_block(hx, hy, hz, items[local->item_index]);
             record_block(hx, hy, hz, items[local->item_index], local);
         }
+        if (config->verbose) {
+            printf("%s set: x: %d y: %d z: %d w: %d\n",
+                   local->player->name, hx, hy, hz, items[local->item_index]);
+        }
     }
 }
 
@@ -2521,10 +2544,16 @@ void set_item_in_hand_to_item_under_crosshair(LocalPlayer *local)
     State *s = &local->player->state;
     int hx, hy, hz;
     int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
-    for (int i = 0; i < item_count; i++) {
-        if (items[i] == hw) {
-            local->item_index = i;
-            break;
+    if (hw > 0) {
+        for (int i = 0; i < item_count; i++) {
+            if (items[i] == hw) {
+                local->item_index = i;
+                break;
+            }
+        }
+        if (config->verbose) {
+            printf("%s selected: x: %d y: %d z: %d w: %d\n",
+                   local->player->name, hx, hy, hz, hw);
         }
     }
 }
@@ -2549,33 +2578,23 @@ void on_light(LocalPlayer *local) {
     }
 }
 
-void handle_mouse_input(LocalPlayer *local) {
-    static int px = 0;
-    static int py = 0;
+void handle_mouse_motion(int mouse_id, float x, float y) {
+    LocalPlayer *local = player_for_mouse(mouse_id);
     State *s = &local->player->state;
-    if ((px || py)) {
-        int mx, my;
-        get_x11_accumulative_mouse_motion(&mx, &my);
-        float m = 0.0015;
-        if (local->zoom_is_pressed) {
-            m = 0.0005;
-        }
-        s->rx -= (mx - px) * m;
-        s->ry += (my - py) * m;
-        if (s->rx < 0) {
-            s->rx += RADIANS(360);
-        }
-        if (s->rx >= RADIANS(360)) {
-            s->rx -= RADIANS(360);
-        }
-        s->ry = MAX(s->ry, -RADIANS(90));
-        s->ry = MIN(s->ry, RADIANS(90));
-        px = mx;
-        py = my;
+    float m = 0.0025;
+    if (local->zoom_is_pressed) {
+        m = 0.0005;
     }
-    else {
-        get_x11_accumulative_mouse_motion(&px, &py);
+    s->rx -= x * m;
+    s->ry += y * m;
+    if (s->rx < 0) {
+        s->rx += RADIANS(360);
     }
+    if (s->rx >= RADIANS(360)) {
+        s->rx -= RADIANS(360);
+    }
+    s->ry = MAX(s->ry, -RADIANS(90));
+    s->ry = MIN(s->ry, RADIANS(90));
 }
 
 void handle_movement(double dt, LocalPlayer *local) {
@@ -2858,8 +2877,8 @@ void reset_model(void) {
         local->observe1_client_id = 0;
         local->observe2 = 0;
         local->observe2_client_id = 0;
+        memset(local->typing_buffer, 0, sizeof(char) * MAX_TEXT_LENGTH);
     }
-    memset(g->typing_buffer, 0, sizeof(char) * MAX_TEXT_LENGTH);
     memset(g->messages, 0, sizeof(char) * MAX_MESSAGES * MAX_TEXT_LENGTH);
     g->message_index = 0;
     g->day_length = DAY_LENGTH;
@@ -2868,18 +2887,18 @@ void reset_model(void) {
     set_player_count(g->clients, config->players);
 }
 
-void insert_into_typing_buffer(unsigned char c) {
-    size_t n = strlen(g->typing_buffer);
+void insert_into_typing_buffer(LocalPlayer *local, unsigned char c) {
+    size_t n = strlen(local->typing_buffer);
     if (n < MAX_TEXT_LENGTH - 1) {
-        if (g->text_cursor != n) {
+        if (local->text_cursor != n) {
             // Shift text after the text cursor to the right
-            memmove(g->typing_buffer + g->text_cursor + 1,
-                    g->typing_buffer + g->text_cursor,
-                    n - g->text_cursor);
+            memmove(local->typing_buffer + local->text_cursor + 1,
+                    local->typing_buffer + local->text_cursor,
+                    n - local->text_cursor);
         }
-        g->typing_buffer[g->text_cursor] = c;
-        g->typing_buffer[n + 1] = '\0';
-        g->text_cursor += 1;
+        local->typing_buffer[local->text_cursor] = c;
+        local->typing_buffer[n + 1] = '\0';
+        local->text_cursor += 1;
     }
 }
 
@@ -2944,291 +2963,398 @@ void history_next(TextLineHistory *history, char *line, int *position)
     snprintf(line, MAX_TEXT_LENGTH, "%s", history->lines[*position]);
 }
 
-TextLineHistory* current_history(void)
+TextLineHistory* current_history(LocalPlayer *local)
 {
-    if (g->typing_buffer[0] == CRAFT_KEY_SIGN) {
-        return &g->typing_history[SIGN_HISTORY];
-    } else if (g->typing_buffer[0] == CRAFT_KEY_COMMAND) {
-        return &g->typing_history[COMMAND_HISTORY];
+    if (local->typing_buffer[0] == CRAFT_KEY_SIGN) {
+        return &local->typing_history[SIGN_HISTORY];
+    } else if (local->typing_buffer[0] == CRAFT_KEY_COMMAND) {
+        return &local->typing_history[COMMAND_HISTORY];
     } else {
-        return &g->typing_history[CHAT_HISTORY];
+        return &local->typing_history[CHAT_HISTORY];
     }
 }
 
-void move_primary_focus_to_active_player(void)
+void handle_key_press_typing(LocalPlayer *local, int mods, int keysym)
 {
-    int focus = 0;
-    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
-        if (g->local_players[i].player->is_active) {
-            focus = i;
-            break;
+    switch (keysym) {
+    case XK_Escape:
+        local->typing = 0;
+        local->history_position = NOT_IN_HISTORY;
+        break;
+    case XK_BackSpace:
+        {
+        size_t n = strlen(local->typing_buffer);
+        if (n > 0 && local->text_cursor > local->typing_start) {
+            if (local->text_cursor < n) {
+                memmove(local->typing_buffer + local->text_cursor - 1,
+                        local->typing_buffer + local->text_cursor,
+                        n - local->text_cursor);
+            }
+            local->typing_buffer[n - 1] = '\0';
+            local->text_cursor -= 1;
         }
-    }
-    g->keyboard_player = &g->local_players[focus];
-    g->mouse_player = &g->local_players[focus];
-}
-
-void cycle_primary_focus_around_local_players(void)
-{
-    int first_active_player = 0;
-    for (int i=0; i<MAX_LOCAL_PLAYERS-1; i++) {
-        LocalPlayer *local = &g->local_players[i];
-        if (local->player->is_active) {
-            first_active_player = i;
-            break;
+        break;
         }
-    }
-    int next = first_active_player;
-
-    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
-        LocalPlayer *local = &g->local_players[i];
-        if (i > (g->keyboard_player->player->id - 1)
-            && local->player->is_active) {
-            next = i;
-            break;
-        }
-    }
-    g->keyboard_player = &g->local_players[next];
-    g->mouse_player = &g->local_players[next];
-}
-
-void handle_key_press(unsigned char c, int mods, int keysym)
-{
-    LocalPlayer *p = g->keyboard_player;
-    if (!p->typing) {
-        if (c == CRAFT_KEY_FORWARD) {
-            p->forward_is_pressed = 1;
-            p->movement_speed_forward_back = 1;
-        } else if (c == CRAFT_KEY_BACKWARD) {
-            p->back_is_pressed = 1;
-            p->movement_speed_forward_back = 1;
-        } else if (c == CRAFT_KEY_LEFT) {
-            p->left_is_pressed = 1;
-            p->movement_speed_left_right = 1;
-        } else if (c == CRAFT_KEY_RIGHT) {
-            p->right_is_pressed = 1;
-            p->movement_speed_left_right = 1;
-        } else if (keysym == XK_Escape) {
-            terminate = True;
-        } else if (keysym == XK_F1) {
-            set_mouse_absolute();
-        } else if (keysym == XK_F2) {
-            set_mouse_relative();
-        } else if (keysym == XK_F8) {
-            cycle_primary_focus_around_local_players();
-        } else if (keysym == XK_F11) {
-            pg_toggle_fullscreen();
-        } else if (keysym == XK_Up) {
-            p->view_up_is_pressed = 1;
-            p->view_speed_up_down = 1;
-        } else if (keysym == XK_Down) {
-            p->view_down_is_pressed = 1;
-            p->view_speed_up_down = 1;
-        } else if (keysym == XK_Left) {
-            p->view_left_is_pressed = 1;
-            p->view_speed_left_right = 1;
-        } else if (keysym == XK_Right) {
-            p->view_right_is_pressed = 1;
-            p->view_speed_left_right = 1;
-        } else if (c == ' ') {
-            p->jump_is_pressed = 1;
-        } else if (c == 'c') {
-            p->crouch_is_pressed = 1;
-        } else if (c == 'z') {
-            p->zoom_is_pressed = 1;
-        } else if (c == 'f') {
-            p->ortho_is_pressed = 1;
-        } else if (keysym == XK_Tab) {  // CRAFT_KEY_FLY
-            p->flying = !p->flying;
-        } else if (c >= '1' && c <= '9') {
-            p->item_index = c - '1';
-        } else if (c == '0' && c <= '9') {
-            p->item_index = 9;
-        } else if (c == CRAFT_KEY_ITEM_NEXT) {
-            cycle_item_in_hand_up(p);
-        } else if (c == CRAFT_KEY_ITEM_PREV) {
-            cycle_item_in_hand_down(p);
-        } else if (c == 'g') {
-            set_item_in_hand_to_item_under_crosshair(p);
-        } else if (c == CRAFT_KEY_OBSERVE) {
-            int start = ((p->observe1 == 0) ?  p->player->id : p->observe1) - 1;
-            if (p->observe1_client_id == 0) {
-                p->observe1_client_id = g->clients->id;
-            }
-            get_next_player(&start, &p->observe1_client_id);
-            p->observe1 = start + 1;
-            if (p->observe1 == p->player->id &&
-                p->observe1_client_id == g->clients->id) {
-                // cancel observing of another player
-                p->observe1 = 0;
-                p->observe1_client_id = 0;
-            }
-        } else if (c == CRAFT_KEY_OBSERVE_INSET) {
-            int start = ((p->observe2 == 0) ?  p->player->id : p->observe2) - 1;
-            if (p->observe2_client_id == 0) {
-                p->observe2_client_id = g->clients->id;
-            }
-            get_next_player(&start, &p->observe2_client_id);
-            p->observe2 = start + 1;
-            if (p->observe2 == p->player->id &&
-                p->observe2_client_id == g->clients->id) {
-                // cancel observing of another player
-                p->observe2 = 0;
-                p->observe2_client_id = 0;
-            }
-        } else if (c == CRAFT_KEY_CHAT) {
-            p->typing = 1;
-            g->typing_buffer[0] = '\0';
-            g->typing_start = g->typing_history[CHAT_HISTORY].line_start;
-            g->text_cursor = g->typing_start;
-        } else if (c == CRAFT_KEY_COMMAND) {
-            p->typing = 1;
-            g->typing_buffer[0] = '/';
-            g->typing_buffer[1] = '\0';
-            g->typing_start = g->typing_history[COMMAND_HISTORY].line_start;
-            g->text_cursor = g->typing_start;
-        } else if (c == CRAFT_KEY_SIGN) {
-            p->typing = 1;
-            g->typing_buffer[0] = CRAFT_KEY_SIGN;
-            g->typing_buffer[1] = '\0';
-            int x, y, z, face;
-            if (hit_test_face(p->player, &x, &y, &z, &face)) {
-                const unsigned char *existing_sign = db_get_sign(
-                    chunked(x), chunked(z), x, y, z, face);
-                if (existing_sign) {
-                    strncpy(g->typing_buffer + 1, (char *)existing_sign,
-                            MAX_TEXT_LENGTH - 1);
-                    g->typing_buffer[MAX_TEXT_LENGTH - 1] = '\0';
-                }
-            }
-            g->typing_start = g->typing_history[SIGN_HISTORY].line_start;
-            g->text_cursor = g->typing_start;
-        } else if (c == 13) {  // return
-            if (mods & ControlMask) {
-                set_block_under_crosshair(g->mouse_player);
-            } else {
-                clear_block_under_crosshair(g->mouse_player);
-            }
-        }
-    } else {
-        if (keysym == XK_Escape) {
-            p->typing = 0;
-            g->history_position = NOT_IN_HISTORY;
-        } else if (c == 8) {  // backspace
-            size_t n = strlen(g->typing_buffer);
-            if (n > 0 && g->text_cursor > g->typing_start) {
-                if (g->text_cursor < n) {
-                    memmove(g->typing_buffer + g->text_cursor - 1,
-                            g->typing_buffer + g->text_cursor,
-                            n - g->text_cursor);
-                }
-                g->typing_buffer[n - 1] = '\0';
-                g->text_cursor -= 1;
-            }
-        } else if (c == 13) {  // return
-            if (mods & ShiftMask) {
-                insert_into_typing_buffer('\r');
-            } else {
-                p->typing = 0;
-                if (g->typing_buffer[0] == CRAFT_KEY_SIGN) {
-                    int x, y, z, face;
-                    if (hit_test_face(p->player, &x, &y, &z, &face)) {
-                        set_sign(x, y, z, face, g->typing_buffer + 1);
-                    }
-                } else if (g->typing_buffer[0] == CRAFT_KEY_COMMAND) {
-                    parse_command(g->typing_buffer, 1);
-                } else {
-                    client_talk(g->typing_buffer);
-                }
-                history_add(current_history(), g->typing_buffer);
-                g->history_position = NOT_IN_HISTORY;
-            }
-        } else if (keysym == XK_Delete) {
-            size_t n = strlen(g->typing_buffer);
-            if (n > 0 && g->text_cursor < n) {
-                memmove(g->typing_buffer + g->text_cursor,
-                        g->typing_buffer + g->text_cursor + 1,
-                        n - g->text_cursor);
-                g->typing_buffer[n - 1] = '\0';
-            }
-        } else if (keysym == XK_Left) {
-            if (g->text_cursor > g->typing_start) {
-                g->text_cursor -= 1;
-            }
-        } else if (keysym == XK_Right) {
-            if (g->text_cursor < strlen(g->typing_buffer)) {
-                g->text_cursor += 1;
-            }
-        } else if (keysym == XK_Home) {
-            g->text_cursor = g->typing_start;
-        } else if (keysym == XK_End) {
-            g->text_cursor = strlen(g->typing_buffer);
-        } else if (keysym == XK_Up) {
-            history_previous(current_history(), g->typing_buffer,
-                             &g->history_position);
-            g->text_cursor = strlen(g->typing_buffer);
-        } else if (keysym == XK_Down) {
-            history_next(current_history(), g->typing_buffer,
-                         &g->history_position);
-            g->text_cursor = strlen(g->typing_buffer);
+    case XK_Return:
+        if (mods & ShiftMask) {
+            insert_into_typing_buffer(local, '\r');
         } else {
-            if (c >= 32 && c < 128) {
-                insert_into_typing_buffer(c);
+            local->typing = 0;
+            if (local->typing_buffer[0] == CRAFT_KEY_SIGN) {
+                int x, y, z, face;
+                if (hit_test_face(local->player, &x, &y, &z, &face)) {
+                    set_sign(x, y, z, face, local->typing_buffer + 1);
+                }
+            } else if (local->typing_buffer[0] == CRAFT_KEY_COMMAND) {
+                parse_command(local, local->typing_buffer, 1);
+            } else {
+                client_talk(local->typing_buffer);
+            }
+            history_add(current_history(local), local->typing_buffer);
+            local->history_position = NOT_IN_HISTORY;
+        }
+        break;
+    case XK_Delete:
+        {
+        size_t n = strlen(local->typing_buffer);
+        if (n > 0 && local->text_cursor < n) {
+            memmove(local->typing_buffer + local->text_cursor,
+                    local->typing_buffer + local->text_cursor + 1,
+                    n - local->text_cursor);
+            local->typing_buffer[n - 1] = '\0';
+        }
+        break;
+        }
+    case XK_Left:
+        if (local->text_cursor > local->typing_start) {
+            local->text_cursor -= 1;
+        }
+        break;
+    case XK_Right:
+        if (local->text_cursor < strlen(local->typing_buffer)) {
+            local->text_cursor += 1;
+        }
+        break;
+    case XK_Home:
+        local->text_cursor = local->typing_start;
+        break;
+    case XK_End:
+        local->text_cursor = strlen(local->typing_buffer);
+        break;
+    case XK_Up:
+        history_previous(current_history(local), local->typing_buffer,
+                         &local->history_position);
+        local->text_cursor = strlen(local->typing_buffer);
+        break;
+    case XK_Down:
+        history_next(current_history(local), local->typing_buffer,
+                     &local->history_position);
+        local->text_cursor = strlen(local->typing_buffer);
+        break;
+    default:
+        if (keysym >= XK_space && keysym <= XK_asciitilde) {
+            insert_into_typing_buffer(local, keysym);
+        }
+        break;
+    }
+}
+
+void handle_key_press(int keyboard_id, int mods, int keysym)
+{
+    int prev_player_count = config->players;
+    LocalPlayer *p = player_for_keyboard(keyboard_id);
+    if (prev_player_count != config->players) {
+        // If a new keyboard resulted in a new player ignore this first event.
+        return;
+    }
+    if (p->typing) {
+        handle_key_press_typing(p, mods, keysym);
+        return;
+    }
+    switch (keysym) {
+    case XK_w: case XK_W:
+        p->forward_is_pressed = 1;
+        p->movement_speed_forward_back = 1;
+        break;
+    case XK_s: case XK_S:
+        p->back_is_pressed = 1;
+        p->movement_speed_forward_back = 1;
+        break;
+    case XK_a: case XK_A:
+        p->left_is_pressed = 1;
+        p->movement_speed_left_right = 1;
+        break;
+    case XK_d: case XK_D:
+        p->right_is_pressed = 1;
+        p->movement_speed_left_right = 1;
+        break;
+    case XK_Escape:
+        terminate = True;
+        break;
+    case XK_F1:
+        set_mouse_absolute();
+        break;
+    case XK_F2:
+        set_mouse_relative();
+        break;
+    case XK_F8:
+        {
+        // Move local player keyboard and mouse to next active player
+        int next = get_next_local_player(g->clients, p->player->id - 1);
+        LocalPlayer *next_local = g->local_players + next;
+        if (next_local != p) {
+            next_local->keyboard_id = keyboard_id;
+            p->keyboard_id = UNASSIGNED;
+            if (p->mouse_id != UNASSIGNED) {
+                next_local->mouse_id = p->mouse_id;
+                p->mouse_id = UNASSIGNED;
             }
         }
+        break;
+        }
+    case XK_F11:
+        pg_toggle_fullscreen();
+        break;
+    case XK_Up:
+        p->view_up_is_pressed = 1;
+        p->view_speed_up_down = 1;
+        break;
+    case XK_Down:
+        p->view_down_is_pressed = 1;
+        p->view_speed_up_down = 1;
+        break;
+    case XK_Left:
+        p->view_left_is_pressed = 1;
+        p->view_speed_left_right = 1;
+        break;
+    case XK_Right:
+        p->view_right_is_pressed = 1;
+        p->view_speed_left_right = 1;
+        break;
+    case XK_space:
+        p->jump_is_pressed = 1;
+        break;
+    case XK_c: case XK_C:
+        p->crouch_is_pressed = 1;
+        break;
+    case XK_z: case XK_Z:
+        p->zoom_is_pressed = 1;
+        break;
+    case XK_f: case XK_F:
+        p->ortho_is_pressed = 1;
+        break;
+    case XK_Tab:
+        p->flying = !p->flying;
+        break;
+    case XK_1: case XK_2: case XK_3: case XK_4: case XK_5: case XK_6:
+    case XK_7: case XK_8: case XK_9:
+        p->item_index = keysym - XK_1;
+        break;
+    case XK_0:
+        p->item_index = 9;
+        break;
+    case XK_e: case XK_E:
+        cycle_item_in_hand_up(p);
+        break;
+    case XK_r: case XK_R:
+        cycle_item_in_hand_down(p);
+        break;
+    case XK_g: case XK_G:
+        set_item_in_hand_to_item_under_crosshair(p);
+        break;
+    case XK_o: case XK_O:
+        {
+        int start = ((p->observe1 == 0) ?  p->player->id : p->observe1) - 1;
+        if (p->observe1_client_id == 0) {
+            p->observe1_client_id = g->clients->id;
+        }
+        get_next_player(&start, &p->observe1_client_id);
+        p->observe1 = start + 1;
+        if (p->observe1 == p->player->id &&
+            p->observe1_client_id == g->clients->id) {
+            // cancel observing of another player
+            p->observe1 = 0;
+            p->observe1_client_id = 0;
+        }
+        break;
+        }
+    case XK_p: case XK_P:
+        {
+        int start = ((p->observe2 == 0) ?  p->player->id : p->observe2) - 1;
+        if (p->observe2_client_id == 0) {
+            p->observe2_client_id = g->clients->id;
+        }
+        get_next_player(&start, &p->observe2_client_id);
+        p->observe2 = start + 1;
+        if (p->observe2 == p->player->id &&
+            p->observe2_client_id == g->clients->id) {
+            // cancel observing of another player
+            p->observe2 = 0;
+            p->observe2_client_id = 0;
+        }
+        break;
+        }
+    case XK_t: case XK_T:
+        p->typing = 1;
+        p->typing_buffer[0] = '\0';
+        p->typing_start = p->typing_history[CHAT_HISTORY].line_start;
+        p->text_cursor = p->typing_start;
+        break;
+    case XK_slash:
+        p->typing = 1;
+        p->typing_buffer[0] = CRAFT_KEY_COMMAND;
+        p->typing_buffer[1] = '\0';
+        p->typing_start = p->typing_history[COMMAND_HISTORY].line_start;
+        p->text_cursor = p->typing_start;
+        break;
+    case XK_grave:
+        p->typing = 1;
+        p->typing_buffer[0] = CRAFT_KEY_SIGN;
+        p->typing_buffer[1] = '\0';
+        int x, y, z, face;
+        if (hit_test_face(p->player, &x, &y, &z, &face)) {
+            const unsigned char *existing_sign = db_get_sign(
+                chunked(x), chunked(z), x, y, z, face);
+            if (existing_sign) {
+                strncpy(p->typing_buffer + 1, (char *)existing_sign,
+                        MAX_TEXT_LENGTH - 1);
+                p->typing_buffer[MAX_TEXT_LENGTH - 1] = '\0';
+            }
+        }
+        p->typing_start = p->typing_history[SIGN_HISTORY].line_start;
+        p->text_cursor = p->typing_start;
+        break;
+    case XK_Return:
+        if (mods & ControlMask) {
+            set_block_under_crosshair(p);
+        } else {
+            clear_block_under_crosshair(p);
+        }
+        break;
     }
 }
 
-void handle_key_release(unsigned char c, int keysym)
+void handle_key_release(int keyboard_id, int keysym)
 {
-    LocalPlayer *p = g->keyboard_player;
-    if (c == CRAFT_KEY_FORWARD) {
-        p->forward_is_pressed = 0;
-    } else if (c == CRAFT_KEY_BACKWARD) {
-        p->back_is_pressed = 0;
-    } else if (c == CRAFT_KEY_LEFT) {
-        p->left_is_pressed = 0;
-    } else if (c == CRAFT_KEY_RIGHT) {
-        p->right_is_pressed = 0;
-    } else if (c == ' ') {
-        p->jump_is_pressed = 0;
-    } else if (c == 'c') {
-        p->crouch_is_pressed = 0;
-    } else if (c == 'z') {
-        p->zoom_is_pressed = 0;
-    } else if (c == 'f') {
-        p->ortho_is_pressed = 0;
-    } else if (keysym == XK_Up) {
-        p->view_up_is_pressed = 0;
-    } else if (keysym == XK_Down) {
-        p->view_down_is_pressed = 0;
-    } else if (keysym == XK_Left) {
-        p->view_left_is_pressed = 0;
-    } else if (keysym == XK_Right) {
-        p->view_right_is_pressed = 0;
+    LocalPlayer *local = player_for_keyboard(keyboard_id);
+    switch (keysym) {
+    case XK_w: case XK_W:
+        local->forward_is_pressed = 0;
+        break;
+    case XK_s: case XK_S:
+        local->back_is_pressed = 0;
+        break;
+    case XK_a: case XK_A:
+        local->left_is_pressed = 0;
+        break;
+    case XK_d: case XK_D:
+        local->right_is_pressed = 0;
+        break;
+    case XK_space:
+        local->jump_is_pressed = 0;
+        break;
+    case XK_c: case XK_C:
+        local->crouch_is_pressed = 0;
+        break;
+    case XK_z: case XK_Z:
+        local->zoom_is_pressed = 0;
+        break;
+    case XK_f: case XK_F:
+        local->ortho_is_pressed = 0;
+        break;
+    case XK_Up:
+        local->view_up_is_pressed = 0;
+        break;
+    case XK_Down:
+        local->view_down_is_pressed = 0;
+        break;
+    case XK_Left:
+        local->view_left_is_pressed = 0;
+        break;
+    case XK_Right:
+        local->view_right_is_pressed = 0;
+        break;
     }
 }
 
-void handle_mouse_release(int b, int mods)
+LocalPlayer* player_for_keyboard(int keyboard_id) {
+    // Match keyboard to assigned player
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = g->local_players + i;
+        if (local->player->is_active && local->keyboard_id == keyboard_id) {
+            return local;
+        }
+    }
+    // Assign keyboard to next active player without one
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = g->local_players + i;
+        if (local->player->is_active && local->keyboard_id == UNASSIGNED) {
+            local->keyboard_id = keyboard_id;
+            return local;
+        }
+    }
+    // Add a new player and assign the keyboard to them
+    if (g->auto_add_players_on_new_devices &&
+        config->players < MAX_LOCAL_PLAYERS) {
+        config->players++;
+        if (limit_player_count_to_fit_gpu_mem() == 0) {
+            LocalPlayer *local = &g->local_players[config->players - 1];
+            local->player->is_active = 1;
+            local->keyboard_id = keyboard_id;
+            set_view_radius(g->render_radius);
+            return local;
+        }
+    }
+    // If keyboard remains unassigned and all active players already have one
+    // assign this keyboard to the first player.
+    return g->local_players;
+}
+
+LocalPlayer* player_for_mouse(int mouse_id) {
+    // Match mouse to assigned player
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = g->local_players + i;
+        if (local->player->is_active && local->mouse_id == mouse_id) {
+            return local;
+        }
+    }
+    // Assign mouse to next active player without one
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = g->local_players + i;
+        if (local->player->is_active && local->mouse_id == UNASSIGNED) {
+            local->mouse_id = mouse_id;
+            return local;
+        }
+    }
+    // If mouse remains unassigned and all active players already have one
+    // assign this mouse to the first player.
+    return g->local_players;
+}
+
+void handle_mouse_release(int mouse_id, int b, int mods)
 {
+    if (!relative_mouse_in_use()) {
+        return;
+    }
+    LocalPlayer *local = player_for_mouse(mouse_id);
     if (b == 1) {
         if (mods & ControlMask) {
-            set_block_under_crosshair(g->mouse_player);
+            set_block_under_crosshair(local);
         } else {
-            clear_block_under_crosshair(g->mouse_player);
+            clear_block_under_crosshair(local);
         }
     } else if (b == 2) {
-        set_item_in_hand_to_item_under_crosshair(g->mouse_player);
+        set_item_in_hand_to_item_under_crosshair(local);
     } else if (b == 3) {
         if (mods & ControlMask) {
-            on_light(g->mouse_player);
+            on_light(local);
         } else {
-            set_block_under_crosshair(g->mouse_player);
+            set_block_under_crosshair(local);
         }
     } else if (b == 4) {
-        cycle_item_in_hand_up(g->mouse_player);
+        cycle_item_in_hand_up(local);
     } else if (b == 5) {
-        cycle_item_in_hand_down(g->mouse_player);
+        cycle_item_in_hand_down(local);
     }
 }
 
@@ -3257,37 +3383,60 @@ void handle_focus_out(void) {
     pg_fullscreen(0);
 }
 
-void reset_history(void)
+void reset_history(LocalPlayer *local)
 {
-    g->history_position = NOT_IN_HISTORY;
+    local->history_position = NOT_IN_HISTORY;
     for (int i=0; i<NUM_HISTORIES; i++) {
-        g->typing_history[i].end = -1;
-        g->typing_history[i].size = 0;
+        local->typing_history[i].end = -1;
+        local->typing_history[i].size = 0;
     }
-    g->typing_history[CHAT_HISTORY].line_start = 0;
-    g->typing_history[COMMAND_HISTORY].line_start = 1;
-    g->typing_history[SIGN_HISTORY].line_start = 1;
+    local->typing_history[CHAT_HISTORY].line_start = 0;
+    local->typing_history[COMMAND_HISTORY].line_start = 1;
+    local->typing_history[SIGN_HISTORY].line_start = 1;
 }
 
-LocalPlayer *map_joystick_to_player(int j_num) {
-    LocalPlayer *p = g->local_players;
-    int joystick_count = pg_joystick_count();
-
-    if (joystick_count < config->players) {
-        // If 4 players and only 3 joysticks start the joystick mapping from
-        // player 2, assuming player 1 still has the keyboard and mouse.
-        j_num++;
+LocalPlayer* player_for_joystick(int joystick_id) {
+    // Match joystick to assigned player
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = g->local_players + i;
+        if (local->player->is_active && local->joystick_id == joystick_id) {
+            return local;
+        }
     }
-
-    if (j_num < config->players) {
-        p = &g->local_players[j_num];
+    // Assign joystick to next active player without one
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = g->local_players + i;
+        if (local->player->is_active && local->joystick_id == UNASSIGNED) {
+            local->joystick_id = joystick_id;
+            return local;
+        }
     }
-    return p;
+    // Add a new player and assign the joystick to them
+    if (g->auto_add_players_on_new_devices &&
+        config->players < MAX_LOCAL_PLAYERS) {
+        config->players++;
+        if (limit_player_count_to_fit_gpu_mem() == 0) {
+            LocalPlayer *local = &g->local_players[config->players - 1];
+            local->player->is_active = 1;
+            local->joystick_id = joystick_id;
+            set_view_radius(g->render_radius);
+            return local;
+        }
+    }
+    // If joystick remains unassigned and all active players already have one
+    // assign this joystick to the first player.
+    return g->local_players;
 }
+
 
 void handle_joystick_axis(PG_Joystick *j, int j_num, int axis, float value)
 {
-    LocalPlayer *p = map_joystick_to_player(j_num);
+    int prev_player_count = config->players;
+    LocalPlayer *p = player_for_joystick(j_num);
+    if (prev_player_count != config->players) {
+        // If a new gamepad resulted in a new player ignore this first event.
+        return;
+    }
 
     if (j->axis_count < 4) {
         if (axis == 0) {
@@ -3330,7 +3479,12 @@ void handle_joystick_axis(PG_Joystick *j, int j_num, int axis, float value)
 
 void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
 {
-    LocalPlayer *p = map_joystick_to_player(j_num);
+    int prev_player_count = config->players;
+    LocalPlayer *p = player_for_joystick(j_num);
+    if (prev_player_count != config->players) {
+        // If a new gamepad resulted in a new player ignore this first event.
+        return;
+    }
 
     if (j->axis_count < 4) {
         if (button == 0) {
@@ -3534,11 +3688,11 @@ void render_player_world(
         }
     }
     if (local->typing) {
-        snprintf(text_buffer, 1024, "> %s", g->typing_buffer);
+        snprintf(text_buffer, 1024, "> %s", local->typing_buffer);
         render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts, text_buffer);
         glClear(GL_DEPTH_BUFFER_BIT);
-        render_text_cursor(&line_attrib, tx + ts * (g->text_cursor+1) + ts/2,
-                           ty);
+        render_text_cursor(&line_attrib,
+                           tx + ts * (local->text_cursor+1) + ts/2, ty);
         ty -= ts * 2;
     }
     if (config->show_player_names) {
@@ -3551,11 +3705,7 @@ void render_player_world(
     }
     if (config->players > 1) {
         // Render player name if more than 1 local player
-        if (player == g->keyboard_player->player) {
-            snprintf(text_buffer, 1024, "* %s *", player->name);
-        } else {
-            snprintf(text_buffer, 1024, "%s", player->name);
-        }
+        snprintf(text_buffer, 1024, "%s", player->name);
         render_text(&text_attrib, ALIGN_CENTER, g->width/2, ts, ts,
                     text_buffer);
     }
@@ -3656,11 +3806,25 @@ void set_players_view_size(int w, int h)
     }
 }
 
+int keyboard_player_count(void)
+{
+    int count = 0;
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = g->local_players + i;
+        if (local->player && local->player->is_active &&
+            local->keyboard_id != UNASSIGNED) {
+            count++;
+        }
+    }
+    return count;
+}
+
 void set_players_to_match_joysticks(void)
 {
     int joystick_count = pg_joystick_count();
     if (joystick_count != config->players) {
-        config->players = MAX(1, pg_joystick_count());
+        config->players = MAX(keyboard_player_count(), pg_joystick_count());
+        config->players = MAX(1, config->players);
         config->players = MIN(MAX_LOCAL_PLAYERS, config->players);
         limit_player_count_to_fit_gpu_mem();
         set_player_count(g->clients, config->players);
@@ -3712,7 +3876,10 @@ int main(int argc, char **argv) {
     srand(time(NULL));
     rand();
     reset_config();
-    reset_history();
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = &g->local_players[i];
+        reset_history(local);
+    }
     parse_startup_config(argc, argv);
 
     if (config->benchmark_create_chunks) {
@@ -3738,6 +3905,7 @@ int main(int argc, char **argv) {
     set_key_press_handler(*handle_key_press);
     set_key_release_handler(*handle_key_release);
     set_mouse_release_handler(*handle_mouse_release);
+    set_mouse_motion_handler(*handle_mouse_motion);
     set_window_close_handler(*handle_window_close);
     set_focus_out_handler(*handle_focus_out);
     if (config->verbose) {
@@ -3745,10 +3913,10 @@ int main(int argc, char **argv) {
     }
     pg_init_joysticks();
     if (config->players == -1) {
-        g->auto_match_players_to_joysticks = 1;
+        g->auto_add_players_on_new_devices = 1;
         set_players_to_match_joysticks();
     } else {
-        g->auto_match_players_to_joysticks = 0;
+        g->auto_add_players_on_new_devices = 0;
         limit_player_count_to_fit_gpu_mem();
         set_player_count(g->clients, config->players);
     }
@@ -3759,9 +3927,6 @@ int main(int argc, char **argv) {
 
     pg_set_joystick_button_handler(*handle_joystick_button);
     pg_set_joystick_axis_handler(*handle_joystick_axis);
-
-    g->keyboard_player = g->local_players;
-    g->mouse_player = g->local_players;
 
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
@@ -3929,6 +4094,10 @@ int main(int argc, char **argv) {
             local->player->buffer = 0;
             local->player->texture_index = i;
 
+            local->mouse_id = UNASSIGNED;
+            local->keyboard_id = UNASSIGNED;
+            local->joystick_id = UNASSIGNED;
+
             // LOAD STATE FROM DATABASE //
             int loaded = db_load_state(&s->x, &s->y, &s->z, &s->rx, &s->ry, i);
             force_chunks(local->player);
@@ -3975,9 +4144,6 @@ int main(int argc, char **argv) {
             dt = MIN(dt, 0.2);
             dt = MAX(dt, 0.0);
             previous = now;
-
-            // HANDLE MOUSE INPUT //
-            handle_mouse_input(g->mouse_player);
 
             // HANDLE MOVEMENT //
             for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
@@ -4047,21 +4213,6 @@ int main(int argc, char **argv) {
                                         sky_attrib, block_attrib, text_attrib,
                                         line_attrib, fps);
                 }
-            }
-
-            // Match player count to joystick count
-            static int players_joysticks_counter = 0;
-            #define PLAYER_JOYSTICK_RATE_LIMIT 100
-            if (g->auto_match_players_to_joysticks == 1) {
-                if (players_joysticks_counter > PLAYER_JOYSTICK_RATE_LIMIT) {
-                    int prev_player_count = config->players;
-                    set_players_to_match_joysticks();
-                    if (config->players != prev_player_count) {
-                        set_view_radius(g->render_radius);
-                    }
-                    players_joysticks_counter = 0;
-                }
-                players_joysticks_counter++;
             }
 
 #ifdef DEBUG

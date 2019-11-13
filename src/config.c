@@ -35,7 +35,7 @@ void reset_config() {
     config->verbose = 0;
     config->view = AUTO_PICK_VIEW_RADIUS;
     config->vsync = VSYNC;
-    strncpy(config->window_title, WINDOW_TITLE, sizeof(WINDOW_TITLE) - 1);
+    strncpy(config->window_title, WINDOW_TITLE, sizeof(config->window_title));
     config->window_title[sizeof(WINDOW_TITLE)] = '\0';
     config->window_x = CENTRE_IN_SCREEN;
     config->window_y = CENTRE_IN_SCREEN;
