@@ -274,14 +274,12 @@ void handle_xinput2_event(const XIRawEvent *e)
     {
     case XI_RawButtonPress:
         if (_mouse_press_handler) {
-            _mouse_press_handler(e->deviceid, e->detail,
-                x11_event_state->keyboard_mods[e->deviceid]);
+            _mouse_press_handler(e->deviceid, e->detail);
         }
         break;
     case XI_RawButtonRelease:
         if (_mouse_release_handler) {
-            _mouse_release_handler(e->deviceid, e->detail,
-                x11_event_state->keyboard_mods[e->deviceid]);
+            _mouse_release_handler(e->deviceid, e->detail);
         }
         break;
     case XI_RawMotion:
@@ -458,6 +456,14 @@ void pg_fullscreen(int fullscreen)
     root = XDefaultRootWindow(x11_event_state->display);
     XSendEvent(x11_event_state->display, root, False,
                SubstructureRedirectMask | SubstructureNotifyMask, &event);
+}
+
+int pg_get_mods(int keyboard_id)
+{
+    if (keyboard_id < 0 || keyboard_id >= MAX_DEVICE_COUNT) {
+        return 0;
+    }
+    return x11_event_state->keyboard_mods[keyboard_id];
 }
 
 void _pg_fatal(char *format, ...)

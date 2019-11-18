@@ -38,8 +38,8 @@ void pg_next_event(void);
 
 typedef void (*KeyPressHandler)(int keyboard_id, int mods, int keysym);
 typedef void (*KeyReleaseHandler)(int keyboard_id, int keysym);
-typedef void (*MousePressHandler)(int mouse_id, int button, int mods);
-typedef void (*MouseReleaseHandler)(int mouse_id, int button, int mods);
+typedef void (*MousePressHandler)(int mouse_id, int button);
+typedef void (*MouseReleaseHandler)(int mouse_id, int button);
 typedef void (*MouseMotionHandler)(int mouse_id, float x, float y);
 typedef void (*WindowCloseHandler)(void);
 typedef void (*FocusOutHandler)(void);
@@ -57,6 +57,7 @@ void pg_resize_window(int width, int height);
 void pg_set_window_title(char *title);
 void pg_fullscreen(int fullscreen);
 void pg_toggle_fullscreen(void);
+int pg_get_mods(int keyboard_id);
 
 void _pg_fatal(char *format, ...);
 

@@ -3331,12 +3331,16 @@ LocalPlayer* player_for_mouse(int mouse_id) {
     return g->local_players;
 }
 
-void handle_mouse_release(int mouse_id, int b, int mods)
+void handle_mouse_release(int mouse_id, int b)
 {
     if (!relative_mouse_in_use()) {
         return;
     }
     LocalPlayer *local = player_for_mouse(mouse_id);
+    int mods = 0;
+    if (local->keyboard_id != UNASSIGNED) {
+        mods = pg_get_mods(local->keyboard_id);
+    }
     if (b == 1) {
         if (mods & ControlMask) {
             set_block_under_crosshair(local);
