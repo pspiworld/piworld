@@ -459,8 +459,8 @@ class Model(object):
         )
         self.execute(query, dict(p=p, q=q, x=x, y=y, z=z, w=w))
         self.send_block(client, p, q, x, y, z, w)
-        for dx in range(-1, 2):
-            for dz in range(-1, 2):
+        for dx in (-1, 0, 1):
+            for dz in (-1, 0, 1):
                 if dx == 0 and dz == 0:
                     continue
                 if dx and chunked(x + dx) == p:
