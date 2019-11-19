@@ -36,6 +36,11 @@ Zero can be fast enough.
 
     sudo apt-get install cmake libsqlite3-dev xorg-dev
 
+additional package required for Pi 4 (or the experimental Mesa driver for Pi 2
+or 3):
+
+    sudo apt-get install libgles2-mesa-dev
+
 ### Compile and Run
 
 Once you have the dependencies (see above), run the following commands in your
@@ -49,10 +54,10 @@ terminal.
 
 I recommend increasing the GPU memory on the Pi to a minimum of 128M.
 
-#### Experimental MESA driver
+#### Pi 4 (and experimental MESA driver on Pi 2 and 3)
 
-If you've enabled the experimental opengl driver (only on the Pi 2 or 3) you
-can build PiWorld to use it:
+To build for the Pi 4 or if you've enabled the experimental opengl driver (only
+on the Pi 2 or 3) you can build PiWorld to use it:
 
     cmake -DMESA=1 -DRASPI=2 .
     make -j4
