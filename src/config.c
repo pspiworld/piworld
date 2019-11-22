@@ -42,6 +42,7 @@ void reset_config() {
     config->window_width = WINDOW_WIDTH;
     config->window_height = WINDOW_HEIGHT;
     config->benchmark_create_chunks = 0;
+    config->no_limiters = 0;
 }
 
 void get_config_path(char *path)
@@ -95,6 +96,7 @@ void parse_startup_config(int argc, char **argv) {
             {"window-title",      required_argument, 0,  0 },
             {"window-xy",         required_argument, 0,  0 },
             {"benchmark-create-chunks", required_argument, 0,  0 },
+            {"no-limiters",       no_argument,       0,  0 },
             {0,                   0,                 0,  0 }
         };
 
@@ -156,6 +158,8 @@ void parse_startup_config(int argc, char **argv) {
             } else if (strncmp(opt_name, "benchmark-create-chunks", 23) == 0 &&
                        sscanf(optarg, "%d",
                               &config->benchmark_create_chunks) == 1) {
+            } else if (strncmp(opt_name, "no-limiters", 11) == 0) {
+                config->no_limiters = 1;
             } else {
                 printf("Bad argument for: --%s: %s\n", opt_name, optarg);
                 exit(1);

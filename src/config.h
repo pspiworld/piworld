@@ -67,6 +67,7 @@ typedef struct {
     int window_width;
     int window_height;
     int benchmark_create_chunks;
+    int no_limiters;
 } Config;
 
 extern Config *config;

@@ -255,7 +255,8 @@ LocalPlayer* player_for_joystick(int joystick_id);
 // returns 1 if limit applied, 0 if no limit applied
 int limit_player_count_to_fit_gpu_mem(void)
 {
-    if (pg_get_gpu_mem_size() < 128 && config->players > 2) {
+    if (!config->no_limiters &&
+        pg_get_gpu_mem_size() < 128 && config->players > 2) {
         printf("More GPU memory needed for more players.\n");
         config->players = 2;
         return 1;
@@ -3842,24 +3843,30 @@ void set_view_radius(int requested_size)
 {
     int radius = requested_size;
     int extend_delete_radius = 3;
-    int gpu_mb = pg_get_gpu_mem_size();
-    if (gpu_mb < 48 || (gpu_mb < 128 && config->players >= 2)) {
-        // A draw distance of 1 is not enough for the game to be usable, but
-        // this does at least show something on screen (for low resolutions
-        // only - higher ones will crash the game with low GPU RAM).
-        radius = 1;
-        extend_delete_radius = 1;
-    } else if (gpu_mb < 64 || (gpu_mb < 192 && config->players >= 3)) {
-        radius = 2;
-        extend_delete_radius = 1;
-    } else if (gpu_mb < 128 || (gpu_mb < 256 && config->players >= 3)) {
-        // A GPU RAM size of 64M will result in rendering issues for draw
-        // distances greater than 3 (with a chunk size of 16).
-        radius = 3;
-        extend_delete_radius = 1;
-    } else if (gpu_mb < 256 || requested_size == AUTO_PICK_VIEW_RADIUS) {
-        // For the Raspberry Pi reduce amount to draw to both fit into 128MiB
-        // of GPU RAM and keep the render speed at a reasonable smoothness.
+    if (!config->no_limiters) {
+        int gpu_mb = pg_get_gpu_mem_size();
+        if (gpu_mb < 48 || (gpu_mb < 128 && config->players >= 2)) {
+            // A draw distance of 1 is not enough for the game to be usable,
+            // but this does at least show something on screen (for low
+            // resolutions only - higher ones will crash the game with low GPU
+            // RAM).
+            radius = 1;
+            extend_delete_radius = 1;
+        } else if (gpu_mb < 64 || (gpu_mb < 192 && config->players >= 3)) {
+            radius = 2;
+            extend_delete_radius = 1;
+        } else if (gpu_mb < 128 || (gpu_mb < 256 && config->players >= 3)) {
+            // A GPU RAM size of 64M will result in rendering issues for draw
+            // distances greater than 3 (with a chunk size of 16).
+            radius = 3;
+            extend_delete_radius = 1;
+        } else if (gpu_mb < 256 || requested_size == AUTO_PICK_VIEW_RADIUS) {
+            // For the Raspberry Pi reduce amount to draw to both fit into
+            // 128MiB of GPU RAM and keep the render speed at a reasonable
+            // smoothness.
+            radius = 5;
+        }
+    } else if (requested_size == AUTO_PICK_VIEW_RADIUS) {
         radius = 5;
     }
 
