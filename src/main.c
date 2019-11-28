@@ -3113,9 +3113,6 @@ void handle_key_press(int keyboard_id, int mods, int keysym)
         }
         break;
         }
-    case XK_F9:
-        pg_set_next_fullscreen_size();
-        break;
     case XK_F11:
         pg_toggle_fullscreen();
         break;
@@ -3933,10 +3930,6 @@ int main(int argc, char **argv) {
         g->auto_add_players_on_new_devices = 0;
         limit_player_count_to_fit_gpu_mem();
         set_player_count(g->clients, config->players);
-    }
-    if (config->fullscreen_width && config->fullscreen_height) {
-        pg_set_fullscreen_size(config->fullscreen_width,
-                               config->fullscreen_height);
     }
     if (config->fullscreen) {
         pg_fullscreen(1);
