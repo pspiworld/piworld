@@ -70,6 +70,7 @@ void get_server_db_cache_path(char *path)
 void parse_startup_config(int argc, char **argv) {
     int c;
     const char *opt_name;
+    char separator[2];
 
     while (1) {
         int option_index = 0;
@@ -142,15 +143,17 @@ void parse_startup_config(int argc, char **argv) {
             } else if (strncmp(opt_name, "vsync", 5) == 0 &&
                        sscanf(optarg, "%d", &config->vsync) == 1) {
             } else if (strncmp(opt_name, "window-size", 11) == 0 &&
-                       sscanf(optarg, "%d,%d", &config->window_width,
-                              &config->window_height) == 2) {
+                       sscanf(optarg, "%d%1[,x]%d", &config->window_width,
+                              separator,
+                              &config->window_height) == 3) {
             } else if (strncmp(opt_name, "window-title", 12) == 0 &&
                        sscanf(optarg, "%256c", config->window_title) == 1) {
                 config->window_title[MIN(strlen(optarg),
                                          MAX_TITLE_LENGTH - 1)] = '\0';
             } else if (strncmp(opt_name, "window-xy", 9) == 0 &&
-                       sscanf(optarg, "%d,%d", &config->window_x,
-                              &config->window_y) == 2) {
+                       sscanf(optarg, "%d%1[,x]%d", &config->window_x,
+                              separator,
+                              &config->window_y) == 3) {
             } else if (strncmp(opt_name, "server", 6) == 0 &&
                        sscanf(optarg, "%256c", config->server) == 1) {
                 config->server[MIN(strlen(optarg),
