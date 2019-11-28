@@ -410,8 +410,8 @@ GLuint gen_wireframe_buffer(float x, float y, float z, float n) {
 }
 
 GLuint gen_sky_buffer(void) {
-    float data[12288];
-    make_sphere(data, 1, 3);
+    float data[3072];
+    make_sphere(data, 1, 2);
     return gen_buffer(sizeof(data), data);
 }
 
@@ -2000,7 +2000,7 @@ void render_sky(Attrib *attrib, Player *player, GLuint buffer) {
     glUniformMatrix4fv(attrib->matrix, 1, GL_FALSE, matrix);
     glUniform1i(attrib->sampler, 2);
     glUniform1f(attrib->timer, time_of_day());
-    draw_triangles_3d_sky(attrib, buffer, 512 * 3);
+    draw_triangles_3d_sky(attrib, buffer, 128 * 3);
 }
 
 void render_wireframe(Attrib *attrib, Player *player) {
@@ -3113,6 +3113,9 @@ void handle_key_press(int keyboard_id, int mods, int keysym)
         }
         break;
         }
+    case XK_F9:
+        pg_set_next_fullscreen_size();
+        break;
     case XK_F11:
         pg_toggle_fullscreen();
         break;
@@ -3930,6 +3933,10 @@ int main(int argc, char **argv) {
         g->auto_add_players_on_new_devices = 0;
         limit_player_count_to_fit_gpu_mem();
         set_player_count(g->clients, config->players);
+    }
+    if (config->fullscreen_width && config->fullscreen_height) {
+        pg_set_fullscreen_size(config->fullscreen_width,
+                               config->fullscreen_height);
     }
     if (config->fullscreen) {
         pg_fullscreen(1);
