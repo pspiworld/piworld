@@ -221,21 +221,23 @@ void make_character(
     float s = 0.0625;
     float a = s;
     float b = s * 2;
+    float glyph_width = s / 2;
+    float glyph_x_offset = s / 4;
     int w = c - 32;
     float du = (w % 16) * a;
-    float dv = 1 - (w / 16) * b - b;
+    float dv = (1 - (w / 16) * b - b) + (0.0625 / 2);
     *(d++) = x - n; *(d++) = y - m;
-    *(d++) = du + 0; *(d++) = dv;
+    *(d++) = du + glyph_x_offset; *(d++) = dv;
     *(d++) = x + n; *(d++) = y - m;
-    *(d++) = du + a; *(d++) = dv;
+    *(d++) = du + glyph_x_offset + glyph_width; *(d++) = dv;
     *(d++) = x + n; *(d++) = y + m;
-    *(d++) = du + a; *(d++) = dv + b;
+    *(d++) = du + glyph_x_offset + glyph_width; *(d++) = dv + s;
     *(d++) = x - n; *(d++) = y - m;
-    *(d++) = du + 0; *(d++) = dv;
+    *(d++) = du + glyph_x_offset; *(d++) = dv;
     *(d++) = x + n; *(d++) = y + m;
-    *(d++) = du + a; *(d++) = dv + b;
+    *(d++) = du + glyph_x_offset + glyph_width; *(d++) = dv + s;
     *(d++) = x - n; *(d++) = y + m;
-    *(d++) = du + 0; *(d++) = dv + b;
+    *(d++) = du + glyph_x_offset; *(d++) = dv + s;
 }
 
 void make_character_3d(

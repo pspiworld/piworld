@@ -2062,7 +2062,7 @@ void render_text(
     set_matrix_2d(matrix, g->width, g->height);
     glUseProgram(attrib->program);
     glUniformMatrix4fv(attrib->matrix, 1, GL_FALSE, matrix);
-    glUniform1i(attrib->sampler, 1);
+    glUniform1i(attrib->sampler, 3);
     glUniform1i(attrib->extra1, 0);
     int length = strlen(text);
     x -= n * justify * (length - 1) / 2;
@@ -3642,7 +3642,7 @@ void render_player_world(
 
     // RENDER TEXT //
     char text_buffer[1024];
-    float ts = 12 * g->scale;
+    float ts = 8 * g->scale;
     float tx = ts / 2;
     float ty = g->height - ts;
     if (config->show_info_text) {
@@ -3951,14 +3951,6 @@ int main(int argc, char **argv) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     load_png_texture("textures/texture.png");
-
-    GLuint font;
-    glGenTextures(1, &font);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, font);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    load_png_texture("textures/font.png");
 
     GLuint sky;
     glGenTextures(1, &sky);
