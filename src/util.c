@@ -1,7 +1,10 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <errno.h>
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
 #include "lodepng.h"
 #include "pg.h"
 #include "matrix.h"
@@ -161,6 +164,44 @@ void load_png_texture(const char *file_name) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
         GL_UNSIGNED_BYTE, data);
     free(data);
+}
+
+#define DDS_HEADER_SIZE 128
+int load_etc1_in_dds_texture(const char *file_name) {
+    unsigned int width, height;
+    unsigned int texture_length;
+    char *data = load_file(file_name);
+    if (strncmp(data, "DDS ", 4) != 0) {
+        printf("Not a DDS file: %s\n", file_name);
+        return -1;
+    }
+    if (strncmp(&data[84], "ETC ", 4) != 0) {
+        printf("Not an ETC file: %s\n", file_name);
+        return -2;
+    }
+    height = *(unsigned int*)&data[12];
+    width = *(unsigned int*)&data[16];
+    texture_length = *(unsigned int*)&data[20];
+    glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_ETC1_RGB8_OES, width, height, 0,
+                           texture_length, &data[DDS_HEADER_SIZE]);
+    free(data);
+    return 0;
+}
+
+void load_texture(const char *name) {
+    // Try loading an ETC1 version of the texture at bin/name.dds, if it is not
+    // present or is older than the original PNG file use the PNG file instead.
+    struct stat st, st2;
+    char dds_file_name[MAX_PATH_LENGTH];
+    char png_file_name[MAX_PATH_LENGTH];
+    snprintf(dds_file_name, MAX_PATH_LENGTH, "./bin/%s.dds", name);
+    snprintf(png_file_name, MAX_PATH_LENGTH, "./textures/%s.png", name);
+    if (stat(dds_file_name, &st) == 0 && stat(png_file_name, &st2) == 0 &&
+        st.st_mtime > st2.st_mtime &&
+        load_etc1_in_dds_texture(dds_file_name) == 0) {
+        return;  // ETC1 texture will be used
+    }
+    load_png_texture(png_file_name);
 }
 
 char *tokenize(char *str, const char *delim, char **key) {
