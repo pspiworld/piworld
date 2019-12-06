@@ -52,7 +52,7 @@ void get_config_path(char *path)
     mkdir(path, 0755);
 #else
     // Keep the config and world database in the current dir for dev builds
-    snprintf(path, MAX_DIR_LENGTH, ".");
+    snprintf(path, MAX_DIR_LENGTH, get_data_dir());
 #endif
 }
 

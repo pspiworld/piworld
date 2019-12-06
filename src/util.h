@@ -27,6 +27,9 @@ typedef struct {
     double since;
 } FPS;
 
+void init_data_dir(char *bin_file_name);
+char *get_data_dir(void);
+
 int rand_int(int n);
 double rand_double(void);
 void update_fps(FPS *fps);
@@ -40,7 +43,7 @@ GLuint gen_faces_with_rgba(int components, int faces, GLfloat *data);
 GLuint make_shader(GLenum type, const char *source);
 GLuint load_shader(GLenum type, const char *path);
 GLuint make_program(GLuint shader1, GLuint shader2);
-GLuint load_program(const char *path1, const char *path2);
+GLuint load_program(const char *name);
 void load_png_texture(const char *file_name);
 void load_texture(const char *file_name);
 char *tokenize(char *str, const char *delim, char **key);

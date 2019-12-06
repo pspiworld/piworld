@@ -1,7 +1,9 @@
+#include <libgen.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <errno.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
@@ -9,6 +11,34 @@
 #include "pg.h"
 #include "matrix.h"
 #include "util.h"
+
+char data_dir[MAX_DIR_LENGTH];
+
+void init_data_dir(char *bin_file_name)
+{
+    char bin_dir[MAX_DIR_LENGTH];
+    char test_path[MAX_PATH_LENGTH];
+    snprintf(bin_dir, MAX_DIR_LENGTH, "%s", dirname(bin_file_name));
+    snprintf(data_dir, MAX_DIR_LENGTH, "%s", bin_dir);
+    snprintf(test_path, MAX_PATH_LENGTH, "%s/%s", data_dir, "textures");
+    if (access(test_path, F_OK) != 0) {
+        snprintf(data_dir, MAX_DIR_LENGTH, "%s", dirname(bin_dir));
+        snprintf(test_path, MAX_PATH_LENGTH, "%s/%s", data_dir, "textures");
+        if (access(test_path, F_OK) != 0) {
+            strncpy(data_dir, "..", 3);
+            snprintf(test_path, MAX_PATH_LENGTH, "%s/%s", data_dir, "textures");
+            if (access(test_path, F_OK) != 0) {
+                printf("Data files not found.\n");
+                exit(1);
+            }
+        }
+    }
+}
+
+char *get_data_dir(void)
+{
+    return data_dir;
+}
 
 int rand_int(int n) {
     int result;
@@ -130,7 +160,13 @@ GLuint make_program(GLuint shader1, GLuint shader2) {
     return program;
 }
 
-GLuint load_program(const char *path1, const char *path2) {
+GLuint load_program(const char *name) {
+    char path1[MAX_PATH_LENGTH];
+    char path2[MAX_PATH_LENGTH];
+    snprintf(path1, MAX_PATH_LENGTH, "%s/shaders/%s_vertex.glsl",
+             data_dir, name);
+    snprintf(path2, MAX_PATH_LENGTH, "%s/shaders/%s_fragment.glsl",
+             data_dir, name);
     GLuint shader1 = load_shader(GL_VERTEX_SHADER, path1);
     GLuint shader2 = load_shader(GL_FRAGMENT_SHADER, path2);
     GLuint program = make_program(shader1, shader2);
@@ -194,8 +230,9 @@ void load_texture(const char *name) {
     struct stat st, st2;
     char dds_file_name[MAX_PATH_LENGTH];
     char png_file_name[MAX_PATH_LENGTH];
-    snprintf(dds_file_name, MAX_PATH_LENGTH, "./bin/%s.dds", name);
-    snprintf(png_file_name, MAX_PATH_LENGTH, "./textures/%s.png", name);
+    snprintf(dds_file_name, MAX_PATH_LENGTH, "%s/bin/%s.dds", data_dir, name);
+    snprintf(png_file_name, MAX_PATH_LENGTH, "%s/textures/%s.png",
+             data_dir, name);
     if (stat(dds_file_name, &st) == 0 && stat(png_file_name, &st2) == 0 &&
         st.st_mtime > st2.st_mtime &&
         load_etc1_in_dds_texture(dds_file_name) == 0) {
