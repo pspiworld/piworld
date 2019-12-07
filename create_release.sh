@@ -1,25 +1,44 @@
 #!/bin/bash -e
 
-# Assume the latest git tag is the release version.
-VER=`git tag --contains | head -n1`
+# Raspbian Stretch is the currently prefered OS version to build a release
+# with.
+[[ -e /etc/debian_version ]] \
+    || echo Warning: building on unsupported OS, only Raspbian supported.
+[[ -e /etc/debian_version && `cut -c-2 /etc/debian_version` == "9." ]] \
+    || echo Warning: building on unsupported OS version - only Raspbian \
+            Stretch supported.
+
+# If the latest git commit has a tag use that as the release version, otherwise
+# use a shortened form of the commit ID.
+TAG=`git tag --contains | head -n1`
+COMMIT_ID=`git show | head -n1 | cut -d' ' -f2`
+SHORT_COMMIT_ID=${COMMIT_ID:0:7}
+VER=${TAG:-$SHORT_COMMIT_ID}
+
 TMPDIR=/tmp/piworld-$VER
 
-mkdir -p ./bin
+if [[ $SKIP_BUILD == 1 ]]; then
+    echo "Skipping build."
+else
+    # Build to use the brcm driver on Pi models 0 to 3 on Raspbian.
+    cmake -DRELEASE=1 -DMESA=0 -DRASPI=1 -DDEBUG=0 .
+    make -j4
+    cp ./piworld ./bin/piworld-brcm
 
-# Build to use the brcm driver on a new Raspbian install.
-cmake -DRELEASE=1 -DMESA=0 -DRASPI=1 .
-make -j4
-cp ./piworld ./bin/piworld-brcm
-
-# Build to use the experimental OpenGL driver on the Pi 2 or 3.
-cmake -DRELEASE=1 -DMESA=1 -DRASPI=2 .
-make -j4
-cp ./piworld ./bin/piworld-mesa
+    # Build to use Mesa on the Pi 4 or the experimental OpenGL driver on the Pi
+    # 2 or 3.
+    cmake -DRELEASE=1 -DMESA=1 -DRASPI=2 -DDEBUG=0 .
+    make -j4
+    cp ./piworld ./bin/piworld-mesa
+fi
 
 mkdir $TMPDIR
+
+cp piworld.sh $TMPDIR/piworld
+
 mkdir -p $TMPDIR/bin
 cp ./bin/piworld-* $TMPDIR/bin/
-cp piworld.sh $TMPDIR/piworld
+cp ./bin/sign.dds $TMPDIR/bin/
 
 mkdir -p $TMPDIR/shaders
 cp ./shaders/*.glsl $TMPDIR/shaders/
