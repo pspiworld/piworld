@@ -38,7 +38,7 @@
 #define MAX_DIR_LENGTH 256
 #define MAX_FILENAME_LENGTH 196
 #define MAX_TITLE_LENGTH 256
-#define AUTO_PICK_VIEW_RADIUS 0
+#define AUTO_PICK_RADIUS -1
 
 typedef struct {
     char path[MAX_DIR_LENGTH];
@@ -68,6 +68,7 @@ typedef struct {
     int window_height;
     int benchmark_create_chunks;
     int no_limiters;
+    int delete_radius;
 } Config;
 
 extern Config *config;

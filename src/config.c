@@ -33,7 +33,7 @@ void reset_config() {
     config->show_wireframe = SHOW_WIREFRAME;
     config->use_cache = USE_CACHE;
     config->verbose = 0;
-    config->view = AUTO_PICK_VIEW_RADIUS;
+    config->view = AUTO_PICK_RADIUS;
     config->vsync = VSYNC;
     strncpy(config->window_title, WINDOW_TITLE, sizeof(config->window_title));
     config->window_title[sizeof(WINDOW_TITLE)] = '\0';
@@ -43,6 +43,7 @@ void reset_config() {
     config->window_height = WINDOW_HEIGHT;
     config->benchmark_create_chunks = 0;
     config->no_limiters = 0;
+    config->delete_radius = AUTO_PICK_RADIUS;
 }
 
 void get_config_path(char *path)
@@ -98,6 +99,7 @@ void parse_startup_config(int argc, char **argv) {
             {"window-xy",         required_argument, 0,  0 },
             {"benchmark-create-chunks", required_argument, 0,  0 },
             {"no-limiters",       no_argument,       0,  0 },
+            {"delete-radius",     required_argument, 0,  0 },
             {0,                   0,                 0,  0 }
         };
 
@@ -163,6 +165,8 @@ void parse_startup_config(int argc, char **argv) {
                               &config->benchmark_create_chunks) == 1) {
             } else if (strncmp(opt_name, "no-limiters", 11) == 0) {
                 config->no_limiters = 1;
+            } else if (strncmp(opt_name, "delete-radius", 13) == 0 &&
+                       sscanf(optarg, "%d", &config->delete_radius) == 1) {
             } else {
                 printf("Bad argument for: --%s: %s\n", opt_name, optarg);
                 exit(1);
