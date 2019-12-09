@@ -2895,9 +2895,13 @@ void reset_model(void) {
     memset(g->messages, 0, sizeof(char) * MAX_MESSAGES * MAX_TEXT_LENGTH);
     g->message_index = 0;
     g->day_length = DAY_LENGTH;
+    const unsigned char *stored_time;
+    stored_time = db_get_option("time");
     if (config->time >= 0 && config->time <= 24) {
         pg_set_time(g->day_length /
                     (24.0 / (config->time == 0 ? 24 : config->time)));
+    } else if (stored_time != NULL) {
+        pg_set_time(g->day_length * atof((char *)stored_time));
     } else {
         pg_set_time(g->day_length / 3.0);
     }
@@ -4278,6 +4282,9 @@ int main(int argc, char **argv) {
             db_save_state(ls->x, ls->y, ls->z, ls->rx, ls->ry);
             db_save_player_name(g->local_players[i].player->name);
         }
+        char time_str[16];
+        snprintf(time_str, 16, "%f", time_of_day());
+        db_set_option("time", time_str);
         db_close();
         db_disable();
         client_stop();
