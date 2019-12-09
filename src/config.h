@@ -69,6 +69,7 @@ typedef struct {
     int benchmark_create_chunks;
     int no_limiters;
     int delete_radius;
+    int time;
 } Config;
 
 extern Config *config;

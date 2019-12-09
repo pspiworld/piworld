@@ -2500,6 +2500,13 @@ void parse_command(LocalPlayer *local, const char *buffer, int forward) {
             set_view_radius(g->render_radius, radius);
         }
     }
+    else if (sscanf(buffer, "/time %d", &int_option) == 1) {
+        if (g->mode == MODE_OFFLINE && int_option >= 0 && int_option <= 24) {
+            pg_set_time(g->day_length /
+                        (24.0 / (int_option == 0 ? 24 : int_option)));
+            g->time_changed = 1;
+        }
+    }
     else if (forward) {
         client_talk(buffer);
     }
@@ -2888,7 +2895,12 @@ void reset_model(void) {
     memset(g->messages, 0, sizeof(char) * MAX_MESSAGES * MAX_TEXT_LENGTH);
     g->message_index = 0;
     g->day_length = DAY_LENGTH;
-    pg_set_time(g->day_length / 3.0);
+    if (config->time >= 0 && config->time <= 24) {
+        pg_set_time(g->day_length /
+                    (24.0 / (config->time == 0 ? 24 : config->time)));
+    } else {
+        pg_set_time(g->day_length / 3.0);
+    }
     g->time_changed = 1;
     set_player_count(g->clients, config->players);
 }
