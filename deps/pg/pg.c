@@ -1,5 +1,6 @@
 
 #include <assert.h>
+#include <stdlib.h>
 #include "pg.h"
 #include "pg_time.h"
 
@@ -47,6 +48,11 @@ static void init_gles2(PG_STATE_T *state, char *title)
     };
 
     EGLConfig config;
+
+#ifdef MESA
+    // Workaround for mesa versions 19.2.5 and higher
+    setenv("EGL_PLATFORM", "x11", 0);
+#endif
 
     // get an EGL display connection
     state->display = eglGetDisplay(get_egl_display_id());
