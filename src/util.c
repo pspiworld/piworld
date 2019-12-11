@@ -234,7 +234,7 @@ void load_texture(const char *name) {
     snprintf(png_file_name, MAX_PATH_LENGTH, "%s/textures/%s.png",
              data_dir, name);
     if (stat(dds_file_name, &st) == 0 && stat(png_file_name, &st2) == 0 &&
-        st.st_mtime > st2.st_mtime &&
+        st.st_mtime >= st2.st_mtime &&
         load_etc1_in_dds_texture(dds_file_name) == 0) {
         return;  // ETC1 texture will be used
     }
