@@ -4,6 +4,7 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -96,7 +97,7 @@ typedef struct {
     int miny;
     int maxy;
     int faces;
-    GLfloat *data;
+    void *data;
 } WorkerItem;
 
 typedef struct {
@@ -213,6 +214,7 @@ typedef struct {
     GLuint extra2;
     GLuint extra3;
     GLuint extra4;
+    GLuint map;
 } Attrib;
 
 typedef struct {
@@ -240,6 +242,8 @@ typedef struct {
     int day_length;
     int time_changed;
     int auto_add_players_on_new_devices;
+    int gl_float_type;
+    size_t float_size;
 } Model;
 
 static Model model;
@@ -411,12 +415,22 @@ GLuint gen_wireframe_buffer(float x, float y, float z, float n) {
 
 GLuint gen_sky_buffer(void) {
     float data[3072];
+    GLint buffer;
     make_sphere(data, 1, 2);
-    return gen_buffer(sizeof(data), data);
+    if (config->use_hfloat) {
+        hfloat hdata[3072];
+        for (size_t i=0; i<3072; i++) {
+            hdata[i] = float_to_hfloat(data + i);
+        }
+        buffer = gen_buffer(sizeof(hdata), hdata);
+    } else {
+        buffer = gen_buffer(sizeof(data), data);
+    }
+    return buffer;
 }
 
 GLuint gen_cube_buffer(float x, float y, float z, float n, int w) {
-    GLfloat *data = malloc_faces(10, 6);
+    GLfloat *data = malloc_faces(10, 6, sizeof(GLfloat));
     float ao[6][4] = {0};
     float light[6][4] = {
         {0.5, 0.5, 0.5, 0.5},
@@ -426,45 +440,68 @@ GLuint gen_cube_buffer(float x, float y, float z, float n, int w) {
         {0.5, 0.5, 0.5, 0.5},
         {0.5, 0.5, 0.5, 0.5}
     };
+    GLint buffer;
     make_cube(data, ao, light, 1, 1, 1, 1, 1, 1, x, y, z, n, w);
-    return gen_faces(10, 6, data);
+    if (config->use_hfloat) {
+        hfloat *hdata = malloc_faces(10, 6, sizeof(hfloat));
+        for (size_t i=0; i<(6 * 10 * 6); i++) {
+            hdata[i] = float_to_hfloat(data + i);
+        }
+        buffer = gen_faces(10, 6, hdata, sizeof(hfloat));
+        free(data);
+    } else {
+        buffer = gen_faces(10, 6, data, sizeof(GLfloat));
+    }
+    return buffer;
 }
 
 GLuint gen_plant_buffer(float x, float y, float z, float n, int w) {
-    GLfloat *data = malloc_faces(10, 4);
+    GLfloat *data = malloc_faces(10, 4, sizeof(GLfloat));
     float ao = 0;
     float light = 1;
+    GLint buffer;
     make_plant(data, ao, light, x, y, z, n, w, 45);
-    return gen_faces(10, 4, data);
+    if (config->use_hfloat) {
+        hfloat *hdata = malloc_faces(10, 4, sizeof(hfloat));
+        for (size_t i=0; i<(6 * 10 * 4); i++) {
+            hdata[i] = float_to_hfloat(data + i);
+        }
+        buffer = gen_faces(10, 4, hdata, sizeof(hfloat));
+        free(data);
+    } else {
+        buffer = gen_faces(10, 4, data, sizeof(GLfloat));
+    }
+    return buffer;
 }
 
 GLuint gen_player_buffer(float x, float y, float z, float rx, float ry, int p) {
-    GLfloat *data = malloc_faces(10, 6);
+    GLfloat *data = malloc_faces(10, 6, sizeof(GLfloat));
     make_player(data, x, y, z, rx, ry, p);
-    return gen_faces(10, 6, data);
+    return gen_faces(10, 6, data, sizeof(GLfloat));
 }
 
 GLuint gen_text_buffer(float x, float y, float n, char *text) {
     int length = strlen(text);
-    GLfloat *data = malloc_faces(4, length);
+    GLfloat *data = malloc_faces(4, length, sizeof(GLfloat));
     for (int i = 0; i < length; i++) {
         make_character(data + i * 24, x, y, n / 2, n, text[i]);
         x += n;
     }
-    return gen_faces(4, length, data);
+    return gen_faces(4, length, data, sizeof(GLfloat));
 }
 
-void draw_triangles_3d_ao(Attrib *attrib, GLuint buffer, int count) {
+void draw_triangles_3d_ao(Attrib *attrib, GLuint buffer, int count,
+                          size_t type_size, int gl_type) {
     glBindBuffer(GL_ARRAY_BUFFER, buffer);
     glEnableVertexAttribArray(attrib->position);
     glEnableVertexAttribArray(attrib->normal);
     glEnableVertexAttribArray(attrib->uv);
-    glVertexAttribPointer(attrib->position, 3, GL_FLOAT, GL_FALSE,
-        sizeof(GLfloat) * 10, 0);
-    glVertexAttribPointer(attrib->normal, 3, GL_FLOAT, GL_FALSE,
-        sizeof(GLfloat) * 10, (GLvoid *)(sizeof(GLfloat) * 3));
-    glVertexAttribPointer(attrib->uv, 4, GL_FLOAT, GL_FALSE,
-        sizeof(GLfloat) * 10, (GLvoid *)(sizeof(GLfloat) * 6));
+    glVertexAttribPointer(attrib->position, 3, gl_type, GL_FALSE,
+        type_size * 10, 0);
+    glVertexAttribPointer(attrib->normal, 3, gl_type, GL_FALSE,
+        type_size * 10, (GLvoid *)(type_size * 3));
+    glVertexAttribPointer(attrib->uv, 4, gl_type, GL_FALSE,
+        type_size * 10, (GLvoid *)(type_size * 6));
     glDrawArrays(GL_TRIANGLES, 0, count);
     glDisableVertexAttribArray(attrib->position);
     glDisableVertexAttribArray(attrib->normal);
@@ -494,10 +531,10 @@ void draw_triangles_3d_sky(Attrib *attrib, GLuint buffer, int count) {
     glBindBuffer(GL_ARRAY_BUFFER, buffer);
     glEnableVertexAttribArray(attrib->position);
     glEnableVertexAttribArray(attrib->uv);
-    glVertexAttribPointer(attrib->position, 3, GL_FLOAT, GL_FALSE,
-        sizeof(GLfloat) * 8, 0);
-    glVertexAttribPointer(attrib->uv, 2, GL_FLOAT, GL_FALSE,
-        sizeof(GLfloat) * 8, (GLvoid *)(sizeof(GLfloat) * 6));
+    glVertexAttribPointer(attrib->position, 3, g->gl_float_type, GL_FALSE,
+        g->float_size * 8, 0);
+    glVertexAttribPointer(attrib->uv, 2, g->gl_float_type, GL_FALSE,
+        g->float_size * 8, (GLvoid *)(g->float_size * 6));
     glDrawArrays(GL_TRIANGLES, 0, count);
     glDisableVertexAttribArray(attrib->position);
     glDisableVertexAttribArray(attrib->uv);
@@ -529,11 +566,13 @@ void draw_lines(Attrib *attrib, GLuint buffer, int components, int count) {
 }
 
 void draw_chunk(Attrib *attrib, Chunk *chunk) {
-    draw_triangles_3d_ao(attrib, chunk->buffer, chunk->faces * 6);
+    draw_triangles_3d_ao(attrib, chunk->buffer, chunk->faces * 6,
+                         g->float_size, g->gl_float_type);
 }
 
-void draw_item(Attrib *attrib, GLuint buffer, int count) {
-    draw_triangles_3d_ao(attrib, buffer, count);
+void draw_item(Attrib *attrib, GLuint buffer, int count, size_t type_size,
+               int gl_type) {
+    draw_triangles_3d_ao(attrib, buffer, count, type_size, gl_type);
 }
 
 void draw_text(Attrib *attrib, GLuint buffer, int length) {
@@ -557,16 +596,16 @@ void draw_sign(Attrib *attrib, GLuint buffer, int length) {
     glDisable(GL_POLYGON_OFFSET_FILL);
 }
 
-void draw_cube(Attrib *attrib, GLuint buffer) {
-    draw_item(attrib, buffer, 36);
+void draw_cube(Attrib *attrib, GLuint buffer, size_t type_size, int gl_type) {
+    draw_item(attrib, buffer, 36, type_size, gl_type);
 }
 
 void draw_plant(Attrib *attrib, GLuint buffer) {
-    draw_item(attrib, buffer, 24);
+    draw_item(attrib, buffer, 24, g->float_size, g->gl_float_type);
 }
 
 void draw_player(Attrib *attrib, Player *player) {
-    draw_cube(attrib, player->buffer);
+    draw_cube(attrib, player->buffer, sizeof(GLfloat), GL_FLOAT);
 }
 
 Client *find_client(int id) {
@@ -1298,7 +1337,7 @@ void compute_chunk(WorkerItem *item) {
     } END_MAP_FOR_EACH;
 
     // generate geometry
-    GLfloat *data = malloc_faces(10, faces);
+    GLfloat *data = malloc_faces(10, faces, sizeof(GLfloat));
     int offset = 0;
     MAP_FOR_EACH(map, ex, ey, ez, ew) {
         if (ew <= 0) {
@@ -1355,13 +1394,13 @@ void compute_chunk(WorkerItem *item) {
             float rotation = simplex2(ex, ez, 4, 0.5, 2) * 360;
             make_plant(
                 data + offset, min_ao, max_light,
-                ex, ey, ez, 0.5, ew, rotation);
+                entry->e.x, entry->e.y, entry->e.z, 0.5, ew, rotation);
         }
         else {
             make_cube(
                 data + offset, ao, light,
                 f1, f2, f3, f4, f5, f6,
-                ex, ey, ez, 0.5, ew);
+                entry->e.x, entry->e.y, entry->e.z, 0.5, ew);
         }
         offset += total * 60;
     } END_MAP_FOR_EACH;
@@ -1373,7 +1412,16 @@ void compute_chunk(WorkerItem *item) {
     item->miny = miny;
     item->maxy = maxy;
     item->faces = faces;
-    item->data = data;
+    if (config->use_hfloat) {
+        hfloat *hdata = malloc_faces(10, faces, sizeof(hfloat));
+        for (int i=0; i < (6 * 10 * faces); i++) {
+            hdata[i] = float_to_hfloat(data + i);
+        }
+        free(data);
+        item->data = hdata;
+    } else {
+        item->data = data;
+    }
 }
 
 void generate_chunk(Chunk *chunk, WorkerItem *item) {
@@ -1381,7 +1429,7 @@ void generate_chunk(Chunk *chunk, WorkerItem *item) {
     chunk->maxy = item->maxy;
     chunk->faces = item->faces;
     del_buffer(chunk->buffer);
-    chunk->buffer = gen_faces(10, item->faces, item->data);
+    chunk->buffer = gen_faces(10, item->faces, item->data, g->float_size);
     gen_sign_buffer(chunk);
 }
 
@@ -1907,6 +1955,7 @@ int render_chunks(Attrib *attrib, Player *player) {
         {
             continue;
         }
+        glUniform4f(attrib->map, chunk->map.dx, chunk->map.dy, chunk->map.dz, 0);
         draw_chunk(attrib, chunk);
         result += chunk->faces;
     }
@@ -1984,6 +2033,7 @@ void render_players(Attrib *attrib, Player *player) {
         for (int j = 0; j < MAX_LOCAL_PLAYERS; j++) {
             Player *other = client->players + j;
             if (other != player && other->is_active) {
+                glUniform4f(attrib->map, 0, 0, 0, 0);
                 draw_player(attrib, other);
             }
         }
@@ -2042,6 +2092,7 @@ void render_item(Attrib *attrib, LocalPlayer *p) {
     glUniform3f(attrib->camera, 0, 0, 5);
     glUniform1i(attrib->sampler, 0);
     glUniform1f(attrib->timer, time_of_day());
+    glUniform4f(attrib->map, 0, 0, 0, 0);
     int w = items[p->item_index];
     if (is_plant(w)) {
         GLuint buffer = gen_plant_buffer(0, 0, 0, 0.5, w);
@@ -2050,7 +2101,7 @@ void render_item(Attrib *attrib, LocalPlayer *p) {
     }
     else {
         GLuint buffer = gen_cube_buffer(0, 0, 0, 0.5, w);
-        draw_cube(attrib, buffer);
+        draw_cube(attrib, buffer, g->float_size, g->gl_float_type);
         del_buffer(buffer);
     }
 }
@@ -3940,6 +3991,14 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
+    if (config->use_hfloat) {
+        g->gl_float_type = GL_HALF_FLOAT_OES;
+        g->float_size = sizeof(hfloat);
+    } else {
+        g->gl_float_type = GL_FLOAT;
+        g->float_size = sizeof(GLfloat);
+    }
+
     // WINDOW INITIALIZATION //
     g->width = config->window_width;
     g->height = config->window_height;
@@ -4023,6 +4082,7 @@ int main(int argc, char **argv) {
     block_attrib.extra4 = glGetUniformLocation(program, "ortho");
     block_attrib.camera = glGetUniformLocation(program, "camera");
     block_attrib.timer = glGetUniformLocation(program, "timer");
+    block_attrib.map = glGetUniformLocation(program, "map");
 
     program = load_program("line");
     line_attrib.program = program;

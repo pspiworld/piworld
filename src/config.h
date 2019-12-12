@@ -39,6 +39,11 @@
 #define MAX_FILENAME_LENGTH 196
 #define MAX_TITLE_LENGTH 256
 #define AUTO_PICK_RADIUS -1
+#ifdef MESA
+#define HFLOAT_CONFIG 0
+#else
+#define HFLOAT_CONFIG 1
+#endif
 
 typedef struct {
     char path[MAX_DIR_LENGTH];
@@ -70,6 +75,7 @@ typedef struct {
     int no_limiters;
     int delete_radius;
     int time;
+    int use_hfloat;
 } Config;
 
 extern Config *config;
