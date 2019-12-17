@@ -27,6 +27,8 @@ typedef struct
     int width, height;
     int x, y;
     int fullscreen;
+    int fullscreen_width;
+    int fullscreen_height;
 } X11_EVENT_STATE_T;
 
 void x11_event_init(Display *display, Window window, int x, int y, int w, int h);
@@ -57,6 +59,8 @@ void pg_resize_window(int width, int height);
 void pg_set_window_title(char *title);
 void pg_fullscreen(int fullscreen);
 void pg_toggle_fullscreen(void);
+void pg_set_fullscreen_size(int fullscreen_width, int fullscreen_height);
+void pg_restore_original_fullscreen_size(void);
 int pg_get_mods(int keyboard_id);
 
 void _pg_fatal(char *format, ...);

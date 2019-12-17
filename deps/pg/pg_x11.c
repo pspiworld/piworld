@@ -93,6 +93,7 @@ get_egl_window_id(EGLConfig config, EGLDisplay display,
 void pg_end(void)
 {
     XCloseDisplay(x11_state->native_dpy);
+    pg_restore_original_fullscreen_size();
 }
 
 EGLNativeDisplayType get_x11_display(void)

@@ -18,6 +18,12 @@ void reset_config() {
     get_config_path(config->path);
     get_default_db_path(config->db_path);
     config->fullscreen = FULLSCREEN;
+#if RASPI > 0
+    config->fullscreen_width = 720;
+#else
+    config->fullscreen_width = 0;
+#endif
+    config->fullscreen_height = 0;
     config->players = -1;
     config->port = DEFAULT_PORT;
     config->server[0] = '\0';
@@ -79,6 +85,7 @@ void parse_startup_config(int argc, char **argv) {
         int option_index = 0;
         static struct option long_options[] = {
             {"fullscreen",        no_argument,       0,  0 },
+            {"fullscreen-size",   required_argument, 0,  0 },
             {"players",           required_argument, 0,  0 },
             {"port",              required_argument, 0,  0 },
             {"server",            required_argument, 0,  0 },
@@ -114,7 +121,11 @@ void parse_startup_config(int argc, char **argv) {
         switch (c) {
         case 0:
             opt_name = long_options[option_index].name;
-            if (strncmp(opt_name, "fullscreen", 10) == 0) {
+            if (strncmp(opt_name, "fullscreen-size", 15) == 0 &&
+                       sscanf(optarg, "%d%1[,x]%d", &config->fullscreen_width,
+                              separator,
+                              &config->fullscreen_height) == 3) {
+            } else if (strncmp(opt_name, "fullscreen", 10) == 0) {
                  config->fullscreen = 1;
             } else if (strncmp(opt_name, "players", 7) == 0 &&
                 sscanf(optarg, "%d", &config->players) == 1) {

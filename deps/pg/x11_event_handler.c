@@ -26,9 +26,13 @@
 //
 //========================================================================
 
+#include <limits.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <X11/extensions/XInput2.h>
 #include <X11/Xcursor/Xcursor.h>
 #include <X11/XKBlib.h>
@@ -38,6 +42,21 @@
 #define _NET_WM_STATE_REMOVE  0    /* remove/unset property */
 #define _NET_WM_STATE_ADD     1    /* add/set property */
 #define _NET_WM_STATE_TOGGLE  2    /* toggle property  */
+
+typedef struct {
+    int width;
+    int height;
+} ScreenMode;
+
+typedef struct {
+    char output_name[16];
+    ScreenMode modes[64];
+    int mode_count;
+    ScreenMode *starting_mode;
+} ScreenConfig;
+
+ScreenConfig screen_configs[8];
+int screen_count;
 
 static int xi2_opcode = 0;
 static int events_selected = 0;
@@ -55,6 +74,7 @@ void select_events(void);
 void deselect_events(void);
 static Cursor createInvisibleCursor(void);
 void handle_xinput2_event(const XIRawEvent *e);
+void _xrandr_set_size(int w, int h, const char *output_name);
 
 void x11_event_init(Display *display, Window window, int x, int y, int w, int h)
 {
@@ -105,6 +125,37 @@ void x11_event_init(Display *display, Window window, int x, int y, int w, int h)
     }
 
     select_events();
+
+#ifdef MESA
+    // Use xrandr command line tool to get list of starting sizes for all available screens.
+    FILE *fp;
+    char line[PIPE_BUF];
+    ScreenConfig *sc = NULL;
+    int int1, int2;
+    if ((fp = popen("xrandr", "r")) != NULL) {
+        while ((fgets(line, PIPE_BUF, fp)) != NULL) {
+            if (strstr(line, " connected") != NULL) {
+                if (sc == NULL) {
+                    sc = screen_configs;
+                } else {
+                    sc += 1;
+                }
+                sc->mode_count = 0;
+                strncpy(sc->output_name, line, strcspn(line, " "));
+                screen_count++;
+            } else if (sscanf(line, "   %dx%d", &int1, &int2) == 2) {
+                ScreenMode *mode = &sc->modes[sc->mode_count];
+                mode->width = int1;
+                mode->height = int2;
+                if (strchr(line, '*') != NULL) {
+                    sc->starting_mode = mode;
+                }
+                sc->mode_count++;
+            }
+        }
+        pclose(fp);
+    }
+#endif
 }
 
 void select_events(void)
@@ -456,7 +507,104 @@ void pg_fullscreen(int fullscreen)
     root = XDefaultRootWindow(x11_event_state->display);
     XSendEvent(x11_event_state->display, root, False,
                SubstructureRedirectMask | SubstructureNotifyMask, &event);
+
+#ifdef MESA
+    if (fullscreen) {
+        ScreenConfig *sc;
+        for (int i=0; i<screen_count; i++) {
+            sc = screen_configs + i;
+            if (sc->mode_count <= 1) {
+                continue;
+            }
+            _xrandr_set_size(x11_event_state->fullscreen_width,
+                             x11_event_state->fullscreen_height,
+                             sc->output_name);
+        }
+    } else {
+        pg_restore_original_fullscreen_size();
+    }
+#endif
 }
+
+void pg_set_fullscreen_size(int fullscreen_width, int fullscreen_height)
+{
+    x11_event_state->fullscreen_width = fullscreen_width;
+    x11_event_state->fullscreen_height = fullscreen_height;
+}
+
+void pg_restore_original_fullscreen_size(void)
+{
+#ifdef MESA
+    ScreenConfig *sc;
+    for (int i=0; i<screen_count; i++) {
+        sc = screen_configs + i;
+        if (sc->mode_count <= 1) {
+            continue;
+        }
+        _xrandr_set_size(sc->starting_mode->width, sc->starting_mode->height,
+                         sc->output_name);
+    }
+#endif
+}
+
+#ifdef MESA
+void _xrandr_set_size(int w, int h, const char *output_name)
+{
+    // If neither w or h is set then pick from first available.
+    if (w == 0 || h == 0) {
+        ScreenConfig *sc;
+        for (int i=0; i<screen_count; i++) {
+            sc = screen_configs + i;
+            if (strcmp(output_name, sc->output_name) != 0) {
+                continue;
+            }
+            ScreenMode *mode;
+            for (int j = 0; j < sc->mode_count; j++) {
+                mode = sc->modes + j;
+                if (w == 0 && h == 0) {
+                    w = mode->width;
+                    h = mode->height;
+                    break;
+                }
+                if (w == mode->width && h == 0) {
+                    h = mode->height;
+                    break;
+                }
+                if (h == mode->height && w == 0) {
+                    w = mode->width;
+                    break;
+                }
+            }
+            break;
+        }
+    }
+
+    if (w <= 0 || h <= 0 || w >= 10000 || h >= 10000) {
+        printf("Invalid fullscreen size request: %dx%d\n", w, h);
+        return;
+    }
+
+    char xrandr_size[10];
+    pid_t child;
+    int status;
+    snprintf(xrandr_size, sizeof(xrandr_size), "%dx%d", w, h);
+    if ((child = fork()) == -1) {
+        perror("fork");
+        exit(EXIT_FAILURE);
+    } else if (child == 0) {
+        execlp("xrandr", "xrandr",
+               "--output", output_name,
+               "--mode", xrandr_size,
+               (char *)NULL);
+        exit(EXIT_FAILURE);  // only gets here if exec failed
+    } else {
+        waitpid(child, &status, 0);
+        if (status != 0) {
+            printf("xrandr: error setting fullscreen size to %dx%d\n", w, h);
+        }
+    }
+}
+#endif
 
 int pg_get_mods(int keyboard_id)
 {

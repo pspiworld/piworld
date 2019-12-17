@@ -31,9 +31,9 @@ endif()
 add_definitions(-Wall -Wextra -Wstrict-prototypes)
 
 if(RASPI EQUAL 1)
-    add_definitions(-mtune=arm1176jzf-s -mfpu=vfp -mfloat-abi=hard)
+    add_definitions(-mtune=arm1176jzf-s -mfpu=vfp -mfloat-abi=hard -DRASPI=1)
 elseif(RASPI EQUAL 2)
-    add_definitions(-march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard)
+    add_definitions(-march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard -DRASPI=2)
 endif()
 
 if(PROFILE)

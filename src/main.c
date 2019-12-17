@@ -4023,6 +4023,7 @@ int main(int argc, char **argv) {
         limit_player_count_to_fit_gpu_mem();
         set_player_count(g->clients, config->players);
     }
+    pg_set_fullscreen_size(config->fullscreen_width, config->fullscreen_height);
     if (config->fullscreen) {
         pg_fullscreen(1);
     }
