@@ -1,4 +1,4 @@
-Copyright (C) 2017 Peter Strath (PiWorld updates)
+Copyright (C) 2019 Peter Strath (PiWorld updates)
 Copyright (C) 2013 Michael Fogleman
 
 Permission is hereby granted, free of charge, to any person obtaining a copy

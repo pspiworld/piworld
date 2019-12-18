@@ -35,6 +35,8 @@ fi
 mkdir $TMPDIR
 
 cp piworld.sh $TMPDIR/piworld
+# Embed the release version into the piworld run script.
+sed -i -e "s/VER=/VER=$VER/" $TMPDIR/piworld
 
 mkdir -p $TMPDIR/bin
 cp ./bin/piworld-* $TMPDIR/bin/
@@ -46,8 +48,16 @@ cp ./shaders/*.glsl $TMPDIR/shaders/
 mkdir -p $TMPDIR/textures
 cp ./textures/*.png $TMPDIR/textures/
 
-# Copy the Controls section out of README.md to create the release readme file.
-sed -n '/^### Controls/,/^#/p' README.md | head -n -2 > $TMPDIR/readme
+# Generate the release readme file including sections cut out of README.md.
+for SECTION in "Controls" \
+               "In Game Command Line" \
+               "Startup Options" \
+               "Sign Text Markup"; do
+    sed -n "/^### $SECTION/,/^#/p" README.md | head -n -2 >> $TMPDIR/readme
+    echo >> $TMPDIR/readme
+done
+
+cp LICENSE.md $TMPDIR/license
 
 # Create the tar.xz file.
 cd $TMPDIR/..

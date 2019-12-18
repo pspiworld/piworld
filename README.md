@@ -107,10 +107,98 @@ the terrain generation just like the client.
 - O to observe players in the main view.
 - P to observe players in the picture-in-picture view.
 - T to type text into chat.
-- Forward slash (/) to enter a command.
-- Backquote (`) to write text on any block (signs).
+- Forward slash (/) to enter a command (see section: In Game Command Line).
+- Backquote (`) to write text on any block (signs)
+  (see section: Sign Text Markup).
 - Arrow keys emulate mouse movement.
 - Enter emulates mouse click.
+- F8 to cycle current keyboard and mouse pair around local players.
+- F11 to toggle fullscreen mode.
+
+### In Game Command Line
+
+Change your player name:
+
+    /nick NAME
+
+Set the number of local splitscreen players (1 to 4):
+
+    /players N
+
+Move your position to X Y Z:
+
+    /position X Y Z
+
+Set the time of day (N is a single number from 0 to 24):
+
+    /time N
+
+*Shape commands*
+
+The `/cube` command uses the position of the last two edited blocks to form the
+opposite corners of a cube, the `/sphere R` command uses the last edited block
+as the spheres' centre and R as the radius. Both commands will insert blocks of
+the current block type):
+
+    /cube
+    /sphere R
+
+solid filled versions of the above commmands:
+
+    /fcube
+    /fsphere R
+
+(**WARNING** there is no undo so be aware what is be in-between the area the
+new shape will occupy before using any /shape command - you can destroy entire
+worlds with these commands, **SECOND WARNING** any shape larger than the
+current view area will freeze, for possibly a long time, the game until all
+the blocks have been added and will create a large game save file)
+
+### Startup Options
+
+PiWorld can be started with or without any options. You can also add a path to
+a game save file, if it does not exist a new one will be created. When no file
+is specified the game file at `$HOME/.piworld/my.piworld` will be used.
+
+    ./piworld [options] [file]
+
+Start in fullscreen mode:
+
+    --fullscreen
+
+Set what size to use when in fullscreen mode (use `xrandr` to check what sizes
+your screen supports):
+
+    --fullscreen-size WxH
+
+Set the number of local splitscreen players (1 to 4):
+
+    --players N
+
+Set the time of day (N is a single number from 0 to 24):
+
+    --time N
+
+Show more information:
+
+    --verbose
+
+Set view distance (default is 5, on older Pi models this will be reduced to fit
+GPU memory size, higher numbers will reduce performance):
+
+    --view N
+
+Set the window size:
+
+    --window-size WxH
+
+Set the window title:
+
+    --window-title TITLE
+
+Set the window position:
+
+    --window-xy XxY
 
 ### Chat Commands
 
@@ -139,6 +227,41 @@ Teleport to the specified chunk.
     /spawn
 
 Teleport back to the spawn point.
+
+### Sign Text Markup
+
+Signs in PiWorld can be styled with a simple form of markup.
+
+To change the size of sign text enter `\N` at the start of the sign text, where
+`N` is a number from 0.1 to 8 with 1 being the standard font size.
+
+The colour of following text can be changed with `\a`, `\#FFF` or `\#FFFFFF`,
+where `a` is a letter from the list of following colours and `F` is a
+hexadecimal number.
+
+letter | colour
+------ | ------
+r | red
+g | green
+b | blue
+o | orange
+p | purple
+y | yellow
+c | cyan
+m | magenta
+l | black
+w | white
+s | silver
+e | grey
+
+Example:
+
+    `\2 \g ON \r OFF
+
+this will set the font size to twice the standard height `\2`, then set the
+text colour to green `\g`, add `ON` to the sign text, then set text colour to
+red `\r` and finally add `OFF` to the sign. The two words on the sign will be
+split over two lines due to automatic wrapping to fit the size of a block.
 
 ### Screenshot
 
