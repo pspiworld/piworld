@@ -19,9 +19,15 @@ piworld from the extracted folder."
     fi
 }
 
+VER=
+if [[ $VER == "" ]]; then
+    # If version not specified then run dev build.
+    $PWDIR/piworld "$@"
+    exit
+fi
+
 # If running from the archive file use the command line xarchiver was called
 # with to locate the archive file itself.
-VER=
 ARCHIVE_NAME=piworld-$VER
 ARC_CMD_LINE=`ps -eo args | grep xarchiver | grep $ARCHIVE_NAME`
 PKG_PATH=`echo $ARC_CMD_LINE | cut -d' ' -f2`
