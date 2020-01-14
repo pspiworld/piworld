@@ -3222,7 +3222,9 @@ void handle_key_press(int keyboard_id, int mods, int keysym)
         p->ortho_is_pressed = 1;
         break;
     case XK_Tab:
-        p->flying = !p->flying;
+        if (!mods) {
+            p->flying = !p->flying;
+        }
         break;
     case XK_1: case XK_2: case XK_3: case XK_4: case XK_5: case XK_6:
     case XK_7: case XK_8: case XK_9:

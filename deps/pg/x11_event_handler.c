@@ -362,6 +362,8 @@ void handle_xinput2_event(const XIRawEvent *e)
                     key_mask = ShiftMask;
                 } else if (sym == XK_Control_L || sym == XK_Control_R) {
                     key_mask = ControlMask;
+                } else if (sym == XK_Alt_L || sym == XK_Alt_R) {
+                    key_mask = Mod1Mask;
                 }
                 x11_event_state->keyboard_mods[e->deviceid] |= key_mask;
             }
@@ -382,6 +384,8 @@ void handle_xinput2_event(const XIRawEvent *e)
                     key_mask = ShiftMask;
                 } else if (sym == XK_Control_L || sym == XK_Control_R) {
                     key_mask = ControlMask;
+                } else if (sym == XK_Alt_L || sym == XK_Alt_R) {
+                    key_mask = Mod1Mask;
                 }
                 x11_event_state->keyboard_mods[e->deviceid] &= ~key_mask;
             }
