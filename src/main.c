@@ -1974,8 +1974,13 @@ void render_signs(Attrib *attrib, Player *player) {
     frustum_planes(planes, g->render_radius, matrix);
     glUseProgram(attrib->program);
     glUniformMatrix4fv(attrib->matrix, 1, GL_FALSE, matrix);
+    glUniform3f(attrib->camera, s->x, s->y, s->z);
     glUniform1i(attrib->sampler, 3);
-    glUniform1i(attrib->extra1, 1);
+    glUniform1i(attrib->extra1, 1);  // is_sign
+    glUniform1i(attrib->extra2, 2);  // sky_sampler
+    glUniform1f(attrib->extra3, g->render_radius * CHUNK_SIZE); // fog_distance
+    glUniform1i(attrib->extra4, g->ortho);  // ortho
+    glUniform1f(attrib->timer, time_of_day());
     for (int i = 0; i < g->chunk_count; i++) {
         Chunk *chunk = g->chunks + i;
         if (chunk_distance(chunk, p, q) > g->sign_radius) {
@@ -4099,6 +4104,11 @@ int main(int argc, char **argv) {
     text_attrib.matrix = glGetUniformLocation(program, "matrix");
     text_attrib.sampler = glGetUniformLocation(program, "sampler");
     text_attrib.extra1 = glGetUniformLocation(program, "is_sign");
+    text_attrib.extra2 = glGetUniformLocation(program, "sky_sampler");
+    text_attrib.extra3 = glGetUniformLocation(program, "fog_distance");
+    text_attrib.extra4 = glGetUniformLocation(program, "ortho");
+    text_attrib.timer = glGetUniformLocation(program, "timer");
+    text_attrib.camera = glGetUniformLocation(program, "camera");
 
     program = load_program("sky");
     sky_attrib.program = program;
