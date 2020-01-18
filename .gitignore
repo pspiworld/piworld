@@ -1,3 +1,6 @@
+/deps/moonjit/
+/moonjit-prefix
+/bin/piworld-*
 Makefile
 CMakeCache.txt
 CMakeFiles

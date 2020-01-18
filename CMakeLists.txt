@@ -13,7 +13,8 @@ FILE(GLOB SOURCE_FILES
     deps/tinycthread/tinycthread.c
     )
 
-set(COMMON_LIBS dl m pthread sqlite3 X11 Xcursor Xi)
+set(COMMON_LIBS dl m pthread sqlite3 X11 Xcursor Xi
+    ${CMAKE_SOURCE_DIR}/deps/moonjit/src/libluajit.a)
 
 if(MESA)
     # The MESA driver is only for the pi2/3.
@@ -27,6 +28,20 @@ else()
     target_link_libraries(piworld ${COMMON_LIBS} brcmEGL brcmGLESv2
         bcm_host openmaxil vcos vchiq_arm)
 endif()
+
+include(ExternalProject)
+ExternalProject_Add(
+    moonjit
+    GIT_REPOSITORY https://github.com/moonjit/moonjit.git
+    # GIT_TAG 2.2.0 is f409987a39f7552dcf426ca60cca97c30df7dc62
+    GIT_TAG f409987a39f7552dcf426ca60cca97c30df7dc62
+    SOURCE_DIR ./deps/moonjit
+    BUILD_IN_SOURCE TRUE
+    CONFIGURE_COMMAND ""
+    INSTALL_COMMAND ""
+    BUILD_COMMAND make
+)
+add_dependencies(piworld moonjit)
 
 add_definitions(-Wall -Wextra -Wstrict-prototypes)
 
@@ -52,6 +67,7 @@ if(RELEASE)
 endif()
 
 include_directories(deps/lodepng)
+include_directories(deps/moonjit/src)
 include_directories(deps/noise)
 include_directories(deps/pg)
 include_directories(deps/tinycthread)
