@@ -19,6 +19,8 @@
 #include "noise.h"
 #include "pg.h"
 #include "pg_joystick.h"
+#include "pw.h"
+#include "pwlua.h"
 #include "sign.h"
 #include "tinycthread.h"
 #include "util.h"
@@ -36,7 +38,8 @@
 #define CHAT_HISTORY 0
 #define COMMAND_HISTORY 1
 #define SIGN_HISTORY 2
-#define NUM_HISTORIES 3
+#define LUA_HISTORY 3
+#define NUM_HISTORIES 4
 #define NOT_IN_HISTORY -1
 
 #define ALIGN_LEFT 0
@@ -109,6 +112,8 @@ typedef struct {
     WorkerItem item;
     int exit_requested;
 } Worker;
+
+mtx_t force_chunks_mtx;
 
 typedef struct {
     int x;
@@ -1628,6 +1633,7 @@ void force_chunks(Player *player) {
         for (int dq = -r; dq <= r; dq++) {
             int a = p + dp;
             int b = q + dq;
+            mtx_lock(&force_chunks_mtx);
             Chunk *chunk = find_chunk(a, b);
             if (chunk) {
                 if (chunk->dirty) {
@@ -1639,6 +1645,7 @@ void force_chunks(Player *player) {
                 create_chunk(chunk, a, b);
                 gen_chunk_buffer(chunk);
             }
+            mtx_unlock(&force_chunks_mtx);
         }
     }
 }
@@ -2627,6 +2634,19 @@ void set_item_in_hand_to_item_under_crosshair(LocalPlayer *local)
     }
 }
 
+int pw_get_crosshair(int player_id, int *x, int *y, int *z, int *face)
+{
+    if (player_id < 1 || player_id >= MAX_LOCAL_PLAYERS) {
+        return 0;
+    }
+    LocalPlayer *local = &g->local_players[player_id - 1];
+    int hw = hit_test_face(local->player, x, y, z, face);
+    if (hw > 0) {
+        return 1;
+    }
+    return 0;
+}
+
 void cycle_item_in_hand_up(LocalPlayer *player) {
     player->item_index = (player->item_index + 1) % item_count;
 }
@@ -3047,6 +3067,8 @@ TextLineHistory* current_history(LocalPlayer *local)
         return &local->typing_history[SIGN_HISTORY];
     } else if (local->typing_buffer[0] == CRAFT_KEY_COMMAND) {
         return &local->typing_history[COMMAND_HISTORY];
+    } else if (local->typing_buffer[0] == PW_KEY_LUA) {
+        return &local->typing_history[LUA_HISTORY];
     } else {
         return &local->typing_history[CHAT_HISTORY];
     }
@@ -3085,6 +3107,8 @@ void handle_key_press_typing(LocalPlayer *local, int mods, int keysym)
                 }
             } else if (local->typing_buffer[0] == CRAFT_KEY_COMMAND) {
                 parse_command(local, local->typing_buffer, 1);
+            } else if (local->typing_buffer[0] == PW_KEY_LUA) {
+                pwlua_parse_line(local->player->id, local->typing_buffer);
             } else {
                 client_talk(local->typing_buffer);
             }
@@ -3287,6 +3311,13 @@ void handle_key_press(int keyboard_id, int mods, int keysym)
         p->typing_start = p->typing_history[COMMAND_HISTORY].line_start;
         p->text_cursor = p->typing_start;
         break;
+    case XK_dollar:
+        p->typing = 1;
+        p->typing_buffer[0] = PW_KEY_LUA;
+        p->typing_buffer[1] = '\0';
+        p->typing_start = p->typing_history[LUA_HISTORY].line_start;
+        p->text_cursor = p->typing_start;
+        break;
     case XK_grave:
         p->typing = 1;
         p->typing_buffer[0] = CRAFT_KEY_SIGN;
@@ -3477,6 +3508,7 @@ void reset_history(LocalPlayer *local)
     local->typing_history[CHAT_HISTORY].line_start = 0;
     local->typing_history[COMMAND_HISTORY].line_start = 1;
     local->typing_history[SIGN_HISTORY].line_start = 1;
+    local->typing_history[LUA_HISTORY].line_start = 1;
 }
 
 LocalPlayer* player_for_joystick(int joystick_id) {
@@ -3972,6 +4004,59 @@ void set_view_radius(int requested_size, int delete_request)
     }
 }
 
+void pw_get_player_pos(int player_id, float *x, float *y, float *z)
+{
+    if (player_id < 1 || player_id >= MAX_LOCAL_PLAYERS) {
+        return;
+    }
+    State *s = &g->local_players[player_id - 1].player->state;
+    *x = s->x;
+    *y = s->y;
+    *z = s->z;
+}
+
+void pw_set_player_pos(int player_id, float x, float y, float z)
+{
+    if (player_id < 1 || player_id >= MAX_LOCAL_PLAYERS) {
+        return;
+    }
+    State *s = &g->local_players[player_id - 1].player->state;
+    s->x = x;
+    s->y = y;
+    s->z = z;
+}
+
+void pw_get_player_angle(int player_id, float *x, float *y)
+{
+    if (player_id < 1 || player_id >= MAX_LOCAL_PLAYERS) {
+        return;
+    }
+    State *s = &g->local_players[player_id - 1].player->state;
+    *x = s->rx;
+    *y = s->ry;
+}
+
+void pw_set_player_angle(int player_id, float x, float y)
+{
+    if (player_id < 1 || player_id >= MAX_LOCAL_PLAYERS) {
+        return;
+    }
+    State *s = &g->local_players[player_id - 1].player->state;
+    s->rx = x;
+    s->ry = y;
+}
+
+int pw_get_time(void)
+{
+    return time_of_day() * 24;
+}
+
+void pw_set_time(int time)
+{
+    pg_set_time(g->day_length / (24.0 / (time == 0 ? 24 : time)));
+    g->time_changed = 1;
+}
+
 int main(int argc, char **argv) {
     // INITIALIZATION //
     init_data_dir(argv[0]);
@@ -4128,6 +4213,8 @@ int main(int argc, char **argv) {
         g->mode = MODE_OFFLINE;
         snprintf(g->db_path, MAX_PATH_LENGTH, "%s", config->db_path);
     }
+
+    mtx_init(&force_chunks_mtx, mtx_plain);
 
     // OUTER LOOP //
     int running = 1;
@@ -4370,6 +4457,7 @@ int main(int argc, char **argv) {
         delete_all_chunks();
         delete_all_players();
     }
+    mtx_destroy(&force_chunks_mtx);
 
     pg_terminate_joysticks();
     pg_end();

@@ -28,6 +28,7 @@
 #define CRAFT_KEY_CHAT 't'
 #define CRAFT_KEY_COMMAND '/'
 #define CRAFT_KEY_SIGN '`'
+#define PW_KEY_LUA '$'
 
 // advanced parameters
 #define CHUNK_SIZE 16
