@@ -3074,6 +3074,75 @@ TextLineHistory* current_history(LocalPlayer *local)
     }
 }
 
+void get_history_path(int history_type, int player_id, char *path)
+{
+    switch (history_type) {
+    case CHAT_HISTORY:
+        snprintf(path, MAX_PATH_LENGTH, "%s/chat%d.history",
+                 config->path, player_id);
+        break;
+    case COMMAND_HISTORY:
+        snprintf(path, MAX_PATH_LENGTH, "%s/command%d.history",
+                 config->path, player_id);
+        break;
+    case SIGN_HISTORY:
+        snprintf(path, MAX_PATH_LENGTH, "%s/sign%d.history",
+                 config->path, player_id);
+        break;
+    case LUA_HISTORY:
+        snprintf(path, MAX_PATH_LENGTH, "%s/lua%d.history",
+                 config->path, player_id);
+        break;
+    }
+}
+
+void history_load(void)
+{
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = &g->local_players[i];
+        for (int h=0; h<NUM_HISTORIES; h++) {
+            char history_path[MAX_PATH_LENGTH];
+            TextLineHistory *history = local->typing_history + h;
+            FILE *fp;
+            char buf[MAX_TEXT_LENGTH];
+            get_history_path(h, local->player->id, history_path);
+            fp = fopen(history_path, "r");
+            if (fp == NULL) {
+                continue;
+            }
+            while (fgets(buf, MAX_TEXT_LENGTH, fp) != NULL) {
+                char *p = strchr(buf, '\n');
+                if (p) *p = '\0';
+                history_add(history, buf);
+            }
+            fclose(fp);
+        }
+    }
+}
+
+void history_save(void)
+{
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = &g->local_players[i];
+        for (int h=0; h<NUM_HISTORIES; h++) {
+            char history_path[MAX_PATH_LENGTH];
+            TextLineHistory *history = local->typing_history + h;
+            get_history_path(h, local->player->id, history_path);
+            if (history->size > 0) {
+                FILE *fp;
+                fp = fopen(history_path, "w");
+                if (fp == NULL) {
+                    return;
+                }
+                for (int j = 0; j < history->size; j++) {
+                    fprintf(fp, "%s\n", history->lines[j]);
+                }
+                fclose(fp);
+            }
+        }
+    }
+}
+
 void handle_key_press_typing(LocalPlayer *local, int mods, int keysym)
 {
     switch (keysym) {
@@ -4310,6 +4379,8 @@ int main(int argc, char **argv) {
             }
         }
 
+        history_load();
+
         // VIEW SETUP //
         g->ortho = 0;
         g->fov = 65;
@@ -4439,6 +4510,7 @@ int main(int argc, char **argv) {
         }
 
         // SHUTDOWN //
+        history_save();
         db_clear_state();
         db_clear_player_names();
         for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
