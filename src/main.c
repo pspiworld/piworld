@@ -159,6 +159,8 @@ typedef struct {
     int item_index;
     int flying;
     float dy;
+    char messages[MAX_MESSAGES][MAX_TEXT_LENGTH];
+    int message_index;
 
     int typing;
     char typing_buffer[MAX_TEXT_LENGTH];
@@ -233,8 +235,6 @@ typedef struct {
     Client clients[MAX_CLIENTS];
     LocalPlayer local_players[MAX_LOCAL_PLAYERS];
     int client_count;
-    int message_index;
-    char messages[MAX_MESSAGES][MAX_TEXT_LENGTH];
     int width;
     int height;
     float scale;
@@ -2155,11 +2155,16 @@ void render_text_cursor(Attrib *attrib, float x, float y)
     del_buffer(text_cursor_buffer);
 }
 
-void add_message(const char *text) {
-    printf("%s\n", text);
+void add_message(int player_id, const char *text) {
+    if (player_id < 1 || player_id > MAX_LOCAL_PLAYERS) {
+        printf("Message for invalid player %d: %s\n", player_id, text);
+        return;
+    }
+    LocalPlayer *local = g->local_players + player_id - 1;
+    printf("%d: %s\n", player_id, text);
     snprintf(
-        g->messages[g->message_index], MAX_TEXT_LENGTH, "%s", text);
-    g->message_index = (g->message_index + 1) % MAX_MESSAGES;
+        local->messages[local->message_index], MAX_TEXT_LENGTH, "%s", text);
+    local->message_index = (local->message_index + 1) % MAX_MESSAGES;
 }
 
 void login(void) {
@@ -2408,7 +2413,8 @@ void parse_command(LocalPlayer *local, const char *buffer, int forward) {
             set_view_radius(radius, g->delete_radius);
         }
         else {
-            add_message("Viewing distance must be between 0 and 24.");
+            add_message(player->id,
+                        "Viewing distance must be between 0 and 24.");
         }
     }
     else if (sscanf(buffer, "/players %d", &int_option) == 1) {
@@ -2422,7 +2428,7 @@ void parse_command(LocalPlayer *local, const char *buffer, int forward) {
             }
         }
         else {
-            add_message("Player count must be between 1 and 4.");
+            add_message(player->id, "Player count must be between 1 and 4.");
         }
     }
     else if (strcmp(buffer, "/exit") == 0) {
@@ -2636,7 +2642,7 @@ void set_item_in_hand_to_item_under_crosshair(LocalPlayer *local)
 
 int pw_get_crosshair(int player_id, int *x, int *y, int *z, int *face)
 {
-    if (player_id < 1 || player_id >= MAX_LOCAL_PLAYERS) {
+    if (player_id < 1 || player_id > MAX_LOCAL_PLAYERS) {
         return 0;
     }
     LocalPlayer *local = &g->local_players[player_id - 1];
@@ -2892,7 +2898,9 @@ void parse_buffer(char *buffer) {
         }
         if (line[0] == 'T' && line[1] == ',') {
             char *text = line + 2;
-            add_message(text);
+            for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+                add_message(i+1, text);
+            }
             goto next_line;
         }
         char format[64];
@@ -2967,9 +2975,10 @@ void reset_model(void) {
         local->observe2 = 0;
         local->observe2_client_id = 0;
         memset(local->typing_buffer, 0, sizeof(char) * MAX_TEXT_LENGTH);
+        memset(local->messages, 0,
+               sizeof(char) * MAX_MESSAGES * MAX_TEXT_LENGTH);
+        local->message_index = 0;
     }
-    memset(g->messages, 0, sizeof(char) * MAX_MESSAGES * MAX_TEXT_LENGTH);
-    g->message_index = 0;
     g->day_length = DAY_LENGTH;
     const unsigned char *stored_time;
     stored_time = db_get_option("time");
@@ -3736,7 +3745,8 @@ void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
             if (state) {
                 p->shoulder_button_mode += 1;
                 p->shoulder_button_mode %= SHOULDER_BUTTON_MODE_COUNT;
-                add_message(shoulder_button_modes[p->shoulder_button_mode]);
+                add_message(p->player->id,
+                            shoulder_button_modes[p->shoulder_button_mode]);
             }
         }
     } else {
@@ -3864,10 +3874,10 @@ void render_player_world(
     }
     if (config->show_chat_text) {
         for (int i = 0; i < MAX_MESSAGES; i++) {
-            int index = (g->message_index + i) % MAX_MESSAGES;
-            if (strlen(g->messages[index])) {
+            int index = (local->message_index + i) % MAX_MESSAGES;
+            if (strlen(local->messages[index])) {
                 render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts,
-                    g->messages[index]);
+                    local->messages[index]);
                 ty -= ts * 2;
             }
         }
@@ -4075,7 +4085,7 @@ void set_view_radius(int requested_size, int delete_request)
 
 void pw_get_player_pos(int player_id, float *x, float *y, float *z)
 {
-    if (player_id < 1 || player_id >= MAX_LOCAL_PLAYERS) {
+    if (player_id < 1 || player_id > MAX_LOCAL_PLAYERS) {
         return;
     }
     State *s = &g->local_players[player_id - 1].player->state;
@@ -4086,7 +4096,7 @@ void pw_get_player_pos(int player_id, float *x, float *y, float *z)
 
 void pw_set_player_pos(int player_id, float x, float y, float z)
 {
-    if (player_id < 1 || player_id >= MAX_LOCAL_PLAYERS) {
+    if (player_id < 1 || player_id > MAX_LOCAL_PLAYERS) {
         return;
     }
     State *s = &g->local_players[player_id - 1].player->state;
@@ -4097,7 +4107,7 @@ void pw_set_player_pos(int player_id, float x, float y, float z)
 
 void pw_get_player_angle(int player_id, float *x, float *y)
 {
-    if (player_id < 1 || player_id >= MAX_LOCAL_PLAYERS) {
+    if (player_id < 1 || player_id > MAX_LOCAL_PLAYERS) {
         return;
     }
     State *s = &g->local_players[player_id - 1].player->state;
@@ -4107,7 +4117,7 @@ void pw_get_player_angle(int player_id, float *x, float *y)
 
 void pw_set_player_angle(int player_id, float x, float y)
 {
-    if (player_id < 1 || player_id >= MAX_LOCAL_PLAYERS) {
+    if (player_id < 1 || player_id > MAX_LOCAL_PLAYERS) {
         return;
     }
     State *s = &g->local_players[player_id - 1].player->state;

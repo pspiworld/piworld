@@ -166,18 +166,22 @@ int pwlua_thread_run(LuaThreadState *lts)
 
 static int pwlua_echo(lua_State *L)
 {
+    int player_id;
     int argcount = lua_gettop(L);
-    if (argcount != 1) {
+    const char *text;
+    if (argcount == 1) {
+        text = lua_tolstring(L, 1, NULL);
+        lua_getglobal(L, "player_id");
+        player_id = lua_tointeger(L, 2);
+    } else if (argcount == 2) {
+        player_id = lua_tointeger(L, 1);
+        text = lua_tolstring(L, 2, NULL);
+    } else {
         lua_pushstring(L, "incorrect argument count");
         lua_error(L);
+        return 0;
     }
-    if (!lua_isstring(L, 1)) {
-        lua_pushstring(L, "incorrect argument type");
-        lua_error(L);
-    }
-    const char *text;
-    text = lua_tolstring(L, 1, NULL);
-    add_message(text);
+    add_message(player_id, text);
     return 0;
 }
 
