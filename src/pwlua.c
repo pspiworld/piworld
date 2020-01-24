@@ -37,6 +37,8 @@ static int pwlua_get_sign(lua_State *L);
 static int pwlua_set_sign(lua_State *L);
 static int pwlua_get_time(lua_State *L);
 static int pwlua_set_time(lua_State *L);
+static int pwlua_get_light(lua_State *L);
+static int pwlua_set_light(lua_State *L);
 
 // One Lua thread per local player.
 LuaThreadState p1;
@@ -93,6 +95,8 @@ int pwlua_thread_run(LuaThreadState *lts)
     lua_register(L, "set_sign", pwlua_set_sign);
     lua_register(L, "get_time", pwlua_get_time);
     lua_register(L, "set_time", pwlua_set_time);
+    lua_register(L, "get_light", pwlua_get_light);
+    lua_register(L, "set_light", pwlua_set_light);
 
 #define PUSH_BLOCK_TYPE(b) { lua_pushnumber(L, b); \
     lua_setglobal(L, ""#b""); }
@@ -397,6 +401,40 @@ static int pwlua_set_time(lua_State *L)
     }
     int time = lua_tointeger(L, 1);
     pw_set_time(time);
+    return 0;
+}
+
+static int pwlua_get_light(lua_State *L)
+{
+    int argcount = lua_gettop(L);
+    if (argcount != 3) {
+        lua_pushstring(L, "incorrect argument count");
+        lua_error(L);
+    }
+    int x, y, z, w;
+    x = lua_tointeger(L, 1);
+    y = lua_tointeger(L, 2);
+    z = lua_tointeger(L, 3);
+    w = db_get_light(chunked(x), chunked(z), x, y, z);
+    lua_pushinteger(L, w);
+    return 1;
+}
+
+static int pwlua_set_light(lua_State *L)
+{
+    int argcount = lua_gettop(L);
+    if (argcount != 4) {
+        lua_pushstring(L, "incorrect argument count");
+        lua_error(L);
+    }
+    int x, y, z, w;
+    x = lua_tointeger(L, 1);
+    y = lua_tointeger(L, 2);
+    z = lua_tointeger(L, 3);
+    w = lua_tointeger(L, 4);
+    mtx_lock(&force_chunks_mtx);
+    set_light(chunked(x), chunked(z), x, y, z, w);
+    mtx_unlock(&force_chunks_mtx);
     return 0;
 }
 

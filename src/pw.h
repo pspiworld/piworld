@@ -14,6 +14,7 @@ int pw_get_crosshair(int pid, int *hx, int *hy, int *hz, int *face);
 void set_sign(int x, int y, int z, int face, const char *text);
 int pw_get_time(void);
 void pw_set_time(int time);
+void set_light(int p, int q, int x, int y, int z, int w);
 
 extern mtx_t force_chunks_mtx;
 

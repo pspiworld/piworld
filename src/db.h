@@ -27,6 +27,7 @@ void db_load_blocks(Map *map, int p, int q);
 void db_load_lights(Map *map, int p, int q);
 void db_load_signs(SignList *list, int p, int q);
 const unsigned char *db_get_sign(int p, int q, int x, int y, int z, int face);
+int db_get_light(int p, int q, int x, int y, int z);
 int db_get_key(int p, int q);
 void db_set_key(int p, int q, int key);
 void db_set_option(char *name, char *value);

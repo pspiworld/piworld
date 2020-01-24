@@ -1846,6 +1846,12 @@ void toggle_light(int x, int y, int z) {
 
 void set_light(int p, int q, int x, int y, int z, int w) {
     Chunk *chunk = find_chunk(p, q);
+    if (w < 0) {
+        w = 0;
+    }
+    if (w > 15) {
+        w = 15;
+    }
     if (chunk) {
         Map *map = &chunk->lights;
         if (map_set(map, x, y, z, w)) {
