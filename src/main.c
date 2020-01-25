@@ -3029,9 +3029,14 @@ void history_add(TextLineHistory *history, char *line)
     }
     if (!duplicate_line) {
         // Add a non-duplicate line to the history
-        history->end = (history->end + 1) % MAX_HISTORY_SIZE;
+        if (history->size >= MAX_HISTORY_SIZE) {
+            memmove(history->lines, history->lines + 1,
+                    (MAX_HISTORY_SIZE-1) * MAX_TEXT_LENGTH);
+        }
         history->size = MIN(history->size + 1, MAX_HISTORY_SIZE);
-        snprintf(history->lines[history->end], MAX_TEXT_LENGTH, "%s", line);
+        snprintf(history->lines[history->size - 1], MAX_TEXT_LENGTH, "%s",
+                 line);
+        history->end = history->size - 1;
     }
 }
 
