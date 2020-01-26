@@ -3518,6 +3518,16 @@ LocalPlayer* player_for_mouse(int mouse_id) {
             return local;
         }
     }
+    // Assign mouse to next active player without a mouse and already assigned
+    // a keyboard
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = g->local_players + i;
+        if (local->player->is_active && local->mouse_id == UNASSIGNED &&
+            local->keyboard_id != UNASSIGNED) {
+            local->mouse_id = mouse_id;
+            return local;
+        }
+    }
     // Assign mouse to next active player without one
     for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
         LocalPlayer *local = g->local_players + i;
