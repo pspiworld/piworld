@@ -3812,8 +3812,8 @@ void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
 }
 
 void render_player_world(
-        LocalPlayer *local, GLuint sky_buffer, Attrib sky_attrib,
-        Attrib block_attrib, Attrib text_attrib, Attrib line_attrib,
+        LocalPlayer *local, GLuint sky_buffer, Attrib *sky_attrib,
+        Attrib *block_attrib, Attrib *text_attrib, Attrib *line_attrib,
         FPS fps)
 {
     Player *player = local->player;
@@ -3832,23 +3832,23 @@ void render_player_world(
     }
 
     // RENDER 3-D SCENE //
-    render_sky(&sky_attrib, player, sky_buffer);
+    render_sky(sky_attrib, player, sky_buffer);
     glClear(GL_DEPTH_BUFFER_BIT);
-    int face_count = render_chunks(&block_attrib, player);
-    render_signs(&text_attrib, player);
-    render_sign(&text_attrib, local);
-    render_players(&block_attrib, player);
+    int face_count = render_chunks(block_attrib, player);
+    render_signs(text_attrib, player);
+    render_sign(text_attrib, local);
+    render_players(block_attrib, player);
     if (config->show_wireframe) {
-        render_wireframe(&line_attrib, player);
+        render_wireframe(line_attrib, player);
     }
 
     // RENDER HUD //
     glClear(GL_DEPTH_BUFFER_BIT);
     if (config->show_crosshairs) {
-        render_crosshairs(&line_attrib);
+        render_crosshairs(line_attrib);
     }
     if (config->show_item) {
-        render_item(&block_attrib, local);
+        render_item(block_attrib, local);
     }
 
     // RENDER TEXT //
@@ -3868,7 +3868,7 @@ void render_player_world(
                 chunked(s->x), chunked(s->z), s->x, s->y, s->z,
                 g->client_count, g->chunk_count,
                 face_count * 2, hour, am_pm);
-            render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts,
+            render_text(text_attrib, ALIGN_LEFT, tx, ty, ts,
                         text_buffer);
             ty -= ts * 2;
 
@@ -3876,18 +3876,18 @@ void render_player_world(
             float bottom_bar_y = 0 + ts * 2;
             float right_side = g->width - ts;
             snprintf(text_buffer, 1024, "%dfps", fps.fps);
-            render_text(&text_attrib, ALIGN_RIGHT, right_side,
+            render_text(text_attrib, ALIGN_RIGHT, right_side,
                         bottom_bar_y, ts, text_buffer);
         } else {
             snprintf(text_buffer, 1024, "(%.2f, %.2f, %.2f)",
                      s->x, s->y, s->z);
-            render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts,
+            render_text(text_attrib, ALIGN_LEFT, tx, ty, ts,
                         text_buffer);
 
             // Game time in upper right corner
             float right_side = g->width - tx;
             snprintf(text_buffer, 1024, "%d%cm", hour, am_pm);
-            render_text(&text_attrib, ALIGN_RIGHT, right_side, ty, ts,
+            render_text(text_attrib, ALIGN_RIGHT, right_side, ty, ts,
                         text_buffer);
 
             ty -= ts * 2;
@@ -3897,7 +3897,7 @@ void render_player_world(
         for (int i = 0; i < MAX_MESSAGES; i++) {
             int index = (local->message_index + i) % MAX_MESSAGES;
             if (strlen(local->messages[index])) {
-                render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts,
+                render_text(text_attrib, ALIGN_LEFT, tx, ty, ts,
                     local->messages[index]);
                 ty -= ts * 2;
             }
@@ -3905,16 +3905,16 @@ void render_player_world(
     }
     if (local->typing) {
         snprintf(text_buffer, 1024, "> %s", local->typing_buffer);
-        render_text(&text_attrib, ALIGN_LEFT, tx, ty, ts, text_buffer);
+        render_text(text_attrib, ALIGN_LEFT, tx, ty, ts, text_buffer);
         glClear(GL_DEPTH_BUFFER_BIT);
-        render_text_cursor(&line_attrib,
+        render_text_cursor(line_attrib,
                            tx + ts * (local->text_cursor+1) + ts/2, ty);
         ty -= ts * 2;
     }
     if (config->show_player_names) {
         Player *other = player_crosshair(player);
         if (other) {
-            render_text(&text_attrib, ALIGN_CENTER,
+            render_text(text_attrib, ALIGN_CENTER,
                 g->width / 2, g->height / 2 - ts - 24, ts,
                 other->name);
         }
@@ -3922,7 +3922,7 @@ void render_player_world(
     if (config->players > 1) {
         // Render player name if more than 1 local player
         snprintf(text_buffer, 1024, "%s", player->name);
-        render_text(&text_attrib, ALIGN_CENTER, g->width/2, ts, ts,
+        render_text(text_attrib, ALIGN_CENTER, g->width/2, ts, ts,
                     text_buffer);
     }
 
@@ -3952,14 +3952,14 @@ void render_player_world(
         g->ortho = 0;
         g->fov = 65;
 
-        render_sky(&sky_attrib, player, sky_buffer);
+        render_sky(sky_attrib, player, sky_buffer);
         glClear(GL_DEPTH_BUFFER_BIT);
-        render_chunks(&block_attrib, player);
-        render_signs(&text_attrib, player);
-        render_players(&block_attrib, player);
+        render_chunks(block_attrib, player);
+        render_signs(text_attrib, player);
+        render_players(block_attrib, player);
         glClear(GL_DEPTH_BUFFER_BIT);
         if (config->show_player_names) {
-            render_text(&text_attrib, ALIGN_CENTER,
+            render_text(text_attrib, ALIGN_CENTER,
                 pw / 2, ts, ts, player->name);
         }
     }
@@ -4504,8 +4504,8 @@ int main(int argc, char **argv) {
                 LocalPlayer *local = &g->local_players[i];
                 if (local->player->is_active) {
                     render_player_world(local, sky_buffer,
-                                        sky_attrib, block_attrib, text_attrib,
-                                        line_attrib, fps);
+                                        &sky_attrib, &block_attrib, &text_attrib,
+                                        &line_attrib, fps);
                 }
             }
 
