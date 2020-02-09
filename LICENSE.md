@@ -1,4 +1,5 @@
 Copyright (C) 2019-2020 Peter Strath (PiWorld updates)
+Copyright (C) 1994-2018 Lua.org, PUC-Rio.
 Copyright (C) 2013 Michael Fogleman
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
