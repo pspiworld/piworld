@@ -167,8 +167,12 @@ static int pwlua_get_crosshair(lua_State *L)
         return ERROR_ARG_COUNT;
     }
     player_id = luaL_checkint(L, 1);
-    int x, y, z, face;
-    pw_get_crosshair(player_id, &x, &y, &z, &face);
+    int x, y, z, face, result;
+    result = pw_get_crosshair(player_id, &x, &y, &z, &face);
+    if (!result) {
+        // Crosshair has not highlighted a block
+        return 0;
+    }
     lua_pushinteger(L, x);
     lua_pushinteger(L, y);
     lua_pushinteger(L, z);
