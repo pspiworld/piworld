@@ -1,8 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 from math import floor
 from world import World, show_clouds, show_plants, show_trees
-import Queue
-import SocketServer
 import atexit
 import datetime
 import random
@@ -13,6 +11,13 @@ import sys
 import threading
 import time
 import traceback
+is_py2 = sys.version[0] == '2'
+if is_py2:
+    import Queue as queue
+    import SocketServer as socketserver
+else:
+    import queue
+    import socketserver
 
 DEFAULT_HOST = '0.0.0.0'
 DEFAULT_PORT = 4080
@@ -100,7 +105,7 @@ class RateLimiter(object):
             self.allowance -= 1
             return False # okay
 
-class Server(SocketServer.ThreadingMixIn, SocketServer.TCPServer):
+class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
@@ -111,14 +116,14 @@ class Player:
         self.position = position
         self.is_active = False
 
-class Handler(SocketServer.BaseRequestHandler):
+class Handler(socketserver.BaseRequestHandler):
     def setup(self):
         self.position_limiter = RateLimiter(100, 5)
         self.limiter = RateLimiter(1000, 10)
         self.version = None
         self.client_id = None
         self.user_id = None
-        self.queue = Queue.Queue()
+        self.queue = queue.Queue()
         self.running = True
         self.players = []
         self.start()
@@ -128,7 +133,10 @@ class Handler(SocketServer.BaseRequestHandler):
         try:
             buf = []
             while True:
-                data = self.request.recv(BUFFER_SIZE)
+                if is_py2:
+                    data = self.request.recv(BUFFER_SIZE)
+                else:
+                    data = str(self.request.recv(BUFFER_SIZE), 'utf-8')
                 if not data:
                     break
                 buf.extend(data.replace('\r\n', '\n'))
@@ -168,12 +176,16 @@ class Handler(SocketServer.BaseRequestHandler):
                     try:
                         while True:
                             buf.append(self.queue.get(False))
-                    except Queue.Empty:
+                    except queue.Empty:
                         pass
-                except Queue.Empty:
+                except queue.Empty:
                     continue
                 data = ''.join(buf)
-                self.request.sendall(data)
+                if is_py2:
+                    self.request.sendall(data)
+                else:
+                    self.request.sendall(bytes(data, 'utf-8'))
+
             except Exception:
                 self.request.close()
                 raise
@@ -189,7 +201,7 @@ class Model(object):
     def __init__(self, seed):
         self.world = World(seed)
         self.clients = []
-        self.queue = Queue.Queue()
+        self.queue = queue.Queue()
         self.commands = {
             ADD: self.on_add,
             AUTHENTICATE: self.on_authenticate,
@@ -251,7 +263,7 @@ class Model(object):
         try:
             func, args, kwargs = self.queue.get(timeout=5)
             func(*args, **kwargs)
-        except Queue.Empty:
+        except queue.Empty:
             pass
     def execute(self, *args, **kwargs):
         return self.connection.execute(*args, **kwargs)
