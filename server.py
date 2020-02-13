@@ -5,7 +5,7 @@ import atexit
 import datetime
 import random
 import re
-import requests
+#import requests
 import sqlite3
 import sys
 import threading
@@ -382,14 +382,14 @@ class Model(object):
         # TODO: client.start() here
     def on_authenticate(self, client, username, access_token):
         user_id = None
-        if username and access_token:
-            payload = {
-                'username': username,
-                'access_token': access_token,
-            }
-            response = requests.post(AUTH_URL, data=payload)
-            if response.status_code == 200 and response.text.isdigit():
-                user_id = int(response.text)
+        #if username and access_token:
+        #    payload = {
+        #        'username': username,
+        #        'access_token': access_token,
+        #    }
+        #    response = requests.post(AUTH_URL, data=payload)
+        #    if response.status_code == 200 and response.text.isdigit():
+        #        user_id = int(response.text)
         client.user_id = user_id
         if user_id is None:
             client.nick = 'guest%d' % client.client_id
