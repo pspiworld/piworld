@@ -29,7 +29,6 @@
 
 #define MAX_CHUNKS 8192
 #define MAX_CLIENTS 128
-#define MAX_LOCAL_PLAYERS 4
 #define WORKERS 1
 #define MAX_TEXT_LENGTH 256
 #define MAX_NAME_LENGTH 32
@@ -71,6 +70,7 @@ const char *shoulder_button_modes[SHOULDER_BUTTON_MODE_COUNT] = {
     "Zoom/Ortho"
 };
 
+const float RED[4] = {1.0, 0.0, 0.0, 1.0};
 const float GREEN[4] = {0.0, 1.0, 0.0, 1.0};
 const float BLACK[4] = {0.0, 0.0, 0.0, 1.0};
 
@@ -78,6 +78,7 @@ static int terminate;
 
 typedef struct {
     Map map;
+    Map extra;
     Map lights;
     SignList signs;
     int p;
@@ -96,6 +97,7 @@ typedef struct {
     int q;
     int load;
     Map *block_maps[3][3];
+    Map *extra_maps[3][3];
     Map *light_maps[3][3];
     int miny;
     int maxy;
@@ -260,6 +262,7 @@ void set_view_radius(int requested_size, int delete_request);
 LocalPlayer* player_for_keyboard(int keyboard_id);
 LocalPlayer* player_for_mouse(int mouse_id);
 LocalPlayer* player_for_joystick(int joystick_id);
+void _set_extra(int p, int q, int x, int y, int z, int w);
 
 // returns 1 if limit applied, 0 if no limit applied
 int limit_player_count_to_fit_gpu_mem(void)
@@ -1451,10 +1454,12 @@ void gen_chunk_buffer(Chunk *chunk) {
             }
             if (other) {
                 item->block_maps[dp + 1][dq + 1] = &other->map;
+                item->extra_maps[dp + 1][dq + 1] = &other->extra;
                 item->light_maps[dp + 1][dq + 1] = &other->lights;
             }
             else {
                 item->block_maps[dp + 1][dq + 1] = 0;
+                item->extra_maps[dp + 1][dq + 1] = 0;
                 item->light_maps[dp + 1][dq + 1] = 0;
             }
         }
@@ -1473,9 +1478,11 @@ void load_chunk(WorkerItem *item) {
     int p = item->p;
     int q = item->q;
     Map *block_map = item->block_maps[1][1];
+    Map *extra_map = item->extra_maps[1][1];
     Map *light_map = item->light_maps[1][1];
     create_world(p, q, map_set_func, block_map);
     db_load_blocks(block_map, p, q);
+    db_load_extras(extra_map, p, q);
     db_load_lights(light_map, p, q);
 }
 
@@ -1496,11 +1503,13 @@ void init_chunk(Chunk *chunk, int p, int q) {
     sign_list_alloc(signs, 16);
     db_load_signs(signs, p, q);
     Map *block_map = &chunk->map;
+    Map *extra_map = &chunk->extra;
     Map *light_map = &chunk->lights;
     int dx = p * CHUNK_SIZE - 1;
     int dy = 0;
     int dz = q * CHUNK_SIZE - 1;
     map_alloc(block_map, dx, dy, dz, 0x3fff);
+    map_alloc(extra_map, dx, dy, dz, 0xf);
     map_alloc(light_map, dx, dy, dz, 0xf);
 }
 
@@ -1512,6 +1521,7 @@ void create_chunk(Chunk *chunk, int p, int q) {
     item->p = chunk->p;
     item->q = chunk->q;
     item->block_maps[1][1] = &chunk->map;
+    item->extra_maps[1][1] = &chunk->extra;
     item->light_maps[1][1] = &chunk->lights;
     load_chunk(item);
 
@@ -1562,6 +1572,7 @@ void delete_chunks(void) {
         }
         if (delete) {
             map_free(&chunk->map);
+            map_free(&chunk->extra);
             map_free(&chunk->lights);
             sign_list_free(&chunk->signs);
             del_buffer(chunk->buffer);
@@ -1577,6 +1588,7 @@ void delete_all_chunks(void) {
     for (int i = 0; i < g->chunk_count; i++) {
         Chunk *chunk = g->chunks + i;
         map_free(&chunk->map);
+        map_free(&chunk->extra);
         map_free(&chunk->lights);
         sign_list_free(&chunk->signs);
         del_buffer(chunk->buffer);
@@ -1595,10 +1607,13 @@ void check_workers(void) {
             if (chunk) {
                 if (item->load) {
                     Map *block_map = item->block_maps[1][1];
+                    Map *extra_map = item->extra_maps[1][1];
                     Map *light_map = item->light_maps[1][1];
                     map_free(&chunk->map);
+                    map_free(&chunk->extra);
                     map_free(&chunk->lights);
                     map_copy(&chunk->map, block_map);
+                    map_copy(&chunk->extra, extra_map);
                     map_copy(&chunk->lights, light_map);
                     request_chunk(item->p, item->q);
                 }
@@ -1607,10 +1622,15 @@ void check_workers(void) {
             for (int a = 0; a < 3; a++) {
                 for (int b = 0; b < 3; b++) {
                     Map *block_map = item->block_maps[a][b];
+                    Map *extra_map = item->extra_maps[a][b];
                     Map *light_map = item->light_maps[a][b];
                     if (block_map) {
                         map_free(block_map);
                         free(block_map);
+                    }
+                    if (extra_map) {
+                        map_free(extra_map);
+                        free(extra_map);
                     }
                     if (light_map) {
                         map_free(light_map);
@@ -1721,13 +1741,17 @@ void ensure_chunks_worker(Player *player, Worker *worker) {
             if (other) {
                 Map *block_map = malloc(sizeof(Map));
                 map_copy(block_map, &other->map);
+                Map *extra_map = malloc(sizeof(Map));
+                map_copy(extra_map, &other->extra);
                 Map *light_map = malloc(sizeof(Map));
                 map_copy(light_map, &other->lights);
                 item->block_maps[dp + 1][dq + 1] = block_map;
+                item->extra_maps[dp + 1][dq + 1] = extra_map;
                 item->light_maps[dp + 1][dq + 1] = light_map;
             }
             else {
                 item->block_maps[dp + 1][dq + 1] = 0;
+                item->extra_maps[dp + 1][dq + 1] = 0;
                 item->light_maps[dp + 1][dq + 1] = 0;
             }
         }
@@ -1830,6 +1854,23 @@ void set_sign(int x, int y, int z, int face, const char *text) {
     client_sign(x, y, z, face, text);
 }
 
+const unsigned char *get_sign(int p, int q, int x, int y, int z, int face) {
+    Chunk *chunk = find_chunk(p, q);
+    if (chunk) {
+        SignList *signs = &chunk->signs;
+        for (size_t i = 0; i < signs->size; i++) {
+            Sign *e = signs->data + i;
+            if (e->x == x && e->y == y && e->z == z && e->face == face) {
+                return (const unsigned char *)e->text;
+            }
+        }
+    } else {
+        // TODO: support server
+        return db_get_sign(p, q, x, y, z, face);
+    }
+    return NULL;
+}
+
 void toggle_light(int x, int y, int z) {
     int p = chunked(x);
     int q = chunked(z);
@@ -1862,6 +1903,58 @@ void set_light(int p, int q, int x, int y, int z, int w) {
     else {
         db_insert_light(p, q, x, y, z, w);
     }
+}
+
+int get_light(int p, int q, int x, int y, int z) {
+    Chunk *chunk = find_chunk(p, q);
+    if (chunk) {
+        Map *map = &chunk->lights;
+        return map_get(map, x, y, z);
+    } else {
+        // TODO: support server
+        if (g->chunk_count < MAX_CHUNKS) {
+            chunk = g->chunks + g->chunk_count++;
+            create_chunk(chunk, p, q);
+            return map_get(&chunk->lights, x, y, z);
+        }
+    }
+    return 0;
+}
+
+void set_extra(int x, int y, int z, int w) {
+    _set_extra(chunked(x), chunked(z), x, y, z, w);
+    client_extra(x, y, z, w);
+}
+
+void _set_extra(int p, int q, int x, int y, int z, int w) {
+    Chunk *chunk = find_chunk(p, q);
+    if (chunk) {
+        Map *map = &chunk->extra;
+        if (map_set(map, x, y, z, w)) {
+            db_insert_extra(p, q, x, y, z, w);
+        }
+    }
+    else {
+        db_insert_extra(p, q, x, y, z, w);
+    }
+}
+
+int get_extra(int x, int y, int z) {
+    int p = chunked(x);
+    int q = chunked(z);
+    Chunk *chunk = find_chunk(p, q);
+    if (chunk) {
+        Map *map = &chunk->extra;
+        return map_get(map, x, y, z);
+    } else {
+        // TODO: support server
+        if (g->chunk_count < MAX_CHUNKS) {
+            chunk = g->chunks + g->chunk_count++;
+            create_chunk(chunk, p, q);
+            return map_get(&chunk->extra, x, y, z);
+        }
+    }
+    return 0;
 }
 
 void _set_block(int p, int q, int x, int y, int z, int w, int dirty) {
@@ -1920,6 +2013,13 @@ int get_block(int x, int y, int z) {
     if (chunk) {
         Map *map = &chunk->map;
         return map_get(map, x, y, z);
+    } else {
+        // TODO: support server
+        if (g->chunk_count < MAX_CHUNKS) {
+            chunk = g->chunks + g->chunk_count++;
+            create_chunk(chunk, p, q);
+            return map_get(&chunk->map, x, y, z);
+        }
     }
     return 0;
 }
@@ -2083,20 +2183,30 @@ void render_wireframe(Attrib *attrib, Player *player) {
         glUseProgram(attrib->program);
         glLineWidth(1);
         glUniformMatrix4fv(attrib->matrix, 1, GL_FALSE, matrix);
-        glUniform4fv(attrib->extra1, 1, BLACK);
+        if (get_extra(hx, hy, hz)) {
+            glUniform4fv(attrib->extra1, 1, RED);
+        } else {
+            glUniform4fv(attrib->extra1, 1, BLACK);
+        }
         GLuint wireframe_buffer = gen_wireframe_buffer(hx, hy, hz, 0.53);
         draw_lines(attrib, wireframe_buffer, 3, 24);
         del_buffer(wireframe_buffer);
     }
 }
 
-void render_crosshairs(Attrib *attrib) {
+void render_crosshairs(Attrib *attrib, Player *player) {
+    State *s = &player->state;
     float matrix[16];
     set_matrix_2d(matrix, g->width, g->height);
     glUseProgram(attrib->program);
     glLineWidth(4 * g->scale);
     glUniformMatrix4fv(attrib->matrix, 1, GL_FALSE, matrix);
     glUniform4fv(attrib->extra1, 1, BLACK);
+    int hx, hy, hz;
+    int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
+    if (is_obstacle(hw) && get_extra(hx, hy, hz)) {
+        glUniform4fv(attrib->extra1, 1, RED);
+    }
     GLuint crosshair_buffer = gen_crosshair_buffer();
     draw_lines(attrib, crosshair_buffer, 2, 4);
     del_buffer(crosshair_buffer);
@@ -2593,6 +2703,13 @@ void clear_block_under_crosshair(LocalPlayer *local)
     int hx, hy, hz;
     int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     if (hy > 0 && hy < 256 && is_destructable(hw)) {
+        if (get_extra(hx, hy, hz)) {
+            int face;
+            hit_test_face(local->player, &hx, &hy, &hz, &face);
+            client_control_callback(local->player->id, hx, hy, hz, face);
+            pwlua_control_callback(local->player->id, hx, hy, hz, face);
+            return;
+        }
         set_block(hx, hy, hz, 0);
         record_block(hx, hy, hz, 0, local);
         if (config->verbose) {
@@ -2861,6 +2978,12 @@ void parse_buffer(char *buffer) {
             if (player_intersects_block(2, s->x, s->y, s->z, bx, by, bz)) {
                 s->y = highest_block(s->x, s->z) + 2;
             }
+            goto next_line;
+        }
+        if (sscanf(line, "e,%d,%d,%d,%d,%d,%d",
+            &bp, &bq, &bx, &by, &bz, &bw) == 6)
+        {
+            _set_extra(bp, bq, bx, by, bz, bw);
             goto next_line;
         }
         if (sscanf(line, "L,%d,%d,%d,%d,%d,%d",
@@ -3413,7 +3536,7 @@ void handle_key_press(int keyboard_id, int mods, int keysym)
         p->typing_buffer[1] = '\0';
         int x, y, z, face;
         if (hit_test_face(p->player, &x, &y, &z, &face)) {
-            const unsigned char *existing_sign = db_get_sign(
+            const unsigned char *existing_sign = get_sign(
                 chunked(x), chunked(z), x, y, z, face);
             if (existing_sign) {
                 strncpy(p->typing_buffer + 1, (char *)existing_sign,
@@ -3845,7 +3968,7 @@ void render_player_world(
     // RENDER HUD //
     glClear(GL_DEPTH_BUFFER_BIT);
     if (config->show_crosshairs) {
-        render_crosshairs(line_attrib);
+        render_crosshairs(line_attrib, player);
     }
     if (config->show_item) {
         render_item(block_attrib, local);

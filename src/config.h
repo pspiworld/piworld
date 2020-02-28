@@ -31,6 +31,7 @@
 #define PW_KEY_LUA '$'
 
 // advanced parameters
+#define MAX_LOCAL_PLAYERS 4
 #define CHUNK_SIZE 16
 #define COMMIT_INTERVAL 5
 #define DEFAULT_PORT 4080

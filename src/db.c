@@ -10,11 +10,13 @@ static int db_enabled = 0;
 
 static sqlite3 *db;
 static sqlite3_stmt *insert_block_stmt;
+static sqlite3_stmt *insert_extra_stmt;
 static sqlite3_stmt *insert_light_stmt;
 static sqlite3_stmt *insert_sign_stmt;
 static sqlite3_stmt *delete_sign_stmt;
 static sqlite3_stmt *delete_signs_stmt;
 static sqlite3_stmt *load_blocks_stmt;
+static sqlite3_stmt *load_extras_stmt;
 static sqlite3_stmt *load_lights_stmt;
 static sqlite3_stmt *load_signs_stmt;
 static sqlite3_stmt *get_sign_stmt;
@@ -68,6 +70,14 @@ int db_init(char *path) {
         "    z int not null,"
         "    w int not null"
         ");"
+        "create table if not exists extra ("
+        "    p int not null,"
+        "    q int not null,"
+        "    x int not null,"
+        "    y int not null,"
+        "    z int not null,"
+        "    w int not null"
+        ");"
         "create table if not exists light ("
         "    p int not null,"
         "    q int not null,"
@@ -95,6 +105,7 @@ int db_init(char *path) {
         "    value text not null"
         ");"
         "create unique index if not exists block_pqxyz_idx on block (p, q, x, y, z);"
+        "create unique index if not exists extra_pqxyz_idx on extra (p, q, x, y, z);"
         "create unique index if not exists light_pqxyz_idx on light (p, q, x, y, z);"
         "create unique index if not exists key_pq_idx on key (p, q);"
         "create unique index if not exists option_idx on option (name);"
@@ -102,6 +113,9 @@ int db_init(char *path) {
         "create index if not exists sign_pq_idx on sign (p, q);";
     static const char *insert_block_query =
         "insert or replace into block (p, q, x, y, z, w) "
+        "values (?, ?, ?, ?, ?, ?);";
+    static const char *insert_extra_query =
+        "insert or replace into extra (p, q, x, y, z, w) "
         "values (?, ?, ?, ?, ?, ?);";
     static const char *insert_light_query =
         "insert or replace into light (p, q, x, y, z, w) "
@@ -115,6 +129,8 @@ int db_init(char *path) {
         "delete from sign where x = ? and y = ? and z = ?;";
     static const char *load_blocks_query =
         "select x, y, z, w from block where p = ? and q = ?;";
+    static const char *load_extras_query =
+        "select x, y, z, w from extra where p = ? and q = ?;";
     static const char *load_lights_query =
         "select x, y, z, w from light where p = ? and q = ?;";
     static const char *load_signs_query =
@@ -142,6 +158,9 @@ int db_init(char *path) {
         db, insert_block_query, -1, &insert_block_stmt, NULL);
     if (rc) return rc;
     rc = sqlite3_prepare_v2(
+        db, insert_extra_query, -1, &insert_extra_stmt, NULL);
+    if (rc) return rc;
+    rc = sqlite3_prepare_v2(
         db, insert_light_query, -1, &insert_light_stmt, NULL);
     if (rc) return rc;
     rc = sqlite3_prepare_v2(
@@ -154,6 +173,8 @@ int db_init(char *path) {
         db, delete_signs_query, -1, &delete_signs_stmt, NULL);
     if (rc) return rc;
     rc = sqlite3_prepare_v2(db, load_blocks_query, -1, &load_blocks_stmt, NULL);
+    if (rc) return rc;
+    rc = sqlite3_prepare_v2(db, load_extras_query, -1, &load_extras_stmt, NULL);
     if (rc) return rc;
     rc = sqlite3_prepare_v2(db, load_lights_query, -1, &load_lights_stmt, NULL);
     if (rc) return rc;
@@ -183,11 +204,13 @@ void db_close(void) {
     db_worker_stop();
     sqlite3_exec(db, "commit;", NULL, NULL, NULL);
     sqlite3_finalize(insert_block_stmt);
+    sqlite3_finalize(insert_extra_stmt);
     sqlite3_finalize(insert_light_stmt);
     sqlite3_finalize(insert_sign_stmt);
     sqlite3_finalize(delete_sign_stmt);
     sqlite3_finalize(delete_signs_stmt);
     sqlite3_finalize(load_blocks_stmt);
+    sqlite3_finalize(load_extras_stmt);
     sqlite3_finalize(load_lights_stmt);
     sqlite3_finalize(load_signs_stmt);
     sqlite3_finalize(get_sign_stmt);
@@ -326,6 +349,27 @@ void _db_insert_block(int p, int q, int x, int y, int z, int w) {
     sqlite3_step(insert_block_stmt);
 }
 
+void db_insert_extra(int p, int q, int x, int y, int z, int w) {
+    if (!db_enabled) {
+        return;
+    }
+    mtx_lock(&mtx);
+    ring_put_extra(&ring, p, q, x, y, z, w);
+    cnd_signal(&cnd);
+    mtx_unlock(&mtx);
+}
+
+void _db_insert_extra(int p, int q, int x, int y, int z, int w) {
+    sqlite3_reset(insert_extra_stmt);
+    sqlite3_bind_int(insert_extra_stmt, 1, p);
+    sqlite3_bind_int(insert_extra_stmt, 2, q);
+    sqlite3_bind_int(insert_extra_stmt, 3, x);
+    sqlite3_bind_int(insert_extra_stmt, 4, y);
+    sqlite3_bind_int(insert_extra_stmt, 5, z);
+    sqlite3_bind_int(insert_extra_stmt, 6, w);
+    sqlite3_step(insert_extra_stmt);
+}
+
 void db_insert_light(int p, int q, int x, int y, int z, int w) {
     if (!db_enabled) {
         return;
@@ -423,6 +467,24 @@ void db_load_blocks(Map *map, int p, int q) {
         int y = sqlite3_column_int(load_blocks_stmt, 1);
         int z = sqlite3_column_int(load_blocks_stmt, 2);
         int w = sqlite3_column_int(load_blocks_stmt, 3);
+        map_set(map, x, y, z, w);
+    }
+    mtx_unlock(&load_mtx);
+}
+
+void db_load_extras(Map *map, int p, int q) {
+    if (!db_enabled) {
+        return;
+    }
+    mtx_lock(&load_mtx);
+    sqlite3_reset(load_extras_stmt);
+    sqlite3_bind_int(load_extras_stmt, 1, p);
+    sqlite3_bind_int(load_extras_stmt, 2, q);
+    while (sqlite3_step(load_extras_stmt) == SQLITE_ROW) {
+        int x = sqlite3_column_int(load_extras_stmt, 0);
+        int y = sqlite3_column_int(load_extras_stmt, 1);
+        int z = sqlite3_column_int(load_extras_stmt, 2);
+        int w = sqlite3_column_int(load_extras_stmt, 3);
         map_set(map, x, y, z, w);
     }
     mtx_unlock(&load_mtx);
@@ -572,6 +634,9 @@ int db_worker_run(__attribute__((unused)) void *arg) {
         switch (e.type) {
             case BLOCK:
                 _db_insert_block(e.p, e.q, e.x, e.y, e.z, e.w);
+                break;
+            case EXTRA:
+                _db_insert_extra(e.p, e.q, e.x, e.y, e.z, e.w);
                 break;
             case LIGHT:
                 _db_insert_light(e.p, e.q, e.x, e.y, e.z, e.w);

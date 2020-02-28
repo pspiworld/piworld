@@ -21,6 +21,9 @@ static int pwlua_get_time(lua_State *L);
 static int pwlua_set_time(lua_State *L);
 static int pwlua_get_light(lua_State *L);
 static int pwlua_set_light(lua_State *L);
+static int pwlua_get_control(lua_State *L);
+static int pwlua_set_control(lua_State *L);
+static int pwlua_set_control_callback(lua_State *L);
 
 void pwlua_api_add_functions(lua_State *L)
 {
@@ -38,6 +41,9 @@ void pwlua_api_add_functions(lua_State *L)
     lua_register(L, "set_time", pwlua_set_time);
     lua_register(L, "get_light", pwlua_get_light);
     lua_register(L, "set_light", pwlua_set_light);
+    lua_register(L, "get_control", pwlua_get_control);
+    lua_register(L, "set_control", pwlua_set_control);
+    lua_register(L, "set_control_callback", pwlua_set_control_callback);
 }
 
 void pwlua_api_add_constants(lua_State *L)
@@ -274,7 +280,7 @@ static int pwlua_get_sign(lua_State *L)
     y = luaL_checkint(L, 2);
     z = luaL_checkint(L, 3);
     face = luaL_checkint(L, 4);
-    const char *existing_sign = (const char *) db_get_sign(
+    const char *existing_sign = (const char *) get_sign(
         chunked(x), chunked(z), x, y, z, face);
     lua_pushstring(L, existing_sign);
     return 1;
@@ -337,7 +343,7 @@ static int pwlua_get_light(lua_State *L)
     x = luaL_checkint(L, 1);
     y = luaL_checkint(L, 2);
     z = luaL_checkint(L, 3);
-    w = db_get_light(chunked(x), chunked(z), x, y, z);
+    w = get_light(chunked(x), chunked(z), x, y, z);
     lua_pushinteger(L, w);
     return 1;
 }
@@ -356,6 +362,53 @@ static int pwlua_set_light(lua_State *L)
     mtx_lock(&force_chunks_mtx);
     set_light(chunked(x), chunked(z), x, y, z, w);
     mtx_unlock(&force_chunks_mtx);
+    return 0;
+}
+
+static int pwlua_get_control(lua_State *L)
+{
+    int argcount = lua_gettop(L);
+    if (argcount != 3) {
+        return ERROR_ARG_COUNT;
+    }
+    int x, y, z, w;
+    x = luaL_checkint(L, 1);
+    y = luaL_checkint(L, 2);
+    z = luaL_checkint(L, 3);
+    w = get_extra(x, y, z);
+    lua_pushinteger(L, w);
+    return 1;
+}
+
+static int pwlua_set_control(lua_State *L)
+{
+    int argcount = lua_gettop(L);
+    if (argcount != 4) {
+        return ERROR_ARG_COUNT;
+    }
+    int x, y, z, w;
+    x = luaL_checkint(L, 1);
+    y = luaL_checkint(L, 2);
+    z = luaL_checkint(L, 3);
+    w = luaL_checkint(L, 4);
+    mtx_lock(&force_chunks_mtx);
+    set_extra(x, y, z, w);
+    mtx_unlock(&force_chunks_mtx);
+    return 0;
+}
+
+static int pwlua_set_control_callback(lua_State *L)
+{
+    int argcount = lua_gettop(L);
+    const char *text;
+    int player_id;
+    if (argcount != 1) {
+        return ERROR_ARG_COUNT;
+    }
+    text = lua_tolstring(L, 1, NULL);
+    lua_getglobal(L, "player_id");
+    player_id = luaL_checkint(L, 2);
+    set_control_block_callback(player_id, text);
     return 0;
 }
 

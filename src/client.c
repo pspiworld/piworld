@@ -159,6 +159,15 @@ void client_block(int x, int y, int z, int w) {
     client_send(buffer);
 }
 
+void client_extra(int x, int y, int z, int w) {
+    if (!client_enabled) {
+        return;
+    }
+    char buffer[1024];
+    snprintf(buffer, 1024, "e,%d,%d,%d,%d\n", x, y, z, w);
+    client_send(buffer);
+}
+
 void client_light(int x, int y, int z, int w) {
     if (!client_enabled) {
         return;
@@ -186,6 +195,15 @@ void client_talk(const char *text) {
     }
     char buffer[1024];
     snprintf(buffer, 1024, "T,%s\n", text);
+    client_send(buffer);
+}
+
+void client_control_callback(int player, int x, int y, int z, int face) {
+    if (!client_enabled) {
+        return;
+    }
+    char buffer[1024];
+    snprintf(buffer, 1024, "v,%d,%d,%d,%d,%d\n", player, x, y, z, face);
     client_send(buffer);
 }
 

@@ -50,6 +50,8 @@ AUTHENTICATE = 'A'
 BLOCK = 'B'
 CHUNK = 'C'
 DISCONNECT = 'D'
+EVENT = 'v'
+EXTRA = 'e'
 GOTO = 'G'
 KEY = 'K'
 LIGHT = 'L'
@@ -207,6 +209,8 @@ class Model(object):
             AUTHENTICATE: self.on_authenticate,
             CHUNK: self.on_chunk,
             BLOCK: self.on_block,
+            EVENT: self.on_control_callback,
+            EXTRA: self.on_extra,
             GOTO: self.on_goto,
             LIGHT: self.on_light,
             NICK: self.on_nick,
@@ -282,6 +286,16 @@ class Model(object):
             ');',
             'create unique index if not exists block_pqxyz_idx on '
             '    block (p, q, x, y, z);',
+            'create table if not exists extra ('
+            '    p int not null,'
+            '    q int not null,'
+            '    x int not null,'
+            '    y int not null,'
+            '    z int not null,'
+            '    w int not null'
+            ');',
+            'create unique index if not exists extra_pqxyz_idx on '
+            '    extra (p, q, x, y, z);',
             'create table if not exists light ('
             '    p int not null,'
             '    q int not null,'
@@ -413,6 +427,15 @@ class Model(object):
             packets.append(packet(BLOCK, p, q, x, y, z, w))
             max_rowid = max(max_rowid, rowid)
         query = (
+            'select rowid, x, y, z, w from extra where '
+            'p = :p and q = :q and rowid > :key;'
+        )
+        rows = self.execute(query, dict(p=p, q=q, key=key))
+        extras = 0
+        for rowid, x, y, z, w in rows:
+            extras += 1
+            packets.append(packet(EXTRA, p, q, x, y, z, w))
+        query = (
             'select x, y, z, w from light where '
             'p = :p and q = :q;'
         )
@@ -432,7 +455,7 @@ class Model(object):
             packets.append(packet(SIGN, p, q, x, y, z, face, text))
         if blocks:
             packets.append(packet(KEY, p, q, max_rowid))
-        if blocks or lights or signs:
+        if blocks or extras or lights or signs:
             packets.append(packet(REDRAW, p, q))
         packets.append(packet(CHUNK, p, q))
         client.send_raw(''.join(packets))
@@ -489,10 +512,37 @@ class Model(object):
             )
             self.execute(query, dict(x=x, y=y, z=z))
             query = (
+                'update extra set w = 0 where '
+                'x = :x and y = :y and z = :z;'
+            )
+            self.execute(query, dict(x=x, y=y, z=z))
+            query = (
                 'update light set w = 0 where '
                 'x = :x and y = :y and z = :z;'
             )
             self.execute(query, dict(x=x, y=y, z=z))
+    def on_extra(self, client, x, y, z, w):
+        x, y, z, w = map(int, (x, y, z, w))
+        p, q = chunked(x), chunked(z)
+        block = self.get_block(x, y, z)
+        message = None
+        if AUTH_REQUIRED and client.user_id is None:
+            message = 'Only logged in users are allowed to build.'
+        elif y <= 0 or y > 255:
+            message = 'Invalid block coordinates.'
+        elif block == 0:
+            message = 'Extras must be placed on a block.'
+        if message is not None:
+            # TODO: client.send(EXTRA, p, q, x, y, z, previous)
+            client.send(REDRAW, p, q)
+            client.send(TALK, message)
+            return
+        query = (
+            'insert or replace into extra (p, q, x, y, z, w) '
+            'values (:p, :q, :x, :y, :z, :w);'
+        )
+        self.execute(query, dict(p=p, q=q, x=x, y=y, z=z, w=w))
+        self.send_extra(client, p, q, x, y, z, w)
     def on_light(self, client, x, y, z, w):
         x, y, z, w = map(int, (x, y, z, w))
         p, q = chunked(x), chunked(z)
@@ -667,6 +717,8 @@ class Model(object):
         for c in self.clients:
             players.extend(x.nick for x in c.active_players())
         client.send(TALK, 'Players: %s' % ', '.join(players))
+    def on_control_callback(self, client, player, x, y, z, face):
+        print("Control callback: ", player, x, y, z, face)
     def send_positions(self, client, player):
         for other in self.clients:
             other_player = other.players[player - 1]
@@ -720,6 +772,12 @@ class Model(object):
             if other == client:
                 continue
             other.send(BLOCK, p, q, x, y, z, w)
+            other.send(REDRAW, p, q)
+    def send_extra(self, client, p, q, x, y, z, w):
+        for other in self.clients:
+            if other == client:
+                continue
+            other.send(EXTRA, p, q, x, y, z, w)
             other.send(REDRAW, p, q)
     def send_light(self, client, p, q, x, y, z, w):
         for other in self.clients:

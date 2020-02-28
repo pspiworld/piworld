@@ -3,6 +3,7 @@
 ** See Copyright Notice at the end of this file
 */
 
+#include <ctype.h>
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>
@@ -20,6 +21,7 @@
 #define WAITING 3
 
 #define LUA_MAXINPUT 512
+#define LUA_MAX_CALLBACK_NAME 256
 
 /* mark in error messages for incomplete statements */
 #define EOFMARK		"<eof>"
@@ -31,6 +33,7 @@ typedef struct  {
     cnd_t cnd;
     lua_State *L;
     char lua_code[LUA_MAXINPUT];
+    char control_callback[LUA_MAX_CALLBACK_NAME];
     int player_id;
     int state;
     int terminate;
@@ -39,23 +42,55 @@ typedef struct  {
 int pwlua_thread_run(LuaThreadState *lts);
 
 // One Lua thread per local player.
-LuaThreadState p1;
-LuaThreadState p2;
-LuaThreadState p3;
-LuaThreadState p4;
+LuaThreadState lts_players[MAX_LOCAL_PLAYERS];
+
+LuaThreadState *get_lua_state(int player_id)
+{
+    LuaThreadState *lts = NULL;
+    if (player_id < 1 || player_id > MAX_LOCAL_PLAYERS) {
+        printf("Invalid player ID: %d\n", player_id);
+    } else {
+        lts = &lts_players[player_id - 1];
+    }
+    return lts;
+}
+
+void pwlua_control_callback(int player_id, int x, int y, int z, int face)
+{
+    for (int i=1; i<=MAX_LOCAL_PLAYERS; i++) {
+        LuaThreadState *lts = get_lua_state(i);
+        char lua_code[LUA_MAXINPUT];
+        if (strlen(lts->control_callback) == 0) {
+            continue;
+        }
+        snprintf(lua_code, LUA_MAXINPUT, "$%s(%d,%d,%d,%d,%d)",
+                 lts->control_callback, player_id, x, y, z, face);
+        pwlua_parse_line(lts->player_id, lua_code);
+    }
+}
+
+void set_control_block_callback(int player_id, const char *text)
+{
+    LuaThreadState *lts = get_lua_state(player_id);
+    if (lts == NULL) {
+        return;
+    }
+    // Validate the callback function name by only allowing alphanumeric
+    // and underscore characters.
+    for (size_t i=0; i<strlen(text); i++) {
+        char c = text[i];
+        if (!isalnum(c) && c != '_') {
+            printf("Invalid function name: %s\n", text);
+            return;
+        }
+    }
+    snprintf(lts->control_callback, LUA_MAX_CALLBACK_NAME, "%s", text);
+}
 
 void pwlua_parse_line(int player_id, const char *buffer)
 {
-    LuaThreadState *lts;
-    if (player_id == 1) {
-        lts = &p1;
-    } else if (player_id == 2) {
-        lts = &p2;
-    } else if (player_id == 3) {
-        lts = &p3;
-    } else if (player_id == 4) {
-        lts = &p4;
-    } else {
+    LuaThreadState *lts = get_lua_state(player_id);
+    if (lts == NULL) {
         return;
     }
     if (lts->state == STOPPED) {
@@ -70,6 +105,7 @@ void pwlua_parse_line(int player_id, const char *buffer)
         lts->player_id = player_id;
         lts->state = STARTING;
         snprintf(lts->lua_code, LUA_MAXINPUT, "%s", buffer + 1);
+        lts->control_callback[0] = '\0';
         mtx_init(&lts->mtx, mtx_plain);
         cnd_init(&lts->cnd);
         thrd_create(&lts->thread, (void *)pwlua_thread_run, lts);
