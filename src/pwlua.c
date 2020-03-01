@@ -14,6 +14,9 @@
 #include "pwlua.h"
 #include "pwlua_api.h"
 #include "tinycthread.h"
+#ifdef RASPI
+#include "RPi_GPIO_Lua_module.h"
+#endif
 
 #define AVAILABLE 0
 #define STARTING 1
@@ -326,6 +329,10 @@ int pwlua_thread_run(LuaThreadState *lts)
     lts->L = L;
 
     luaL_openlibs(L);
+
+#ifdef RASPI
+    luaopen_GPIO(L);
+#endif
 
     lua_pushnumber(L, lts->player_id);
     lua_setglobal(L, "player_id");

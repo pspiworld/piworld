@@ -12,6 +12,10 @@ FILE(GLOB SOURCE_FILES
     deps/lodepng/lodepng.c
     deps/noise/noise.c
     deps/pg/*.c
+    deps/RPi.GPIO/source/c_gpio.c deps/RPi.GPIO/source/cpuinfo.c
+    deps/RPi.GPIO/source/event_gpio.c deps/RPi.GPIO/source/soft_pwm.c
+    deps/rpi-gpio-lua/lua/darksidesync_aux.c
+    deps/rpi-gpio-lua/lua/RPi_GPIO_Lua_module.c
     deps/tinycthread/tinycthread.c
     )
 
@@ -53,6 +57,10 @@ elseif(RASPI EQUAL 2)
     add_definitions(-march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard -DRASPI=2)
 endif()
 
+if(RASPI)
+    add_definitions(-DRASPI=${RASPI})
+endif()
+
 if(PROFILE)
     add_definitions(-pg)
     set(CMAKE_EXE_LINKER_FLAGS -pg)
@@ -72,5 +80,7 @@ include_directories(deps/lodepng)
 include_directories(deps/moonjit/src)
 include_directories(deps/noise)
 include_directories(deps/pg)
+include_directories(deps/RPi.GPIO/source)
+include_directories(deps/rpi-gpio-lua/lua)
 include_directories(deps/tinycthread)
 

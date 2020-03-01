@@ -105,8 +105,6 @@ static struct lua_callback *lua_callbacks = NULL;
 static void* lua_dss_utilid = NULL;
 
 int gpio_mode = MODE_UNKNOWN;
-const int pin_to_gpio_rev1[27] = {-1, -1, -1, 0, -1, 1, -1, 4, 14, -1, 15, 17, 18, 21, -1, 22, 23, -1, 24, 10, -1, 9, 25, 11, 8, -1, 7};
-const int pin_to_gpio_rev2[27] = {-1, -1, -1, 2, -1, 3, -1, 4, 14, -1, 15, 17, 18, 27, -1, 22, 23, -1, 24, 10, -1, 9, 25, 11, 8, -1, 7};
 
 static int gpio_warnings = 1;
 
@@ -163,7 +161,7 @@ Sets the pin numbering scheme to be used.
 static int lua_setmode(lua_State *L)
 {
    int mode;
-   if (lua_gettop > 0)
+   if (lua_gettop(L) > 0)
    {
 	   mode = luaL_checkint(L, 1);
 	   if (mode != BOARD && mode != BCM)
@@ -384,7 +382,7 @@ static int lua_cleanup(lua_State* L)
    int found = 0;
 
     // clean up any /sys/class exports
-    event_cleanup();
+    event_cleanup_all();
 
     // set everything back to input
     for (i=0; i<54; i++)
@@ -420,9 +418,9 @@ static int lua_gpio_function(lua_State* L)
    unsigned int gpio;
    int f;
    
-   // run init_module if module not set up
-   if (init_module() != SETUP_OK)
-      luaL_error(L, "Failed initializing module");
+   // run mmap_gpio_mem if module not set up
+   //if (mmap_gpio_mem() != SETUP_OK)
+   //   luaL_error(L, "Failed initializing module");
    gpio = lua_get_gpio_number(L, channel);
 
    f = gpio_function(gpio);
@@ -433,11 +431,11 @@ static int lua_gpio_function(lua_State* L)
       case 4 : switch (gpio)
                {
                   case 0 :
-                  case 1 : if (revision == 1) f = I2C; else f = MODE_UNKNOWN;
+                  case 1 : if (rpiinfo.p1_revision == 1) f = I2C; else f = MODE_UNKNOWN;
                            break;
 
                   case 2 :
-                  case 3 : if (revision == 2) f = I2C; else f = MODE_UNKNOWN;
+                  case 3 : if (rpiinfo.p1_revision == 2) f = I2C; else f = MODE_UNKNOWN;
                            break;
                            
                   case 7 :
@@ -776,7 +774,7 @@ static int lua_add_event_detect(lua_State* L)
    if (edge != RISING_EDGE && edge != FALLING_EDGE && edge != BOTH_EDGE)
       return luaL_error(L, "The edge must be set to RISING, FALLING or BOTH");
 
-   if ((result = add_edge_detect(gpio, edge)) != 0)   // starts a thread
+   if ((result = add_edge_detect(gpio, edge, bouncetime)) != 0)   // starts a thread
    {
       if (result == 1)
       {
@@ -846,7 +844,7 @@ static int lua_wait_for_edge(lua_State* L)
    if (edge != RISING_EDGE && edge != FALLING_EDGE && edge != BOTH_EDGE)
       return luaL_error(L, "The edge must be set to RISING, FALLING or BOTH");
 
-   result = blocking_wait_for_edge(gpio, edge);
+   result = blocking_wait_for_edge(gpio, edge, 0, 0);
 
    if (result == 0) {
       return 0;
@@ -978,17 +976,17 @@ int luaopen_GPIO (lua_State *L){
   
   
    // detect board revision and set up accordingly
-   revision = get_rpi_revision();
-   if (revision == -1)
+   int r = get_rpi_info(&rpiinfo);
+   if (rpiinfo.p1_revision == 0)
    {
       return luaL_error(L,  "This module can only be run on a Raspberry Pi!");
-   } else if (revision == 1) {
+   } else if (rpiinfo.p1_revision == 1) {
       pin_to_gpio = &pin_to_gpio_rev1;
    } else { // assume revision 2
       pin_to_gpio = &pin_to_gpio_rev2;
    }
 
-   lua_pushnumber(L, revision);
+   lua_pushnumber(L, rpiinfo.p1_revision);
    lua_setfield(L, -2, "RPI_REVISION");
 
    lua_newtable(L);
