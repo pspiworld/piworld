@@ -19,6 +19,7 @@ int pw_get_time(void);
 void pw_set_time(int time);
 int get_light(int p, int q, int x, int y, int z);
 void set_light(int p, int q, int x, int y, int z, int w);
+void map_set_func(int x, int y, int z, int w, void *arg);
 
 extern mtx_t force_chunks_mtx;
 

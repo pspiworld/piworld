@@ -2,10 +2,13 @@
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>
+#include "config.h"
 #include "db.h"
 #include "item.h"
+#include "noise.h"
 #include "pw.h"
 #include "pwlua.h"
+#include "world.h"
 
 static int pwlua_echo(lua_State *L);
 static int pwlua_get_block(lua_State *L);
@@ -24,6 +27,10 @@ static int pwlua_set_light(lua_State *L);
 static int pwlua_get_control(lua_State *L);
 static int pwlua_set_control(lua_State *L);
 static int pwlua_set_control_callback(lua_State *L);
+
+static int pwlua_map_set(lua_State *L);
+static int pwlua_simplex2(lua_State *L);
+static int pwlua_simplex3(lua_State *L);
 
 void pwlua_api_add_functions(lua_State *L)
 {
@@ -46,10 +53,20 @@ void pwlua_api_add_functions(lua_State *L)
     lua_register(L, "set_control_callback", pwlua_set_control_callback);
 }
 
+void pwlua_api_add_worldgen_functions(lua_State *L)
+{
+    lua_register(L, "map_set", pwlua_map_set);
+    lua_register(L, "simplex2", pwlua_simplex2);
+    lua_register(L, "simplex3", pwlua_simplex3);
+}
+
 void pwlua_api_add_constants(lua_State *L)
 {
 #define PUSH_BLOCK_TYPE(b) { lua_pushnumber(L, b); \
     lua_setglobal(L, ""#b""); }
+
+    PUSH_BLOCK_TYPE(CHUNK_SIZE);
+    PUSH_BLOCK_TYPE(BEDROCK);
 
     PUSH_BLOCK_TYPE(EMPTY);
     PUSH_BLOCK_TYPE(GRASS);
@@ -410,5 +427,59 @@ static int pwlua_set_control_callback(lua_State *L)
     player_id = luaL_checkint(L, 2);
     set_control_block_callback(player_id, text);
     return 0;
+}
+
+static int pwlua_map_set(lua_State *L)
+{
+    int n = lua_gettop(L);    /* number of arguments */
+    if (n != 4) {
+        lua_pushstring(L, "incorrect argument count");
+        lua_error(L);
+    }
+    int x, y, z, w;
+    void *block_map;
+
+    lua_getglobal(L, "_block_map");
+    block_map = lua_touserdata(L, -1);
+
+    x = lua_tointeger(L, 1);
+    y = lua_tointeger(L, 2);
+    z = lua_tointeger(L, 3);
+    w = lua_tointeger(L, 4);
+    map_set_func(x, y, z, w, block_map);
+    return 0;
+}
+
+static int pwlua_simplex2(lua_State *L)
+{
+    float x, y;
+    int octaves;
+    float persistence;
+    float lacunarity;
+    x = lua_tonumber(L, 1);
+    y = lua_tonumber(L, 2);
+    octaves = lua_tointeger(L, 3);
+    persistence = lua_tonumber(L, 4);
+    lacunarity = lua_tonumber(L, 5);
+    float v = simplex2(x, y, octaves, persistence, lacunarity);
+    lua_pushnumber(L, v);
+    return 1;
+}
+
+static int pwlua_simplex3(lua_State *L)
+{
+    float x, y, z;
+    int octaves;
+    float persistence;
+    float lacunarity;
+    x = lua_tonumber(L, 1);
+    y = lua_tonumber(L, 2);
+    z = lua_tonumber(L, 3);
+    octaves = lua_tointeger(L, 4);
+    persistence = lua_tonumber(L, 5);
+    lacunarity = lua_tonumber(L, 6);
+    float v = simplex3(x, y, z, octaves, persistence, lacunarity);
+    lua_pushnumber(L, v);
+    return 1;
 }
 

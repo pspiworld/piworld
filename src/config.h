@@ -23,6 +23,7 @@
 #define SHOW_INFO_TEXT 1
 #define SHOW_CHAT_TEXT 1
 #define SHOW_PLAYER_NAMES 1
+#define WORLDGEN_PATH ""
 
 // key bindings
 #define CRAFT_KEY_CHAT 't'
@@ -80,6 +81,7 @@ typedef struct {
     int delete_radius;
     int time;
     int use_hfloat;
+    char worldgen_path[MAX_PATH_LENGTH];
 } Config;
 
 extern Config *config;

@@ -21,6 +21,7 @@
 #include "pg_joystick.h"
 #include "pw.h"
 #include "pwlua.h"
+#include "pwlua_worldgen.h"
 #include "sign.h"
 #include "tinycthread.h"
 #include "util.h"
@@ -251,6 +252,8 @@ typedef struct {
     int auto_add_players_on_new_devices;
     int gl_float_type;
     size_t float_size;
+    lua_State *lua_worldgen;
+    int use_lua_worldgen;
 } Model;
 
 static Model model;
@@ -1474,13 +1477,17 @@ void map_set_func(int x, int y, int z, int w, void *arg) {
     map_set(map, x, y, z, w);
 }
 
-void load_chunk(WorkerItem *item) {
+void load_chunk(WorkerItem *item, lua_State *L) {
     int p = item->p;
     int q = item->q;
     Map *block_map = item->block_maps[1][1];
     Map *extra_map = item->extra_maps[1][1];
     Map *light_map = item->light_maps[1][1];
-    create_world(p, q, map_set_func, block_map);
+    if (g->use_lua_worldgen) {
+        pwlua_worldgen(L, p, q, block_map);
+    } else {
+        create_world(p, q, map_set_func, block_map);
+    }
     db_load_blocks(block_map, p, q);
     db_load_extras(extra_map, p, q);
     db_load_lights(light_map, p, q);
@@ -1523,7 +1530,7 @@ void create_chunk(Chunk *chunk, int p, int q) {
     item->block_maps[1][1] = &chunk->map;
     item->extra_maps[1][1] = &chunk->extra;
     item->light_maps[1][1] = &chunk->lights;
-    load_chunk(item);
+    load_chunk(item, g->lua_worldgen);
 
     request_chunk(p, q);
 }
@@ -1776,6 +1783,10 @@ void ensure_chunks(Player *player) {
 
 int worker_run(void *arg) {
     Worker *worker = (Worker *)arg;
+    lua_State *L;
+    if (g->use_lua_worldgen == 1) {
+        L = pwlua_worldgen_init(config->worldgen_path);
+    }
     while (!worker->exit_requested) {
         mtx_lock(&worker->mtx);
         while (worker->state != WORKER_BUSY) {
@@ -1787,12 +1798,15 @@ int worker_run(void *arg) {
         mtx_unlock(&worker->mtx);
         WorkerItem *item = &worker->item;
         if (item->load) {
-            load_chunk(item);
+            load_chunk(item, L);
         }
         compute_chunk(item);
         mtx_lock(&worker->mtx);
         worker->state = WORKER_DONE;
         mtx_unlock(&worker->mtx);
+    }
+    if (g->use_lua_worldgen == 1) {
+        lua_close(L);
     }
     return 0;
 }
@@ -4291,6 +4305,10 @@ int main(int argc, char **argv) {
         reset_history(local);
     }
     parse_startup_config(argc, argv);
+    if (strlen(config->worldgen_path) > 0) {
+        g->use_lua_worldgen = 1;
+        g->lua_worldgen = pwlua_worldgen_init(config->worldgen_path);
+    }
 
     if (config->benchmark_create_chunks) {
         if (config->benchmark_create_chunks < MAX_CHUNKS &&
@@ -4685,6 +4703,9 @@ int main(int argc, char **argv) {
     }
     mtx_destroy(&force_chunks_mtx);
 
+    if (g->use_lua_worldgen == 1) {
+        lua_close(g->lua_worldgen);
+    }
     pg_terminate_joysticks();
     pg_end();
     return 0;

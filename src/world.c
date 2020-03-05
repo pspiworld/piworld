@@ -3,8 +3,6 @@
 #include "noise.h"
 #include "world.h"
 
-#define BEDROCK COLOR_11  // A Raspberry base
-
 #ifdef SERVER
 int show_clouds = SHOW_CLOUDS;
 int show_plants = SHOW_PLANTS;

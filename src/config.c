@@ -52,6 +52,8 @@ void reset_config() {
     config->delete_radius = AUTO_PICK_RADIUS;
     config->time = -1;
     config->use_hfloat = HFLOAT_CONFIG;
+    strncpy(config->worldgen_path, WORLDGEN_PATH, sizeof(config->worldgen_path));
+    config->worldgen_path[sizeof(WORLDGEN_PATH)] = '\0';
 }
 
 void get_config_path(char *path)
@@ -111,6 +113,7 @@ void parse_startup_config(int argc, char **argv) {
             {"delete-radius",     required_argument, 0,  0 },
             {"time",              required_argument, 0,  0 },
             {"hfloat",            required_argument, 0,  0 },
+            {"worldgen",          required_argument, 0,  0 },
             {0,                   0,                 0,  0 }
         };
 
@@ -186,6 +189,10 @@ void parse_startup_config(int argc, char **argv) {
                        sscanf(optarg, "%d", &config->time) == 1) {
             } else if (strncmp(opt_name, "hfloat", 6) == 0 &&
                        sscanf(optarg, "%d", &config->use_hfloat) == 1) {
+            } else if (strncmp(opt_name, "worldgen", 8) == 0 &&
+                       sscanf(optarg, "%256c", config->worldgen_path) == 1) {
+                config->worldgen_path[MIN(strlen(optarg),
+                                          MAX_PATH_LENGTH - 1)] = '\0';
             } else {
                 printf("Bad argument for: --%s: %s\n", opt_name, optarg);
                 exit(1);
