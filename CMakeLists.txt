@@ -12,12 +12,16 @@ FILE(GLOB SOURCE_FILES
     deps/lodepng/lodepng.c
     deps/noise/noise.c
     deps/pg/*.c
-    deps/RPi.GPIO/source/c_gpio.c deps/RPi.GPIO/source/cpuinfo.c
-    deps/RPi.GPIO/source/event_gpio.c deps/RPi.GPIO/source/soft_pwm.c
-    deps/rpi-gpio-lua/lua/darksidesync_aux.c
-    deps/rpi-gpio-lua/lua/RPi_GPIO_Lua_module.c
     deps/tinycthread/tinycthread.c
     )
+if(RASPI)
+    list(APPEND SOURCE_FILES
+        deps/RPi.GPIO/source/c_gpio.c deps/RPi.GPIO/source/cpuinfo.c
+        deps/RPi.GPIO/source/event_gpio.c deps/RPi.GPIO/source/soft_pwm.c
+        deps/rpi-gpio-lua/lua/darksidesync_aux.c
+        deps/rpi-gpio-lua/lua/RPi_GPIO_Lua_module.c
+        )
+endif()
 
 set(COMMON_LIBS dl m pthread sqlite3 X11 Xcursor Xi
     ${CMAKE_SOURCE_DIR}/deps/moonjit/src/libluajit.a)
