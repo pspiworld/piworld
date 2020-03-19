@@ -8,7 +8,7 @@ set(CMAKE_VERBOSE_MAKEFILE TRUE)
 FILE(GLOB SOURCE_FILES
     src/client.c src/config.c src/cube.c src/db.c src/item.c src/main.c
     src/map.c src/matrix.c src/pwlua_api.c src/pwlua_worldgen.c src/pwlua.c
-    src/ring.c src/sign.c src/util.c src/world.c
+    src/ring.c src/sign.c src/ui.c src/util.c src/world.c
     deps/lodepng/lodepng.c
     deps/noise/noise.c
     deps/pg/*.c

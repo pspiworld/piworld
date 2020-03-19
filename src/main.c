@@ -24,6 +24,7 @@
 #include "pwlua_worldgen.h"
 #include "sign.h"
 #include "tinycthread.h"
+#include "ui.h"
 #include "util.h"
 #include "world.h"
 #include "x11_event_handler.h"
@@ -41,10 +42,6 @@
 #define LUA_HISTORY 3
 #define NUM_HISTORIES 4
 #define NOT_IN_HISTORY -1
-
-#define ALIGN_LEFT 0
-#define ALIGN_CENTER 1
-#define ALIGN_RIGHT 2
 
 #define MODE_OFFLINE 0
 #define MODE_ONLINE 1
@@ -74,6 +71,9 @@ const char *shoulder_button_modes[SHOULDER_BUTTON_MODE_COUNT] = {
 const float RED[4] = {1.0, 0.0, 0.0, 1.0};
 const float GREEN[4] = {0.0, 1.0, 0.0, 1.0};
 const float BLACK[4] = {0.0, 0.0, 0.0, 1.0};
+
+float hud_text_background[4] = {0.4, 0.4, 0.4, 0.4};
+float hud_text_color[4] = {0.85, 0.85, 0.85, 1.0};
 
 static int terminate;
 
@@ -172,6 +172,22 @@ typedef struct {
     size_t text_cursor;
     size_t typing_start;
 
+    int mouse_x;
+    int mouse_y;
+    Menu menu;
+    int menu_id_resume;
+    int menu_id_options;
+    int menu_id_new;
+    int menu_id_load;
+    int menu_id_exit;
+    Menu menu_options;
+    int menu_id_crosshairs;
+    int menu_id_fullscreen;
+    int menu_id_verbose;
+    int menu_id_wireframe;
+    int menu_id_options_resume;
+    Menu *active_menu;
+
     int view_x;
     int view_y;
     int view_width;
@@ -209,23 +225,6 @@ typedef struct {
     int keyboard_id;
     int joystick_id;
 } LocalPlayer;
-
-typedef struct {
-    GLuint program;
-    GLuint position;
-    GLuint normal;
-    GLuint uv;
-    GLuint color;
-    GLuint matrix;
-    GLuint sampler;
-    GLuint camera;
-    GLuint timer;
-    GLuint extra1;
-    GLuint extra2;
-    GLuint extra3;
-    GLuint extra4;
-    GLuint map;
-} Attrib;
 
 typedef struct {
     Worker workers[WORKERS];
@@ -266,6 +265,9 @@ LocalPlayer* player_for_keyboard(int keyboard_id);
 LocalPlayer* player_for_mouse(int mouse_id);
 LocalPlayer* player_for_joystick(int joystick_id);
 void _set_extra(int p, int q, int x, int y, int z, int w);
+void cancel_player_inputs(LocalPlayer *p);
+void open_menu(LocalPlayer *local, Menu *menu);
+void handle_menu_event(LocalPlayer *local, Menu *menu, int event);
 
 // returns 1 if limit applied, 0 if no limit applied
 int limit_player_count_to_fit_gpu_mem(void)
@@ -501,6 +503,12 @@ GLuint gen_text_buffer(float x, float y, float n, char *text) {
     return gen_faces(4, length, data, sizeof(GLfloat));
 }
 
+GLuint gen_mouse_cursor_buffer(float x, float y, int p) {
+    GLfloat *data = malloc_faces(4, 1, sizeof(GLfloat));
+    make_mouse_cursor(data, x, y, p);
+    return gen_faces(4, 1, data, sizeof(GLfloat));
+}
+
 void draw_triangles_3d_ao(Attrib *attrib, GLuint buffer, int count,
                           size_t type_size, int gl_type) {
     glBindBuffer(GL_ARRAY_BUFFER, buffer);
@@ -617,6 +625,13 @@ void draw_plant(Attrib *attrib, GLuint buffer) {
 
 void draw_player(Attrib *attrib, Player *player) {
     draw_cube(attrib, player->buffer, sizeof(GLfloat), GL_FLOAT);
+}
+
+void draw_mouse(Attrib *attrib, GLuint buffer) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    draw_triangles_2d(attrib, buffer, 6);
+    glDisable(GL_BLEND);
 }
 
 Client *find_client(int id) {
@@ -2248,8 +2263,9 @@ void render_item(Attrib *attrib, LocalPlayer *p) {
     }
 }
 
-void render_text(
-    Attrib *attrib, int justify, float x, float y, float n, char *text)
+void render_text_rgba(
+    Attrib *attrib, int justify, float x, float y, float n, char *text,
+    const float *background, const float *text_color)
 {
     float matrix[16];
     set_matrix_2d(matrix, g->width, g->height);
@@ -2257,11 +2273,20 @@ void render_text(
     glUniformMatrix4fv(attrib->matrix, 1, GL_FALSE, matrix);
     glUniform1i(attrib->sampler, 3);
     glUniform1i(attrib->extra1, 0);
+    glUniform4fv(attrib->extra5, 1, background);
+    glUniform4fv(attrib->extra6, 1, text_color);
     int length = strlen(text);
     x -= n * justify * (length - 1) / 2;
     GLuint buffer = gen_text_buffer(x, y, n, text);
     draw_text(attrib, buffer, length);
     del_buffer(buffer);
+}
+
+void render_text(
+    Attrib *attrib, int justify, float x, float y, float n, char *text)
+{
+    render_text_rgba(attrib, justify, x, y, n, text, hud_text_background,
+                     hud_text_color);
 }
 
 GLuint gen_text_cursor_buffer(float x, float y) {
@@ -2283,6 +2308,18 @@ void render_text_cursor(Attrib *attrib, float x, float y)
     GLuint text_cursor_buffer = gen_text_cursor_buffer(x, y);
     draw_lines(attrib, text_cursor_buffer, 2, 2);
     del_buffer(text_cursor_buffer);
+}
+
+void render_mouse_cursor(Attrib *attrib, float x, float y, int p)
+{
+    float matrix[16];
+    set_matrix_2d(matrix, g->width, g->height);
+    glUseProgram(attrib->program);
+    glUniformMatrix4fv(attrib->matrix, 1, GL_FALSE, matrix);
+    glUniform1i(attrib->sampler, 0);
+    GLuint mouse_cursor_buffer = gen_mouse_cursor_buffer(x, y, p);
+    draw_mouse(attrib, mouse_cursor_buffer);
+    del_buffer(mouse_cursor_buffer);
 }
 
 void add_message(int player_id, const char *text) {
@@ -2746,6 +2783,14 @@ void set_block_under_crosshair(LocalPlayer *local)
     State *s = &local->player->state;
     int hx, hy, hz;
     int hw = hit_test(1, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
+    int hx2, hy2, hz2;
+    int hw2 = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx2, &hy2, &hz2);
+    if (hy2 > 0 && hy2 < 256 && is_obstacle(hw2)) {
+        if (get_extra(hx2, hy2, hz2)) {
+            open_menu(local, &local->menu);
+            return;
+        }
+    }
     if (hy > 0 && hy < 256 && is_obstacle(hw)) {
         if (!player_intersects_block(2, s->x, s->y, s->z, hx, hy, hz)) {
             set_block(hx, hy, hz, items[local->item_index]);
@@ -2812,6 +2857,24 @@ void on_light(LocalPlayer *local) {
 
 void handle_mouse_motion(int mouse_id, float x, float y) {
     LocalPlayer *local = player_for_mouse(mouse_id);
+    if (local->active_menu) {
+        local->mouse_x -= x;
+        local->mouse_y += y;
+        if (local->mouse_x < 0) {
+            local->mouse_x = 0;
+        }
+        if (local->mouse_x > local->view_width - 1) {
+            local->mouse_x = local->view_width - 1;
+        }
+        if (local->mouse_y < -(MOUSE_CURSOR_SIZE - 1)) {
+            local->mouse_y = -(MOUSE_CURSOR_SIZE - 1);
+        }
+        if (local->mouse_y > local->view_height - MOUSE_CURSOR_SIZE) {
+            local->mouse_y = local->view_height - MOUSE_CURSOR_SIZE;
+        }
+        menu_handle_mouse(local->active_menu, local->mouse_x, local->mouse_y);
+        return;
+    }
     State *s = &local->player->state;
     float m = 0.0025;
     if (local->zoom_is_pressed) {
@@ -3101,6 +3164,31 @@ void parse_buffer(char *buffer) {
 next_line:
         line = tokenize(NULL, "\n", &key);
     }
+}
+
+void create_menus(LocalPlayer *local)
+{
+    Menu *menu;
+
+    // Main menu
+    menu = &local->menu;
+    menu_set_title(menu, "PIWORLD");
+    local->menu_id_resume = menu_add(menu, "Resume");
+    local->menu_id_options = menu_add(menu, "Options");
+    local->menu_id_exit = menu_add(menu, "Exit");
+
+    // Options menu
+    menu = &local->menu_options;
+    menu_set_title(menu, "OPTIONS");
+    local->menu_id_crosshairs = menu_add_option(menu, "Crosshairs");
+    local->menu_id_fullscreen = menu_add_option(menu, "Fullscreen");
+    local->menu_id_verbose = menu_add_option(menu, "Verbose");
+    local->menu_id_wireframe = menu_add_option(menu, "Wireframe");
+    local->menu_id_options_resume = menu_add(menu, "Resume");
+    menu_set_option(menu, local->menu_id_crosshairs, config->show_crosshairs);
+    menu_set_option(menu, local->menu_id_fullscreen, config->fullscreen);
+    menu_set_option(menu, local->menu_id_verbose, config->verbose);
+    menu_set_option(menu, local->menu_id_wireframe, config->show_wireframe);
 }
 
 void reset_model(void) {
@@ -3399,6 +3487,11 @@ void handle_key_press(int keyboard_id, int mods, int keysym)
         handle_key_press_typing(p, mods, keysym);
         return;
     }
+    if (p->active_menu) {
+        int r = menu_handle_key_press(p->active_menu, keysym);
+        handle_menu_event(p, p->active_menu, r);
+        return;
+    }
     switch (keysym) {
     case XK_w: case XK_W:
         p->forward_is_pressed = 1;
@@ -3417,7 +3510,11 @@ void handle_key_press(int keyboard_id, int mods, int keysym)
         p->movement_speed_left_right = 1;
         break;
     case XK_Escape:
-        terminate = True;
+        if (p->active_menu) {
+            p->active_menu = NULL;
+        } else {
+            open_menu(p, &p->menu);
+        }
         break;
     case XK_F1:
         set_mouse_absolute();
@@ -3678,6 +3775,43 @@ LocalPlayer* player_for_mouse(int mouse_id) {
     return g->local_players;
 }
 
+void open_menu(LocalPlayer *local, Menu *menu)
+{
+    local->active_menu = menu;
+    menu_handle_mouse(local->active_menu, local->mouse_x, local->mouse_y);
+    cancel_player_inputs(local);
+}
+
+void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
+{
+    if (event == MENU_CANCELLED) {
+        local->active_menu = NULL;
+    } else if (menu == &local->menu) {
+        if (event == local->menu_id_resume) {
+            local->active_menu = NULL;
+        } else if (event == local->menu_id_options) {
+            open_menu(local, &local->menu_options);
+        } else if (event == local->menu_id_exit) {
+            terminate = 1;
+        }
+    } else if (menu == &local->menu_options) {
+        if (event == local->menu_id_options_resume) {
+            local->active_menu = NULL;
+        } else if (event == local->menu_id_fullscreen) {
+            pg_toggle_fullscreen();
+        } else if (event == local->menu_id_crosshairs) {
+            config->show_crosshairs = menu_get_option(&local->menu_options,
+                local->menu_id_crosshairs);
+        } else if (event == local->menu_id_verbose) {
+            config->verbose = menu_get_option(&local->menu_options,
+                local->menu_id_verbose);
+        } else if (event == local->menu_id_wireframe) {
+            config->show_wireframe = menu_get_option(&local->menu_options,
+                local->menu_id_wireframe);
+        }
+    }
+}
+
 void handle_mouse_release(int mouse_id, int b)
 {
     if (!relative_mouse_in_use()) {
@@ -3687,6 +3821,12 @@ void handle_mouse_release(int mouse_id, int b)
     int mods = 0;
     if (local->keyboard_id != UNASSIGNED) {
         mods = pg_get_mods(local->keyboard_id);
+    }
+    if (local->active_menu) {
+        int r = menu_handle_mouse_release(local->active_menu, local->mouse_x,
+                                            local->mouse_y);
+        handle_menu_event(local, local->active_menu, r);
+        return;
     }
     if (b == 1) {
         if (mods & ControlMask) {
@@ -3714,21 +3854,26 @@ void handle_window_close(void)
     terminate = True;
 }
 
+void cancel_player_inputs(LocalPlayer *p)
+{
+    p->forward_is_pressed = 0;
+    p->back_is_pressed = 0;
+    p->left_is_pressed = 0;
+    p->right_is_pressed = 0;
+    p->jump_is_pressed = 0;
+    p->crouch_is_pressed = 0;
+    p->view_left_is_pressed = 0;
+    p->view_right_is_pressed = 0;
+    p->view_up_is_pressed = 0;
+    p->view_down_is_pressed = 0;
+    p->ortho_is_pressed = 0;
+    p->zoom_is_pressed = 0;
+}
+
 void handle_focus_out(void) {
     for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
         LocalPlayer *p = &g->local_players[i];
-        p->forward_is_pressed = 0;
-        p->back_is_pressed = 0;
-        p->left_is_pressed = 0;
-        p->right_is_pressed = 0;
-        p->jump_is_pressed = 0;
-        p->crouch_is_pressed = 0;
-        p->view_left_is_pressed = 0;
-        p->view_right_is_pressed = 0;
-        p->view_up_is_pressed = 0;
-        p->view_down_is_pressed = 0;
-        p->ortho_is_pressed = 0;
-        p->zoom_is_pressed = 0;
+        cancel_player_inputs(p);
     }
 
     pg_fullscreen(0);
@@ -3789,6 +3934,10 @@ void handle_joystick_axis(PG_Joystick *j, int j_num, int axis, float value)
         // If a new gamepad resulted in a new player ignore this first event.
         return;
     }
+    if (p->active_menu) {
+        menu_handle_joystick_axis(p->active_menu, axis, value);
+        return;
+    }
 
     if (j->axis_count < 4) {
         if (axis == 0) {
@@ -3835,6 +3984,11 @@ void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
     LocalPlayer *p = player_for_joystick(j_num);
     if (prev_player_count != config->players) {
         // If a new gamepad resulted in a new player ignore this first event.
+        return;
+    }
+    if (p->active_menu) {
+        int r = menu_handle_joystick_button(p->active_menu, button, state);
+        handle_menu_event(p, p->active_menu, r);
         return;
     }
 
@@ -3906,6 +4060,14 @@ void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
                 add_message(p->player->id,
                             shoulder_button_modes[p->shoulder_button_mode]);
             }
+        } else if (button == 9) {
+            if (state) {
+                if (p->active_menu) {
+                    p->active_menu = NULL;
+                } else {
+                    open_menu(p, &p->menu);
+                }
+            }
         }
     } else {
         if (button == 0) {
@@ -3939,7 +4101,13 @@ void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
         } else if (button == 8) {
             p->zoom_is_pressed = state;
         } else if (button == 9) {
-            p->ortho_is_pressed = state;
+            if (state) {
+                if (p->active_menu) {
+                    p->active_menu = NULL;
+                } else {
+                    open_menu(p, &p->menu);
+                }
+            }
         } else if (button == 10) {
             p->ortho_is_pressed = state;
         } else if (button == 11) {
@@ -3951,7 +4119,7 @@ void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
 void render_player_world(
         LocalPlayer *local, GLuint sky_buffer, Attrib *sky_attrib,
         Attrib *block_attrib, Attrib *text_attrib, Attrib *line_attrib,
-        FPS fps)
+        Attrib *mouse_attrib, FPS fps)
 {
     Player *player = local->player;
     State *s = &player->state;
@@ -3981,7 +4149,7 @@ void render_player_world(
 
     // RENDER HUD //
     glClear(GL_DEPTH_BUFFER_BIT);
-    if (config->show_crosshairs) {
+    if (config->show_crosshairs && local->active_menu == NULL) {
         render_crosshairs(line_attrib, player);
     }
     if (config->show_item) {
@@ -4061,6 +4229,13 @@ void render_player_world(
         snprintf(text_buffer, 1024, "%s", player->name);
         render_text(text_attrib, ALIGN_CENTER, g->width/2, ts, ts,
                     text_buffer);
+    }
+    if (local->active_menu) {
+        glClear(GL_DEPTH_BUFFER_BIT);
+        menu_render(local->active_menu, text_attrib, g->width, g->height);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        render_mouse_cursor(mouse_attrib, local->mouse_x, local->mouse_y,
+                            local->player->id);
     }
 
     // RENDER PICTURE IN PICTURE //
@@ -4365,6 +4540,11 @@ int main(int argc, char **argv) {
     pg_set_joystick_button_handler(*handle_joystick_button);
     pg_set_joystick_axis_handler(*handle_joystick_axis);
 
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = &g->local_players[i];
+        create_menus(local);
+    }
+
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
     glClearColor(0, 0, 0, 1);
@@ -4401,6 +4581,7 @@ int main(int argc, char **argv) {
     Attrib line_attrib = {0};
     Attrib text_attrib = {0};
     Attrib sky_attrib = {0};
+    Attrib mouse_attrib = {0};
     GLuint program;
 
     program = load_program("block");
@@ -4435,6 +4616,8 @@ int main(int argc, char **argv) {
     text_attrib.extra2 = glGetUniformLocation(program, "sky_sampler");
     text_attrib.extra3 = glGetUniformLocation(program, "fog_distance");
     text_attrib.extra4 = glGetUniformLocation(program, "ortho");
+    text_attrib.extra5 = glGetUniformLocation(program, "hud_text_background");
+    text_attrib.extra6 = glGetUniformLocation(program, "hud_text_color");
     text_attrib.timer = glGetUniformLocation(program, "timer");
     text_attrib.camera = glGetUniformLocation(program, "camera");
 
@@ -4445,6 +4628,13 @@ int main(int argc, char **argv) {
     sky_attrib.matrix = glGetUniformLocation(program, "matrix");
     sky_attrib.sampler = glGetUniformLocation(program, "sampler");
     sky_attrib.timer = glGetUniformLocation(program, "timer");
+
+    program = load_program("mouse");
+    mouse_attrib.program = program;
+    mouse_attrib.position = glGetAttribLocation(program, "position");
+    mouse_attrib.uv = glGetAttribLocation(program, "uv");
+    mouse_attrib.matrix = glGetUniformLocation(program, "matrix");
+    mouse_attrib.sampler = glGetUniformLocation(program, "sampler");
 
     // ONLINE STATUS //
     if (strlen(config->server) > 0) {
@@ -4646,7 +4836,7 @@ int main(int argc, char **argv) {
                 if (local->player->is_active) {
                     render_player_world(local, sky_buffer,
                                         &sky_attrib, &block_attrib, &text_attrib,
-                                        &line_attrib, fps);
+                                        &line_attrib, &mouse_attrib, fps);
                 }
             }
 

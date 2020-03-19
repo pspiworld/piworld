@@ -1,6 +1,30 @@
 #pragma once
 
+#include <GLES2/gl2.h>
 #include "tinycthread.h"
+
+#define ALIGN_LEFT 0
+#define ALIGN_CENTER 1
+#define ALIGN_RIGHT 2
+
+typedef struct {
+    GLuint program;
+    GLuint position;
+    GLuint normal;
+    GLuint uv;
+    GLuint color;
+    GLuint matrix;
+    GLuint sampler;
+    GLuint camera;
+    GLuint timer;
+    GLuint extra1;
+    GLuint extra2;
+    GLuint extra3;
+    GLuint extra4;
+    GLuint extra5;
+    GLuint extra6;
+    GLuint map;
+} Attrib;
 
 int chunked(float x);
 int get_block(int x, int y, int z);
@@ -20,6 +44,9 @@ void pw_set_time(int time);
 int get_light(int p, int q, int x, int y, int z);
 void set_light(int p, int q, int x, int y, int z, int w);
 void map_set_func(int x, int y, int z, int w, void *arg);
+void render_text_rgba(
+    Attrib *attrib, int justify, float x, float y, float n, char *text,
+    const float *background, const float *text_color);
 
 extern mtx_t force_chunks_mtx;
 

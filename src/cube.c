@@ -389,3 +389,26 @@ void make_sphere(float *data, float r, int detail) {
         total += n; data += n * 24;
     }
 }
+
+void make_mouse_cursor(float *data, float x, float y, int p)
+{
+    float *d = data;
+    float s = 0.0625;
+    int tile = 240 + ((p-1) * 4);
+    float du = (tile % 16) * s;
+    float dv = (tile / 16) * s;
+    float m = 16;
+    float n = 16;
+    *(d++) = x; *(d++) = y;
+    *(d++) = du; *(d++) = dv;
+    *(d++) = x + n; *(d++) = y;
+    *(d++) = du + s; *(d++) = dv;
+    *(d++) = x + n; *(d++) = y + m;
+    *(d++) = du + s; *(d++) = dv + s;
+    *(d++) = x; *(d++) = y;
+    *(d++) = du; *(d++) = dv;
+    *(d++) = x + n; *(d++) = y + m;
+    *(d++) = du + s; *(d++) = dv + s;
+    *(d++) = x; *(d++) = y + m;
+    *(d++) = du; *(d++) = dv + s;
+}

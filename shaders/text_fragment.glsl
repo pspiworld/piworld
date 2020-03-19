@@ -4,14 +4,13 @@ uniform sampler2D sampler;
 uniform bool is_sign;
 uniform sampler2D sky_sampler;
 uniform float timer;
+uniform vec4 hud_text_background;
+uniform vec4 hud_text_color;
 
 varying vec2 fragment_uv;
 varying vec4 fragment_color;
 varying float fog_factor;
 varying float fog_height;
-
-const vec4 hud_text_background = vec4(0.4, 0.4, 0.4, 0.4);
-const vec4 hud_text_color = vec4(0.85, 0.85, 0.85, 1.0);
 
 void main() {
     vec4 color = texture2D(sampler, fragment_uv);

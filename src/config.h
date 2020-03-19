@@ -1,7 +1,7 @@
 #pragma once
 
 // app parameters
-#define WINDOW_TITLE "PiWorld (Esc to exit)"
+#define WINDOW_TITLE "PiWorld (Esc to open menu)"
 #define FULLSCREEN 0
 #define WINDOW_WIDTH 640
 #define WINDOW_HEIGHT 400

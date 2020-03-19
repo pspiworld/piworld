@@ -32,3 +32,5 @@ void make_character_3d(
 
 void make_sphere(float *data, float r, int detail);
 
+void make_mouse_cursor(float *data, float x, float y, int p);
+
