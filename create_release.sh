@@ -48,6 +48,10 @@ cp ./shaders/*.glsl $TMPDIR/shaders/
 mkdir -p $TMPDIR/textures
 cp ./textures/*.png $TMPDIR/textures/
 
+mkdir -p $TMPDIR/worldgen
+cp ./worldgen/checkerboard.lua $TMPDIR/worldgen/
+cp ./worldgen/worldgen1.lua $TMPDIR/worldgen/
+
 # Generate the release readme file including sections cut out of README.md.
 for SECTION in "Controls" \
                "In Game Command Line" \
