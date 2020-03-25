@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "client.h"
 #include "config.h"
 #include "cube.h"
@@ -32,7 +33,6 @@
 #define MAX_CHUNKS 8192
 #define MAX_CLIENTS 128
 #define WORKERS 1
-#define MAX_TEXT_LENGTH 256
 #define MAX_NAME_LENGTH 32
 
 #define MAX_HISTORY_SIZE 20
@@ -186,6 +186,10 @@ typedef struct {
     int menu_id_verbose;
     int menu_id_wireframe;
     int menu_id_options_resume;
+    Menu menu_new;
+    int menu_id_new_game_name;
+    int menu_id_new_ok;
+    int menu_id_new_cancel;
     Menu *active_menu;
 
     int view_x;
@@ -3175,6 +3179,7 @@ void create_menus(LocalPlayer *local)
     menu_set_title(menu, "PIWORLD");
     local->menu_id_resume = menu_add(menu, "Resume");
     local->menu_id_options = menu_add(menu, "Options");
+    local->menu_id_new = menu_add(menu, "New");
     local->menu_id_exit = menu_add(menu, "Exit");
 
     // Options menu
@@ -3189,6 +3194,13 @@ void create_menus(LocalPlayer *local)
     menu_set_option(menu, local->menu_id_fullscreen, config->fullscreen);
     menu_set_option(menu, local->menu_id_verbose, config->verbose);
     menu_set_option(menu, local->menu_id_wireframe, config->show_wireframe);
+
+    // New menu
+    menu = &local->menu_new;
+    menu_set_title(menu, "NEW GAME");
+    local->menu_id_new_game_name = menu_add_line_edit(menu, "Name");
+    local->menu_id_new_ok = menu_add(menu, "OK");
+    local->menu_id_new_cancel = menu_add(menu, "Cancel");
 }
 
 void reset_model(void) {
@@ -3488,7 +3500,7 @@ void handle_key_press(int keyboard_id, int mods, int keysym)
         return;
     }
     if (p->active_menu) {
-        int r = menu_handle_key_press(p->active_menu, keysym);
+        int r = menu_handle_key_press(p->active_menu, mods, keysym);
         handle_menu_event(p, p->active_menu, r);
         return;
     }
@@ -3791,6 +3803,10 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             local->active_menu = NULL;
         } else if (event == local->menu_id_options) {
             open_menu(local, &local->menu_options);
+        } else if (event == local->menu_id_new) {
+            open_menu(local, &local->menu_new);
+            menu_set_highlighted_item(&local->menu_new,
+                local->menu_id_new_game_name);
         } else if (event == local->menu_id_exit) {
             terminate = 1;
         }
@@ -3808,6 +3824,31 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
         } else if (event == local->menu_id_wireframe) {
             config->show_wireframe = menu_get_option(&local->menu_options,
                 local->menu_id_wireframe);
+        }
+    } else if (menu == &local->menu_new) {
+        if (event == local->menu_id_new_cancel) {
+            local->active_menu = NULL;
+        } else if (event == local->menu_id_new_ok ||
+                   event == local->menu_id_new_game_name) {
+            local->active_menu = NULL;
+            char *new_game_name = menu_get_line_edit(menu,
+                local->menu_id_new_game_name);
+            char new_game_path[MAX_PATH_LENGTH];
+            if (strlen(new_game_name) == 0) {
+                add_message(local->player->id, "New game needs a name");
+                return;
+            }
+            snprintf(new_game_path, MAX_PATH_LENGTH, "%s/%s.piworld",
+                config->path, new_game_name);
+            if (access(new_game_path, F_OK) != -1) {
+                add_message(local->player->id,
+                    "A game with that name already exists");
+                return;
+            }
+            // Create a new game
+            g->mode_changed = 1;
+            g->mode = MODE_OFFLINE;
+            snprintf(g->db_path, MAX_PATH_LENGTH, "%s", new_game_path);
         }
     }
 }
@@ -4232,7 +4273,8 @@ void render_player_world(
     }
     if (local->active_menu) {
         glClear(GL_DEPTH_BUFFER_BIT);
-        menu_render(local->active_menu, text_attrib, g->width, g->height);
+        menu_render(local->active_menu, text_attrib, line_attrib,
+                    g->width, g->height);
         glClear(GL_DEPTH_BUFFER_BIT);
         render_mouse_cursor(mouse_attrib, local->mouse_x, local->mouse_y,
                             local->player->id);

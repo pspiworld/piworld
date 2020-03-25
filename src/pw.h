@@ -47,6 +47,7 @@ void map_set_func(int x, int y, int z, int w, void *arg);
 void render_text_rgba(
     Attrib *attrib, int justify, float x, float y, float n, char *text,
     const float *background, const float *text_color);
+void render_text_cursor(Attrib *attrib, float x, float y);
 
 extern mtx_t force_chunks_mtx;
 
