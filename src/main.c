@@ -1,6 +1,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <dirent.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
@@ -190,6 +191,8 @@ typedef struct {
     int menu_id_new_game_name;
     int menu_id_new_ok;
     int menu_id_new_cancel;
+    Menu menu_load;
+    int menu_id_load_cancel;
     Menu *active_menu;
 
     int view_x;
@@ -271,6 +274,7 @@ LocalPlayer* player_for_joystick(int joystick_id);
 void _set_extra(int p, int q, int x, int y, int z, int w);
 void cancel_player_inputs(LocalPlayer *p);
 void open_menu(LocalPlayer *local, Menu *menu);
+void close_menu(LocalPlayer *local);
 void handle_menu_event(LocalPlayer *local, Menu *menu, int event);
 
 // returns 1 if limit applied, 0 if no limit applied
@@ -3180,6 +3184,7 @@ void create_menus(LocalPlayer *local)
     local->menu_id_resume = menu_add(menu, "Resume");
     local->menu_id_options = menu_add(menu, "Options");
     local->menu_id_new = menu_add(menu, "New");
+    local->menu_id_load = menu_add(menu, "Load");
     local->menu_id_exit = menu_add(menu, "Exit");
 
     // Options menu
@@ -3201,6 +3206,35 @@ void create_menus(LocalPlayer *local)
     local->menu_id_new_game_name = menu_add_line_edit(menu, "Name");
     local->menu_id_new_ok = menu_add(menu, "OK");
     local->menu_id_new_cancel = menu_add(menu, "Cancel");
+
+    // Load menu
+    menu = &local->menu_load;
+    menu_set_title(menu, "LOAD GAME");
+}
+
+void populate_load_menu(LocalPlayer *local)
+{
+    Menu *menu = &local->menu_load;
+    menu_clear_items(menu);
+    DIR *dir = opendir(config->path);
+    struct dirent *dp;
+    for (;;) {
+        char world_name[MAX_TEXT_LENGTH];
+        dp = readdir(dir);
+        if (dp == NULL) {
+            break;
+        }
+        if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0 ||
+            strlen(dp->d_name) <= 8 ||
+            strcmp(dp->d_name + (strlen(dp->d_name) - 8), ".piworld") != 0) {
+            continue;
+        }
+        snprintf(world_name, strlen(dp->d_name) - 8 + 1, "%s", dp->d_name);
+        menu_add(menu, world_name);
+    }
+    closedir(dir);
+    menu_sort(menu);
+    local->menu_id_load_cancel = menu_add(menu, "Cancel");
 }
 
 void reset_model(void) {
@@ -3523,7 +3557,7 @@ void handle_key_press(int keyboard_id, int mods, int keysym)
         break;
     case XK_Escape:
         if (p->active_menu) {
-            p->active_menu = NULL;
+            close_menu(p);
         } else {
             open_menu(p, &p->menu);
         }
@@ -3794,25 +3828,33 @@ void open_menu(LocalPlayer *local, Menu *menu)
     cancel_player_inputs(local);
 }
 
+void close_menu(LocalPlayer *local)
+{
+    local->active_menu = NULL;
+}
+
 void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
 {
     if (event == MENU_CANCELLED) {
-        local->active_menu = NULL;
+        close_menu(local);
     } else if (menu == &local->menu) {
         if (event == local->menu_id_resume) {
-            local->active_menu = NULL;
+            close_menu(local);
         } else if (event == local->menu_id_options) {
             open_menu(local, &local->menu_options);
         } else if (event == local->menu_id_new) {
             open_menu(local, &local->menu_new);
             menu_set_highlighted_item(&local->menu_new,
                 local->menu_id_new_game_name);
+        } else if (event == local->menu_id_load) {
+            populate_load_menu(local);
+            open_menu(local, &local->menu_load);
         } else if (event == local->menu_id_exit) {
             terminate = 1;
         }
     } else if (menu == &local->menu_options) {
         if (event == local->menu_id_options_resume) {
-            local->active_menu = NULL;
+            close_menu(local);
         } else if (event == local->menu_id_fullscreen) {
             pg_toggle_fullscreen();
         } else if (event == local->menu_id_crosshairs) {
@@ -3827,10 +3869,10 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
         }
     } else if (menu == &local->menu_new) {
         if (event == local->menu_id_new_cancel) {
-            local->active_menu = NULL;
+            close_menu(local);
         } else if (event == local->menu_id_new_ok ||
                    event == local->menu_id_new_game_name) {
-            local->active_menu = NULL;
+            close_menu(local);
             char *new_game_name = menu_get_line_edit(menu,
                 local->menu_id_new_game_name);
             char new_game_path[MAX_PATH_LENGTH];
@@ -3850,6 +3892,23 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             g->mode = MODE_OFFLINE;
             snprintf(g->db_path, MAX_PATH_LENGTH, "%s", new_game_path);
         }
+    } else if (menu == &local->menu_load) {
+        if (event == local->menu_id_load_cancel) {
+            close_menu(local);
+        } else if (event > 0) {
+            // Load an existing game
+            char game_path[MAX_PATH_LENGTH];
+            snprintf(game_path, MAX_PATH_LENGTH, "%s/%s.piworld", config->path,
+                     menu_get_name(menu, event));
+            if (access(game_path, F_OK) == -1) {
+                add_message(local->player->id, "Game file not found");
+                return;
+            }
+            g->mode_changed = 1;
+            g->mode = MODE_OFFLINE;
+            snprintf(g->db_path, MAX_PATH_LENGTH, "%s", game_path);
+            close_menu(local);
+        }
     }
 }
 
@@ -3865,7 +3924,7 @@ void handle_mouse_release(int mouse_id, int b)
     }
     if (local->active_menu) {
         int r = menu_handle_mouse_release(local->active_menu, local->mouse_x,
-                                            local->mouse_y);
+                                            local->mouse_y, b);
         handle_menu_event(local, local->active_menu, r);
         return;
     }
@@ -4104,7 +4163,7 @@ void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
         } else if (button == 9) {
             if (state) {
                 if (p->active_menu) {
-                    p->active_menu = NULL;
+                    close_menu(p);
                 } else {
                     open_menu(p, &p->menu);
                 }
@@ -4144,7 +4203,7 @@ void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
         } else if (button == 9) {
             if (state) {
                 if (p->active_menu) {
-                    p->active_menu = NULL;
+                    close_menu(p);
                 } else {
                     open_menu(p, &p->menu);
                 }
@@ -4934,6 +4993,14 @@ int main(int argc, char **argv) {
         delete_all_players();
     }
     mtx_destroy(&force_chunks_mtx);
+
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        LocalPlayer *local = &g->local_players[i];
+        menu_clear_items(&local->menu);
+        menu_clear_items(&local->menu_options);
+        menu_clear_items(&local->menu_new);
+        menu_clear_items(&local->menu_load);
+    }
 
     if (g->use_lua_worldgen == 1) {
         lua_close(g->lua_worldgen);
