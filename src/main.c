@@ -4572,7 +4572,7 @@ void pw_set_time(int time)
 
 int main(int argc, char **argv) {
     // INITIALIZATION //
-    init_data_dir(argv[0]);
+    init_data_dir();
     srand(time(NULL));
     rand();
     reset_config();

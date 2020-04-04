@@ -58,13 +58,13 @@ void reset_config() {
 
 void get_config_path(char *path)
 {
-#ifdef RELEASE
-    snprintf(path, MAX_DIR_LENGTH, "%s/.piworld", getenv("HOME"));
-    mkdir(path, 0755);
-#else
-    // Keep the config and world database in the current dir for dev builds
-    snprintf(path, MAX_DIR_LENGTH, get_data_dir());
-#endif
+    if (RELEASE_BUILD || access(get_data_dir(), W_OK) != 0) {
+        snprintf(path, MAX_DIR_LENGTH, "%s/.piworld", getenv("HOME"));
+        mkdir(path, 0755);
+    } else {
+        // Keep the config and world database in the current dir for dev builds
+        snprintf(path, MAX_DIR_LENGTH, get_data_dir());
+    }
 }
 
 void get_default_db_path(char *path)

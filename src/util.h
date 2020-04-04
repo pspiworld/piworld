@@ -29,7 +29,7 @@ typedef struct {
 
 typedef unsigned short hfloat;
 
-void init_data_dir(char *bin_file_name);
+void init_data_dir(void);
 char *get_data_dir(void);
 
 int rand_int(int n);

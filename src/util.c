@@ -14,25 +14,35 @@
 
 char data_dir[MAX_DIR_LENGTH];
 
-void init_data_dir(char *bin_file_name)
+void init_data_dir(void)
 {
-    char bin_dir[MAX_DIR_LENGTH];
-    char test_path[MAX_PATH_LENGTH];
-    snprintf(bin_dir, MAX_DIR_LENGTH, "%s", dirname(bin_file_name));
-    snprintf(data_dir, MAX_DIR_LENGTH, "%s", bin_dir);
-    snprintf(test_path, MAX_PATH_LENGTH, "%s/%s", data_dir, "textures");
-    if (access(test_path, F_OK) != 0) {
-        snprintf(data_dir, MAX_DIR_LENGTH, "%s", dirname(bin_dir));
+    char *exe;
+    char *tmp;
+    char exe_dir[MAX_DIR_LENGTH];
+    exe = realpath("/proc/self/exe", NULL);
+    tmp = strdup(exe);
+    snprintf(exe_dir, MAX_DIR_LENGTH, "%s", dirname(tmp));
+    if (strcmp(PW_INSTALL_BINDIR, exe_dir) == 0) {
+        snprintf(data_dir, MAX_DIR_LENGTH, "%s", PW_INSTALL_DATADIR);
+    } else {
+        char test_path[MAX_PATH_LENGTH];
+        snprintf(data_dir, MAX_DIR_LENGTH, "%s", exe_dir);
         snprintf(test_path, MAX_PATH_LENGTH, "%s/%s", data_dir, "textures");
         if (access(test_path, F_OK) != 0) {
-            strncpy(data_dir, "..", 3);
+            char *tmp2 = strdup(data_dir);
+            snprintf(data_dir, MAX_DIR_LENGTH, "%s", dirname(tmp2));
+            free(tmp2);
             snprintf(test_path, MAX_PATH_LENGTH, "%s/%s", data_dir, "textures");
             if (access(test_path, F_OK) != 0) {
                 printf("Data files not found.\n");
+                free(tmp);
+                free(exe);
                 exit(1);
             }
         }
     }
+    free(tmp);
+    free(exe);
 }
 
 char *get_data_dir(void)
