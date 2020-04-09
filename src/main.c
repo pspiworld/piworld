@@ -1922,7 +1922,7 @@ void toggle_light(int x, int y, int z) {
     }
 }
 
-void set_light(int p, int q, int x, int y, int z, int w) {
+void _set_light(int p, int q, int x, int y, int z, int w) {
     Chunk *chunk = find_chunk(p, q);
     if (w < 0) {
         w = 0;
@@ -1940,6 +1940,11 @@ void set_light(int p, int q, int x, int y, int z, int w) {
     else {
         db_insert_light(p, q, x, y, z, w);
     }
+}
+
+void set_light(int p, int q, int x, int y, int z, int w) {
+    _set_light(p, q, x, y, z, w);
+    client_light(x, y, z, w);
 }
 
 int get_light(int p, int q, int x, int y, int z) {
@@ -2010,7 +2015,8 @@ void _set_block(int p, int q, int x, int y, int z, int w, int dirty) {
     }
     if (w == 0 && chunked(x) == p && chunked(z) == q) {
         unset_sign(x, y, z);
-        set_light(p, q, x, y, z, 0);
+        _set_light(p, q, x, y, z, 0);
+        _set_extra(p, q, x, y, z, 0);
     }
 }
 
@@ -3074,7 +3080,7 @@ void parse_buffer(char *buffer) {
         if (sscanf(line, "L,%d,%d,%d,%d,%d,%d",
             &bp, &bq, &bx, &by, &bz, &bw) == 6)
         {
-            set_light(bp, bq, bx, by, bz, bw);
+            _set_light(bp, bq, bx, by, bz, bw);
             goto next_line;
         }
         if (sscanf(line, "X,%d,%d", &pid, &p) == 2) {
