@@ -193,6 +193,8 @@ typedef struct {
     int menu_id_new_cancel;
     Menu menu_load;
     int menu_id_load_cancel;
+    Menu menu_item_in_hand;
+    int menu_id_item_in_hand_cancel;
     Menu *active_menu;
 
     int view_x;
@@ -276,6 +278,7 @@ void cancel_player_inputs(LocalPlayer *p);
 void open_menu(LocalPlayer *local, Menu *menu);
 void close_menu(LocalPlayer *local);
 void handle_menu_event(LocalPlayer *local, Menu *menu, int event);
+void populate_item_in_hand_menu(LocalPlayer *local);
 
 // returns 1 if limit applied, 0 if no limit applied
 int limit_player_count_to_fit_gpu_mem(void)
@@ -3216,6 +3219,20 @@ void create_menus(LocalPlayer *local)
     // Load menu
     menu = &local->menu_load;
     menu_set_title(menu, "LOAD GAME");
+
+    // Item in hand menu
+    menu = &local->menu_item_in_hand;
+    menu_set_title(menu, "ITEM IN HAND");
+    populate_item_in_hand_menu(local);
+}
+
+void populate_item_in_hand_menu(LocalPlayer *local)
+{
+    Menu *menu = &local->menu_item_in_hand;
+    for (int i=1; i<item_count; i++) {
+        menu_add(menu, (char *)item_names[i]);
+    }
+    local->menu_id_item_in_hand_cancel = menu_add(menu, "Cancel");
 }
 
 void populate_load_menu(LocalPlayer *local)
@@ -3568,6 +3585,9 @@ void handle_key_press(int keyboard_id, int mods, int keysym)
             open_menu(p, &p->menu);
         }
         break;
+    case XK_i: case XK_I:
+        open_menu(p, &p->menu_item_in_hand);
+        break;
     case XK_F1:
         set_mouse_absolute();
         break;
@@ -3913,6 +3933,13 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             g->mode_changed = 1;
             g->mode = MODE_OFFLINE;
             snprintf(g->db_path, MAX_PATH_LENGTH, "%s", game_path);
+            close_menu(local);
+        }
+    } else if (menu == &local->menu_item_in_hand) {
+        if (event == local->menu_id_item_in_hand_cancel) {
+            close_menu(local);
+        } else if (event > 0) {
+            local->item_index = event - 1;
             close_menu(local);
         }
     }
@@ -5006,6 +5033,7 @@ int main(int argc, char **argv) {
         menu_clear_items(&local->menu_options);
         menu_clear_items(&local->menu_new);
         menu_clear_items(&local->menu_load);
+        menu_clear_items(&local->menu_item_in_hand);
     }
 
     if (g->use_lua_worldgen == 1) {
