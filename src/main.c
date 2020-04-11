@@ -2823,10 +2823,11 @@ void set_block_under_crosshair(LocalPlayer *local)
 void set_item_in_hand_to_item_under_crosshair(LocalPlayer *local)
 {
     State *s = &local->player->state;
+    int i = 0;
     int hx, hy, hz;
     int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     if (hw > 0) {
-        for (int i = 0; i < item_count; i++) {
+        for (i = 0; i < item_count; i++) {
             if (items[i] == hw) {
                 local->item_index = i;
                 break;
@@ -2836,6 +2837,9 @@ void set_item_in_hand_to_item_under_crosshair(LocalPlayer *local)
             printf("%s selected: x: %d y: %d z: %d w: %d\n",
                    local->player->name, hx, hy, hz, hw);
         }
+    }
+    if (i == 0) {
+        open_menu(local, &local->menu_item_in_hand);
     }
 }
 
