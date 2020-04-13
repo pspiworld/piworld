@@ -45,6 +45,8 @@ MenuItem* menu_add_item(Menu *menu, char *name)
     MenuItem *item = &menu->items[menu->item_count];
     snprintf(item->name, MAX_TEXT_LENGTH, name);
     item->type = MENU_BUTTON;
+    item->text[0] = '\0';
+    item->text_cursor = 0;
     menu->item_count++;
     return item;
 }
@@ -87,6 +89,11 @@ int menu_add_line_edit(Menu *menu, char *label)
 char *menu_get_line_edit(Menu *menu, int i)
 {
     return menu->items[i - 1].text;
+}
+
+void menu_set_text(Menu *menu, int i, char *text)
+{
+    snprintf(menu->items[i - 1].text, MAX_TEXT_LENGTH, "%s", text);
 }
 
 char *menu_get_name(Menu *menu, int i)

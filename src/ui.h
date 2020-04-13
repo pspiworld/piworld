@@ -47,6 +47,7 @@ int menu_add(Menu *menu, char *item);
 int menu_add_option(Menu *menu, char *item);
 void menu_set_option(Menu *menu, int i, int value);
 int menu_get_option(Menu *menu, int i);
+void menu_set_text(Menu *menu, int i, char *text);
 int menu_add_line_edit(Menu *menu, char *label);
 char *menu_get_line_edit(Menu *menu, int i);
 char *menu_get_name(Menu *menu, int i);

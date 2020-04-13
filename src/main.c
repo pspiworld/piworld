@@ -195,6 +195,15 @@ typedef struct {
     int menu_id_load_cancel;
     Menu menu_item_in_hand;
     int menu_id_item_in_hand_cancel;
+    Menu menu_block_edit;
+    int menu_id_block_edit_resume;
+    int menu_id_texture;
+    int menu_id_sign_text;
+    int menu_id_light;
+    int menu_id_control_bit;
+    int edit_x, edit_y, edit_z, edit_face;
+    Menu menu_texture;
+    int menu_id_texture_cancel;
     Menu *active_menu;
 
     int view_x;
@@ -278,7 +287,9 @@ void cancel_player_inputs(LocalPlayer *p);
 void open_menu(LocalPlayer *local, Menu *menu);
 void close_menu(LocalPlayer *local);
 void handle_menu_event(LocalPlayer *local, Menu *menu, int event);
-void populate_item_in_hand_menu(LocalPlayer *local);
+void populate_texture_menu(Menu *menu);
+void populate_block_edit_menu(LocalPlayer *local, int w, char *sign_text,
+    int light, int extra);
 
 // returns 1 if limit applied, 0 if no limit applied
 int limit_player_count_to_fit_gpu_mem(void)
@@ -1925,7 +1936,7 @@ void toggle_light(int x, int y, int z) {
     }
 }
 
-void _set_light(int p, int q, int x, int y, int z, int w) {
+int _set_light(int p, int q, int x, int y, int z, int w) {
     Chunk *chunk = find_chunk(p, q);
     if (w < 0) {
         w = 0;
@@ -1943,10 +1954,11 @@ void _set_light(int p, int q, int x, int y, int z, int w) {
     else {
         db_insert_light(p, q, x, y, z, w);
     }
+    return w;
 }
 
 void set_light(int p, int q, int x, int y, int z, int w) {
-    _set_light(p, q, x, y, z, w);
+    w = _set_light(p, q, x, y, z, w);
     client_light(x, y, z, w);
 }
 
@@ -2838,8 +2850,35 @@ void set_item_in_hand_to_item_under_crosshair(LocalPlayer *local)
                    local->player->name, hx, hy, hz, hw);
         }
     }
-    if (i == 0) {
+}
+
+void open_menu_for_item_under_crosshair(LocalPlayer *local)
+{
+    State *s = &local->player->state;
+    int hx, hy, hz;
+    int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
+    if (hw == 0) {
         open_menu(local, &local->menu_item_in_hand);
+    } else {
+        int p, q, x, y, z, face;
+        char *sign_text;
+        int i = 0;
+        for (i = 0; i < item_count; i++) {
+            if (items[i] == hw) {
+                break;
+            }
+        }
+        hit_test_face(local->player, &x, &y, &z, &face);
+        p = chunked(x);
+        q = chunked(z);
+        sign_text = (char *)get_sign(p, q, x, y, z, face);
+        local->edit_x = x;
+        local->edit_y = y;
+        local->edit_z = z;
+        local->edit_face = face;
+        populate_block_edit_menu(local, i + 1, sign_text,
+                                 get_light(p, q, x, y, z), get_extra(x, y, z));
+        open_menu(local, &local->menu_block_edit);
     }
 }
 
@@ -3227,16 +3266,48 @@ void create_menus(LocalPlayer *local)
     // Item in hand menu
     menu = &local->menu_item_in_hand;
     menu_set_title(menu, "ITEM IN HAND");
-    populate_item_in_hand_menu(local);
+    populate_texture_menu(menu);
+    local->menu_id_item_in_hand_cancel = menu_add(menu, "Cancel");
+
+    // Block edit menu
+    menu = &local->menu_block_edit;
+    menu_set_title(menu, "EDIT BLOCK");
+
+    // Texture menu
+    menu = &local->menu_texture;
+    menu_set_title(menu, "TEXTURE");
+    populate_texture_menu(menu);
+    local->menu_id_texture_cancel = menu_add(menu, "Cancel");
 }
 
-void populate_item_in_hand_menu(LocalPlayer *local)
+void populate_block_edit_menu(LocalPlayer *local, int w, char *sign_text,
+    int light, int extra)
 {
-    Menu *menu = &local->menu_item_in_hand;
+    Menu *menu = &local->menu_block_edit;
+    menu_clear_items(menu);
+    char texture[MAX_TEXT_LENGTH];
+    snprintf(texture, MAX_TEXT_LENGTH, "Texture: %s", item_names[w]);
+    local->menu_id_texture = menu_add(menu, texture);
+    local->menu_id_sign_text = menu_add_line_edit(menu, "Sign Text");
+    if (sign_text) {
+        menu_set_text(menu, local->menu_id_sign_text, sign_text);
+    }
+    local->menu_id_light = menu_add_line_edit(menu, "Light (0-15)");
+    if (light) {
+        char light_text[MAX_TEXT_LENGTH];
+        snprintf(light_text, MAX_TEXT_LENGTH, "%d", light);
+        menu_set_text(menu, local->menu_id_light, light_text);
+    }
+    local->menu_id_control_bit = menu_add_option(menu, "Control Bit");
+    menu_set_option(menu, local->menu_id_control_bit, extra);
+    local->menu_id_block_edit_resume = menu_add(menu, "Resume");
+}
+
+void populate_texture_menu(Menu *menu)
+{
     for (int i=1; i<item_count; i++) {
         menu_add(menu, (char *)item_names[i]);
     }
-    local->menu_id_item_in_hand_cancel = menu_add(menu, "Cancel");
 }
 
 void populate_load_menu(LocalPlayer *local)
@@ -3946,6 +4017,30 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             local->item_index = event - 1;
             close_menu(local);
         }
+    } else if (menu == &local->menu_block_edit) {
+        if (event == local->menu_id_block_edit_resume) {
+            close_menu(local);
+        } else if (event == local->menu_id_texture) {
+            open_menu(local, &local->menu_texture);
+        } else if (event == local->menu_id_sign_text) {
+            set_sign(local->edit_x, local->edit_y, local->edit_z,
+                     local->edit_face, menu_get_line_edit(menu, event));
+        } else if (event == local->menu_id_light) {
+            int w = atoi(menu_get_line_edit(menu, event));
+            set_light(chunked(local->edit_x), chunked(local->edit_z),
+                      local->edit_x, local->edit_y, local->edit_z, w);
+        } else if (event == local->menu_id_control_bit) {
+            int cb = menu_get_option(menu, local->menu_id_control_bit);
+            set_extra(local->edit_x, local->edit_y, local->edit_z, cb);
+        }
+    } else if (menu == &local->menu_texture) {
+        if (event == local->menu_id_texture_cancel) {
+            close_menu(local);
+        } else if (event > 0) {
+            set_block(local->edit_x, local->edit_y, local->edit_z,
+                      items[event - 1]);
+            close_menu(local);
+        }
     }
 }
 
@@ -3972,7 +4067,7 @@ void handle_mouse_release(int mouse_id, int b)
             clear_block_under_crosshair(local);
         }
     } else if (b == 2) {
-        set_item_in_hand_to_item_under_crosshair(local);
+        open_menu_for_item_under_crosshair(local);
     } else if (b == 3) {
         if (mods & ControlMask) {
             on_light(local);
@@ -5038,6 +5133,8 @@ int main(int argc, char **argv) {
         menu_clear_items(&local->menu_new);
         menu_clear_items(&local->menu_load);
         menu_clear_items(&local->menu_item_in_hand);
+        menu_clear_items(&local->menu_block_edit);
+        menu_clear_items(&local->menu_texture);
     }
 
     if (g->use_lua_worldgen == 1) {
