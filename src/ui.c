@@ -14,6 +14,7 @@ void menu_clear_items(Menu *menu)
     }
     menu->item_count = 0;
     menu->allocated_item_count = 0;
+    menu->first_item_shown = 0;
 }
 
 void menu_set_title(Menu *menu, char *title)

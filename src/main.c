@@ -6,10 +6,12 @@
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
+#include <libgen.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include "client.h"
 #include "config.h"
@@ -182,6 +184,7 @@ typedef struct {
     int menu_id_load;
     int menu_id_exit;
     Menu menu_options;
+    int menu_id_script;
     int menu_id_crosshairs;
     int menu_id_fullscreen;
     int menu_id_verbose;
@@ -204,6 +207,12 @@ typedef struct {
     int edit_x, edit_y, edit_z, edit_face;
     Menu menu_texture;
     int menu_id_texture_cancel;
+    Menu menu_script;
+    int menu_id_script_cancel;
+    int menu_id_script_run;
+    Menu menu_script_run;
+    char menu_script_run_dir[MAX_DIR_LENGTH];
+    int menu_id_script_run_cancel;
     Menu *active_menu;
 
     int view_x;
@@ -3242,6 +3251,7 @@ void create_menus(LocalPlayer *local)
     // Options menu
     menu = &local->menu_options;
     menu_set_title(menu, "OPTIONS");
+    local->menu_id_script = menu_add(menu, "Script");
     local->menu_id_crosshairs = menu_add_option(menu, "Crosshairs");
     local->menu_id_fullscreen = menu_add_option(menu, "Fullscreen");
     local->menu_id_verbose = menu_add_option(menu, "Verbose");
@@ -3278,6 +3288,19 @@ void create_menus(LocalPlayer *local)
     menu_set_title(menu, "TEXTURE");
     populate_texture_menu(menu);
     local->menu_id_texture_cancel = menu_add(menu, "Cancel");
+
+    // Script menu
+    menu = &local->menu_script;
+    menu_set_title(menu, "SCRIPT");
+    local->menu_id_script_run = menu_add(menu, "Run");
+    local->menu_id_script_cancel = menu_add(menu, "Cancel");
+
+    // Run script menu
+    menu = &local->menu_script_run;
+    char *path = realpath(".", NULL);
+    snprintf(local->menu_script_run_dir, MAX_DIR_LENGTH, path);
+    free(path);
+    menu_set_title(menu, "RUN SCRIPT");
 }
 
 void populate_block_edit_menu(LocalPlayer *local, int w, char *sign_text,
@@ -3333,6 +3356,42 @@ void populate_load_menu(LocalPlayer *local)
     closedir(dir);
     menu_sort(menu);
     local->menu_id_load_cancel = menu_add(menu, "Cancel");
+}
+
+void populate_script_run_menu(LocalPlayer *local)
+{
+    Menu *menu = &local->menu_script_run;
+    menu_clear_items(menu);
+    menu_add(menu, "..");
+    DIR *dir = opendir(local->menu_script_run_dir);
+    struct dirent *dp;
+    for (;;) {
+        dp = readdir(dir);
+        if (dp == NULL) {
+            break;
+        }
+        if (dp->d_name[0] == '.') {
+            continue;  // ignore hidden files
+        }
+        char path[MAX_PATH_LENGTH];
+        snprintf(path, MAX_PATH_LENGTH, "%s/%s", local->menu_script_run_dir,
+                 dp->d_name);
+        struct stat sb;
+        stat(path, &sb);
+        if (S_ISDIR(sb.st_mode)) {
+            snprintf(path, MAX_PATH_LENGTH, "%s/", dp->d_name);
+        } else {
+            if (strlen(dp->d_name) <= 4 ||
+                strcmp(dp->d_name + (strlen(dp->d_name) - 4), ".lua") != 0) {
+                continue;
+            }
+            snprintf(path, MAX_PATH_LENGTH, "%s", dp->d_name);
+        }
+        menu_add(menu, path);
+    }
+    closedir(dir);
+    menu_sort(menu);
+    local->menu_id_script_run_cancel = menu_add(menu, "Cancel");
 }
 
 void reset_model(void) {
@@ -3956,6 +4015,8 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
     } else if (menu == &local->menu_options) {
         if (event == local->menu_id_options_resume) {
             close_menu(local);
+        } else if (event == local->menu_id_script) {
+            open_menu(local, &local->menu_script);
         } else if (event == local->menu_id_fullscreen) {
             pg_toggle_fullscreen();
         } else if (event == local->menu_id_crosshairs) {
@@ -4040,6 +4101,35 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             set_block(local->edit_x, local->edit_y, local->edit_z,
                       items[event - 1]);
             close_menu(local);
+        }
+    } else if (menu == &local->menu_script) {
+        if (event == local->menu_id_script_cancel) {
+            close_menu(local);
+        } else if (event == local->menu_id_script_run) {
+            populate_script_run_menu(local);
+            open_menu(local, &local->menu_script_run);
+        }
+    } else if (menu == &local->menu_script_run) {
+        if (event == local->menu_id_script_run_cancel) {
+            close_menu(local);
+        } else if (event > 0) {
+            char path[MAX_PATH_LENGTH];
+            struct stat sb;
+            snprintf(path, MAX_PATH_LENGTH, "%s/%s",
+                     local->menu_script_run_dir, menu_get_name(menu, event));
+            char *tmp = realpath(path, NULL);
+            snprintf(path, MAX_PATH_LENGTH, tmp);
+            free(tmp);
+            stat(path, &sb);
+            if (S_ISDIR(sb.st_mode)) {
+                snprintf(local->menu_script_run_dir, MAX_DIR_LENGTH, path);
+                populate_script_run_menu(local);
+                open_menu(local, &local->menu_script_run);
+                return;
+            }
+            char lua_code[LUA_MAXINPUT];
+            snprintf(lua_code, sizeof(lua_code), "$dofile(\"%s\")\n", path);
+            pwlua_parse_line(local->player->id, lua_code);
         }
     }
 }

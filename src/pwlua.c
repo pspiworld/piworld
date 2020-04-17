@@ -23,7 +23,6 @@
 #define STOPPED 2
 #define WAITING 3
 
-#define LUA_MAXINPUT 512
 #define LUA_MAX_CALLBACK_NAME 256
 
 /* mark in error messages for incomplete statements */
