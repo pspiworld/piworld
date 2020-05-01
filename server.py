@@ -61,6 +61,7 @@ POSITION = 'P'
 PQ = 'Q'
 REDRAW = 'R'
 REMOVE = 'X'
+SHAPE = 's'
 SIGN = 'S'
 SPAWN = 'W'
 TALK = 'T'
@@ -218,6 +219,7 @@ class Model(object):
             PQ: self.on_pq,
             REMOVE: self.on_remove,
             TALK: self.on_talk,
+            SHAPE: self.on_shape,
             SIGN: self.on_sign,
             SPAWN: self.on_spawn,
             VERSION: self.on_version,
@@ -306,6 +308,16 @@ class Model(object):
             ');',
             'create unique index if not exists light_pqxyz_idx on '
             '    light (p, q, x, y, z);',
+            'create table if not exists shape ('
+            '    p int not null,'
+            '    q int not null,'
+            '    x int not null,'
+            '    y int not null,'
+            '    z int not null,'
+            '    w int not null'
+            ');',
+            'create unique index if not exists shape_pqxyz_idx on '
+            '    shape (p, q, x, y, z);',
             'create table if not exists sign ('
             '    p int not null,'
             '    q int not null,'
@@ -445,6 +457,15 @@ class Model(object):
             lights += 1
             packets.append(packet(LIGHT, p, q, x, y, z, w))
         query = (
+            'select rowid, x, y, z, w from shape where '
+            'p = :p and q = :q and rowid > :key;'
+        )
+        rows = self.execute(query, dict(p=p, q=q, key=key))
+        shapes = 0
+        for rowid, x, y, z, w in rows:
+            shapes += 1
+            packets.append(packet(SHAPE, p, q, x, y, z, w))
+        query = (
             'select x, y, z, face, text from sign where '
             'p = :p and q = :q;'
         )
@@ -455,7 +476,7 @@ class Model(object):
             packets.append(packet(SIGN, p, q, x, y, z, face, text))
         if blocks:
             packets.append(packet(KEY, p, q, max_rowid))
-        if blocks or extras or lights or signs:
+        if blocks or extras or lights or shapes or signs:
             packets.append(packet(REDRAW, p, q))
         packets.append(packet(CHUNK, p, q))
         client.send_raw(''.join(packets))
@@ -521,6 +542,11 @@ class Model(object):
                 'x = :x and y = :y and z = :z;'
             )
             self.execute(query, dict(x=x, y=y, z=z))
+            query = (
+                'update shape set w = 0 where '
+                'x = :x and y = :y and z = :z;'
+            )
+            self.execute(query, dict(x=x, y=y, z=z))
     def on_extra(self, client, x, y, z, w):
         x, y, z, w = map(int, (x, y, z, w))
         p, q = chunked(x), chunked(z)
@@ -565,6 +591,28 @@ class Model(object):
         )
         self.execute(query, dict(p=p, q=q, x=x, y=y, z=z, w=w))
         self.send_light(client, p, q, x, y, z, w)
+    def on_shape(self, client, x, y, z, w):
+        x, y, z, w = map(int, (x, y, z, w))
+        p, q = chunked(x), chunked(z)
+        block = self.get_block(x, y, z)
+        message = None
+        if AUTH_REQUIRED and client.user_id is None:
+            message = 'Only logged in users are allowed to build.'
+        elif y <= 0 or y > 255:
+            message = 'Invalid block coordinates.'
+        elif block == 0:
+            message = 'Shape must be placed on a block.'
+        if message is not None:
+            # TODO: client.send(SHAPE, p, q, x, y, z, previous)
+            client.send(REDRAW, p, q)
+            client.send(TALK, message)
+            return
+        query = (
+            'insert or replace into shape (p, q, x, y, z, w) '
+            'values (:p, :q, :x, :y, :z, :w);'
+        )
+        self.execute(query, dict(p=p, q=q, x=x, y=y, z=z, w=w))
+        self.send_shape(client, p, q, x, y, z, w)
     def on_sign(self, client, x, y, z, face, *args):
         if AUTH_REQUIRED and client.user_id is None:
             client.send(TALK, 'Only logged in users are allowed to build.')
@@ -784,6 +832,12 @@ class Model(object):
             if other == client:
                 continue
             other.send(LIGHT, p, q, x, y, z, w)
+            other.send(REDRAW, p, q)
+    def send_shape(self, client, p, q, x, y, z, w):
+        for other in self.clients:
+            if other == client:
+                continue
+            other.send(SHAPE, p, q, x, y, z, w)
             other.send(REDRAW, p, q)
     def send_sign(self, client, p, q, x, y, z, face, text):
         for other in self.clients:

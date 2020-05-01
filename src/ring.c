@@ -77,6 +77,18 @@ void ring_put_extra(Ring *ring, int p, int q, int x, int y, int z, int w) {
     ring_put(ring, &entry);
 }
 
+void ring_put_shape(Ring *ring, int p, int q, int x, int y, int z, int w) {
+    RingEntry entry;
+    entry.type = SHAPE;
+    entry.p = p;
+    entry.q = q;
+    entry.x = x;
+    entry.y = y;
+    entry.z = z;
+    entry.w = w;
+    ring_put(ring, &entry);
+}
+
 void ring_put_light(Ring *ring, int p, int q, int x, int y, int z, int w) {
     RingEntry entry;
     entry.type = LIGHT;

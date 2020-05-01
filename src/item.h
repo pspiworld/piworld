@@ -57,11 +57,31 @@
 #define COLOR_30 62
 #define COLOR_31 63
 
+#define CUBE 0
+#define SLAB1 1
+#define SLAB2 2
+#define SLAB3 3
+#define SLAB4 4
+#define SLAB5 5
+#define SLAB6 6
+#define SLAB7 7
+#define SLAB8 8
+#define SLAB9 9
+#define SLAB10 10
+#define SLAB11 11
+#define SLAB12 12
+#define SLAB13 13
+#define SLAB14 14
+#define SLAB15 15
+
 extern const int items[];
 extern const int item_count;
 extern const char *item_names[];
 extern const int blocks[256][6];
 extern const int plants[256];
+extern const int shapes[];
+extern const int shape_count;
+extern const char *shape_names[];
 
 int is_plant(int w);
 int is_obstacle(int w);

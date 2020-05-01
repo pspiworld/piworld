@@ -84,6 +84,7 @@ typedef struct {
     Map map;
     Map extra;
     Map lights;
+    Map shape;
     SignList signs;
     int p;
     int q;
@@ -103,6 +104,7 @@ typedef struct {
     Map *block_maps[3][3];
     Map *extra_maps[3][3];
     Map *light_maps[3][3];
+    Map *shape_maps[3][3];
     int miny;
     int maxy;
     int faces;
@@ -204,9 +206,12 @@ typedef struct {
     int menu_id_sign_text;
     int menu_id_light;
     int menu_id_control_bit;
+    int menu_id_shape;
     int edit_x, edit_y, edit_z, edit_face;
     Menu menu_texture;
     int menu_id_texture_cancel;
+    Menu menu_shape;
+    int menu_id_shape_cancel;
     Menu menu_script;
     int menu_id_script_cancel;
     int menu_id_script_run;
@@ -292,13 +297,16 @@ LocalPlayer* player_for_keyboard(int keyboard_id);
 LocalPlayer* player_for_mouse(int mouse_id);
 LocalPlayer* player_for_joystick(int joystick_id);
 void _set_extra(int p, int q, int x, int y, int z, int w);
+void _set_shape(int p, int q, int x, int y, int z, int w, int dirty);
+int get_shape(int x, int y, int z);
 void cancel_player_inputs(LocalPlayer *p);
 void open_menu(LocalPlayer *local, Menu *menu);
 void close_menu(LocalPlayer *local);
 void handle_menu_event(LocalPlayer *local, Menu *menu, int event);
 void populate_texture_menu(Menu *menu);
+void populate_shape_menu(Menu *menu);
 void populate_block_edit_menu(LocalPlayer *local, int w, char *sign_text,
-    int light, int extra);
+    int light, int extra, int shape);
 
 // returns 1 if limit applied, 0 if no limit applied
 int limit_player_count_to_fit_gpu_mem(void)
@@ -1303,6 +1311,18 @@ void compute_chunk(WorkerItem *item) {
     int oy = -1;
     int oz = item->q * CHUNK_SIZE - CHUNK_SIZE - 1;
 
+    // check for shapes
+    Map *shape_map = item->shape_maps[1][1];
+    int has_shape = 0;
+    for (int a = 0; a < 3; a++) {
+        for (int b = 0; b < 3; b++) {
+            Map *map = item->shape_maps[a][b];
+            if (map && map->size) {
+                has_shape = 1;
+            }
+        }
+    }
+
     // check for lights
     int has_light = 0;
     if (config->show_lights) {
@@ -1323,6 +1343,9 @@ void compute_chunk(WorkerItem *item) {
             if (!map) {
                 continue;
             }
+            if (has_shape) {
+                shape_map = item->shape_maps[a][b];
+            }
             MAP_FOR_EACH(map, ex, ey, ez, ew) {
                 int x = ex - ox;
                 int y = ey - oy;
@@ -1337,6 +1360,9 @@ void compute_chunk(WorkerItem *item) {
                 }
                 // END TODO
                 opaque[XYZ(x, y, z)] = !is_transparent(w);
+                if (has_shape && shape_map && map_get(shape_map, ex, ey, ez)) {
+                    opaque[XYZ(x, y, z)] = 0;
+                }
                 if (opaque[XYZ(x, y, z)]) {
                     highest[XZ(x, z)] = MAX(highest[XZ(x, z)], y);
                 }
@@ -1363,6 +1389,9 @@ void compute_chunk(WorkerItem *item) {
     }
 
     Map *map = item->block_maps[1][1];
+    if (has_shape) {
+        shape_map = item->shape_maps[1][1];
+    }
 
     // count exposed faces
     int miny = 256;
@@ -1387,6 +1416,10 @@ void compute_chunk(WorkerItem *item) {
         }
         if (is_plant(ew)) {
             total = 4;
+        } else if (has_shape && shape_map && map_get(shape_map, ex, ey, ez)) {
+            // Top face of slab is viewable when a block is above the slab.
+            f3 = 1;
+            total = f1 + f2 + f3 + f4 + f5 + f6;
         }
         miny = MIN(miny, ey);
         maxy = MAX(maxy, ey);
@@ -1412,6 +1445,11 @@ void compute_chunk(WorkerItem *item) {
         int total = f1 + f2 + f3 + f4 + f5 + f6;
         if (total == 0) {
             continue;
+        }
+        if (has_shape && shape_map &&map_get(shape_map, ex, ey, ez)) {
+            // Top face of slab is viewable when a block is above the slab.
+            f3 = 1;
+            total = f1 + f2 + f3 + f4 + f5 + f6;
         }
         char neighbors[27] = {0};
         char lights[27] = {0};
@@ -1452,6 +1490,20 @@ void compute_chunk(WorkerItem *item) {
             make_plant(
                 data + offset, min_ao, max_light,
                 entry->e.x, entry->e.y, entry->e.z, 0.5, ew, rotation);
+        }
+        else if (has_shape && shape_map) {
+            int shape = map_get(shape_map, ex, ey, ez);
+            if (shape) {
+                make_slab(
+                    data + offset, ao, light,
+                    f1, f2, f3, f4, f5, f6,
+                    entry->e.x, entry->e.y, entry->e.z, 0.5, ew, shape);
+            } else {
+                make_cube(
+                    data + offset, ao, light,
+                    f1, f2, f3, f4, f5, f6,
+                    entry->e.x, entry->e.y, entry->e.z, 0.5, ew);
+            }
         }
         else {
             make_cube(
@@ -1505,11 +1557,13 @@ void gen_chunk_buffer(Chunk *chunk) {
                 item->block_maps[dp + 1][dq + 1] = &other->map;
                 item->extra_maps[dp + 1][dq + 1] = &other->extra;
                 item->light_maps[dp + 1][dq + 1] = &other->lights;
+                item->shape_maps[dp + 1][dq + 1] = &other->shape;
             }
             else {
                 item->block_maps[dp + 1][dq + 1] = 0;
                 item->extra_maps[dp + 1][dq + 1] = 0;
                 item->light_maps[dp + 1][dq + 1] = 0;
+                item->shape_maps[dp + 1][dq + 1] = 0;
             }
         }
     }
@@ -1529,6 +1583,7 @@ void load_chunk(WorkerItem *item, lua_State *L) {
     Map *block_map = item->block_maps[1][1];
     Map *extra_map = item->extra_maps[1][1];
     Map *light_map = item->light_maps[1][1];
+    Map *shape_map = item->shape_maps[1][1];
     if (g->use_lua_worldgen) {
         pwlua_worldgen(L, p, q, block_map);
     } else {
@@ -1537,6 +1592,7 @@ void load_chunk(WorkerItem *item, lua_State *L) {
     db_load_blocks(block_map, p, q);
     db_load_extras(extra_map, p, q);
     db_load_lights(light_map, p, q);
+    db_load_shapes(shape_map, p, q);
 }
 
 void request_chunk(int p, int q) {
@@ -1558,12 +1614,14 @@ void init_chunk(Chunk *chunk, int p, int q) {
     Map *block_map = &chunk->map;
     Map *extra_map = &chunk->extra;
     Map *light_map = &chunk->lights;
+    Map *shape_map = &chunk->shape;
     int dx = p * CHUNK_SIZE - 1;
     int dy = 0;
     int dz = q * CHUNK_SIZE - 1;
     map_alloc(block_map, dx, dy, dz, 0x3fff);
     map_alloc(extra_map, dx, dy, dz, 0xf);
     map_alloc(light_map, dx, dy, dz, 0xf);
+    map_alloc(shape_map, dx, dy, dz, 0xf);
 }
 
 void create_chunk(Chunk *chunk, int p, int q) {
@@ -1576,6 +1634,7 @@ void create_chunk(Chunk *chunk, int p, int q) {
     item->block_maps[1][1] = &chunk->map;
     item->extra_maps[1][1] = &chunk->extra;
     item->light_maps[1][1] = &chunk->lights;
+    item->shape_maps[1][1] = &chunk->shape;
     load_chunk(item, g->lua_worldgen);
 
     request_chunk(p, q);
@@ -1627,6 +1686,7 @@ void delete_chunks(void) {
             map_free(&chunk->map);
             map_free(&chunk->extra);
             map_free(&chunk->lights);
+            map_free(&chunk->shape);
             sign_list_free(&chunk->signs);
             del_buffer(chunk->buffer);
             del_buffer(chunk->sign_buffer);
@@ -1643,6 +1703,7 @@ void delete_all_chunks(void) {
         map_free(&chunk->map);
         map_free(&chunk->extra);
         map_free(&chunk->lights);
+        map_free(&chunk->shape);
         sign_list_free(&chunk->signs);
         del_buffer(chunk->buffer);
         del_buffer(chunk->sign_buffer);
@@ -1662,12 +1723,15 @@ void check_workers(void) {
                     Map *block_map = item->block_maps[1][1];
                     Map *extra_map = item->extra_maps[1][1];
                     Map *light_map = item->light_maps[1][1];
+                    Map *shape_map = item->shape_maps[1][1];
                     map_free(&chunk->map);
                     map_free(&chunk->extra);
                     map_free(&chunk->lights);
+                    map_free(&chunk->shape);
                     map_copy(&chunk->map, block_map);
                     map_copy(&chunk->extra, extra_map);
                     map_copy(&chunk->lights, light_map);
+                    map_copy(&chunk->shape, shape_map);
                     request_chunk(item->p, item->q);
                 }
                 generate_chunk(chunk, item);
@@ -1677,6 +1741,7 @@ void check_workers(void) {
                     Map *block_map = item->block_maps[a][b];
                     Map *extra_map = item->extra_maps[a][b];
                     Map *light_map = item->light_maps[a][b];
+                    Map *shape_map = item->shape_maps[a][b];
                     if (block_map) {
                         map_free(block_map);
                         free(block_map);
@@ -1688,6 +1753,10 @@ void check_workers(void) {
                     if (light_map) {
                         map_free(light_map);
                         free(light_map);
+                    }
+                    if (shape_map) {
+                        map_free(shape_map);
+                        free(shape_map);
                     }
                 }
             }
@@ -1798,14 +1867,18 @@ void ensure_chunks_worker(Player *player, Worker *worker) {
                 map_copy(extra_map, &other->extra);
                 Map *light_map = malloc(sizeof(Map));
                 map_copy(light_map, &other->lights);
+                Map *shape_map = malloc(sizeof(Map));
+                map_copy(shape_map, &other->shape);
                 item->block_maps[dp + 1][dq + 1] = block_map;
                 item->extra_maps[dp + 1][dq + 1] = extra_map;
                 item->light_maps[dp + 1][dq + 1] = light_map;
+                item->shape_maps[dp + 1][dq + 1] = shape_map;
             }
             else {
                 item->block_maps[dp + 1][dq + 1] = 0;
                 item->extra_maps[dp + 1][dq + 1] = 0;
                 item->light_maps[dp + 1][dq + 1] = 0;
+                item->shape_maps[dp + 1][dq + 1] = 0;
             }
         }
     }
@@ -2023,6 +2096,60 @@ int get_extra(int x, int y, int z) {
     return 0;
 }
 
+void set_shape(int x, int y, int z, int w) {
+    int p = chunked(x);
+    int q = chunked(z);
+    _set_shape(p, q, x, y, z, w, 1);
+    for (int dx = -1; dx <= 1; dx++) {
+        for (int dz = -1; dz <= 1; dz++) {
+            if (dx == 0 && dz == 0) {
+                continue;
+            }
+            if (dx && chunked(x + dx) == p) {
+                continue;
+            }
+            if (dz && chunked(z + dz) == q) {
+                continue;
+            }
+            _set_shape(p + dx, q + dz, x, y, z, -w, 1);
+        }
+    }
+    client_shape(x, y, z, w);
+}
+
+void _set_shape(int p, int q, int x, int y, int z, int w, int dirty) {
+    Chunk *chunk = find_chunk(p, q);
+    if (chunk) {
+        Map *map = &chunk->shape;
+        if (map_set(map, x, y, z, w)) {
+            if (dirty) {
+                dirty_chunk(chunk);
+            }
+            db_insert_shape(p, q, x, y, z, w);
+        }
+    }
+    else {
+        db_insert_shape(p, q, x, y, z, w);
+    }
+}
+
+int get_shape(int x, int y, int z) {
+    int p = chunked(x);
+    int q = chunked(z);
+    Chunk *chunk = find_chunk(p, q);
+    if (chunk) {
+        Map *map = &chunk->shape;
+        return map_get(map, x, y, z);
+    } else {
+        // TODO: support server
+        if (g->chunk_count < MAX_CHUNKS) {
+            chunk = g->chunks + g->chunk_count++;
+            create_chunk(chunk, p, q);
+            return map_get(&chunk->shape, x, y, z);
+        }
+    }
+    return 0;
+}
 void _set_block(int p, int q, int x, int y, int z, int w, int dirty) {
     Chunk *chunk = find_chunk(p, q);
     if (chunk) {
@@ -2041,6 +2168,7 @@ void _set_block(int p, int q, int x, int y, int z, int w, int dirty) {
         unset_sign(x, y, z);
         _set_light(p, q, x, y, z, 0);
         _set_extra(p, q, x, y, z, 0);
+        _set_shape(p, q, x, y, z, 0, 1);
     }
 }
 
@@ -2886,7 +3014,8 @@ void open_menu_for_item_under_crosshair(LocalPlayer *local)
         local->edit_z = z;
         local->edit_face = face;
         populate_block_edit_menu(local, i + 1, sign_text,
-                                 get_light(p, q, x, y, z), get_extra(x, y, z));
+                                 get_light(p, q, x, y, z), get_extra(x, y, z),
+                                 get_shape(x, y, z));
         open_menu(local, &local->menu_block_edit);
     }
 }
@@ -3132,6 +3261,12 @@ void parse_buffer(char *buffer) {
             _set_extra(bp, bq, bx, by, bz, bw);
             goto next_line;
         }
+        if (sscanf(line, "s,%d,%d,%d,%d,%d,%d",
+            &bp, &bq, &bx, &by, &bz, &bw) == 6)
+        {
+            _set_shape(bp, bq, bx, by, bz, bw, 0);
+            goto next_line;
+        }
         if (sscanf(line, "L,%d,%d,%d,%d,%d,%d",
             &bp, &bq, &bx, &by, &bz, &bw) == 6)
         {
@@ -3289,6 +3424,12 @@ void create_menus(LocalPlayer *local)
     populate_texture_menu(menu);
     local->menu_id_texture_cancel = menu_add(menu, "Cancel");
 
+    // Shape menu
+    menu = &local->menu_shape;
+    menu_set_title(menu, "SHAPE");
+    populate_shape_menu(menu);
+    local->menu_id_shape_cancel = menu_add(menu, "Cancel");
+
     // Script menu
     menu = &local->menu_script;
     menu_set_title(menu, "SCRIPT");
@@ -3304,13 +3445,13 @@ void create_menus(LocalPlayer *local)
 }
 
 void populate_block_edit_menu(LocalPlayer *local, int w, char *sign_text,
-    int light, int extra)
+    int light, int extra, int shape)
 {
     Menu *menu = &local->menu_block_edit;
     menu_clear_items(menu);
-    char texture[MAX_TEXT_LENGTH];
-    snprintf(texture, MAX_TEXT_LENGTH, "Texture: %s", item_names[w - 1]);
-    local->menu_id_texture = menu_add(menu, texture);
+    char text[MAX_TEXT_LENGTH];
+    snprintf(text, MAX_TEXT_LENGTH, "Texture: %s", item_names[w - 1]);
+    local->menu_id_texture = menu_add(menu, text);
     local->menu_id_sign_text = menu_add_line_edit(menu, "Sign Text");
     if (sign_text) {
         menu_set_text(menu, local->menu_id_sign_text, sign_text);
@@ -3321,6 +3462,8 @@ void populate_block_edit_menu(LocalPlayer *local, int w, char *sign_text,
         snprintf(light_text, MAX_TEXT_LENGTH, "%d", light);
         menu_set_text(menu, local->menu_id_light, light_text);
     }
+    snprintf(text, MAX_TEXT_LENGTH, "Shape: %s", shape_names[shape]);
+    local->menu_id_shape = menu_add(menu, text);
     local->menu_id_control_bit = menu_add_option(menu, "Control Bit");
     menu_set_option(menu, local->menu_id_control_bit, extra);
     local->menu_id_block_edit_resume = menu_add(menu, "Resume");
@@ -3330,6 +3473,13 @@ void populate_texture_menu(Menu *menu)
 {
     for (int i=0; i<item_count; i++) {
         menu_add(menu, (char *)item_names[i]);
+    }
+}
+
+void populate_shape_menu(Menu *menu)
+{
+    for (int i=0; i<shape_count; i++) {
+        menu_add(menu, (char *)shape_names[i]);
     }
 }
 
@@ -4083,6 +4233,8 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             close_menu(local);
         } else if (event == local->menu_id_texture) {
             open_menu(local, &local->menu_texture);
+        } else if (event == local->menu_id_shape) {
+            open_menu(local, &local->menu_shape);
         } else if (event == local->menu_id_sign_text) {
             set_sign(local->edit_x, local->edit_y, local->edit_z,
                      local->edit_face, menu_get_line_edit(menu, event));
@@ -4100,6 +4252,14 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
         } else if (event > 0) {
             set_block(local->edit_x, local->edit_y, local->edit_z,
                       items[event - 1]);
+            close_menu(local);
+        }
+    } else if (menu == &local->menu_shape) {
+        if (event == local->menu_id_shape_cancel) {
+            close_menu(local);
+        } else if (event > 0) {
+            set_shape(local->edit_x, local->edit_y, local->edit_z,
+                      shapes[event - 1]);
             close_menu(local);
         }
     } else if (menu == &local->menu_script) {
@@ -5225,6 +5385,9 @@ int main(int argc, char **argv) {
         menu_clear_items(&local->menu_item_in_hand);
         menu_clear_items(&local->menu_block_edit);
         menu_clear_items(&local->menu_texture);
+        menu_clear_items(&local->menu_shape);
+        menu_clear_items(&local->menu_script);
+        menu_clear_items(&local->menu_script_run);
     }
 
     if (g->use_lua_worldgen == 1) {

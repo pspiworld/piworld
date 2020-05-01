@@ -3,6 +3,7 @@
 typedef enum {
     BLOCK,
     EXTRA,
+    SHAPE,
     LIGHT,
     KEY,
     COMMIT,
@@ -36,6 +37,7 @@ void ring_grow(Ring *ring);
 void ring_put(Ring *ring, RingEntry *entry);
 void ring_put_block(Ring *ring, int p, int q, int x, int y, int z, int w);
 void ring_put_extra(Ring *ring, int p, int q, int x, int y, int z, int w);
+void ring_put_shape(Ring *ring, int p, int q, int x, int y, int z, int w);
 void ring_put_light(Ring *ring, int p, int q, int x, int y, int z, int w);
 void ring_put_key(Ring *ring, int p, int q, int key);
 void ring_put_commit(Ring *ring);

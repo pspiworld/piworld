@@ -198,6 +198,46 @@ const int plants[256] = {
     54, // 23 - blue flower
 };
 
+const int shapes[] = {
+    CUBE,
+    SLAB1,
+    SLAB2,
+    SLAB3,
+    SLAB4,
+    SLAB5,
+    SLAB6,
+    SLAB7,
+    SLAB8,
+    SLAB9,
+    SLAB10,
+    SLAB11,
+    SLAB12,
+    SLAB13,
+    SLAB14,
+    SLAB15,
+};
+
+const int shape_count = sizeof(shapes) / sizeof(int);
+
+const char *shape_names[] = {
+    "Cube",
+    "Slab 1",
+    "Slab 2",
+    "Slab 3",
+    "Slab 4",
+    "Slab 5",
+    "Slab 6",
+    "Slab 7",
+    "Slab 8",
+    "Slab 9",
+    "Slab 10",
+    "Slab 11",
+    "Slab 12",
+    "Slab 13",
+    "Slab 14",
+    "Slab 15",
+};
+
 int is_plant(int w) {
     switch (w) {
         case TALL_GRASS:

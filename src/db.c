@@ -12,12 +12,14 @@ static sqlite3 *db;
 static sqlite3_stmt *insert_block_stmt;
 static sqlite3_stmt *insert_extra_stmt;
 static sqlite3_stmt *insert_light_stmt;
+static sqlite3_stmt *insert_shape_stmt;
 static sqlite3_stmt *insert_sign_stmt;
 static sqlite3_stmt *delete_sign_stmt;
 static sqlite3_stmt *delete_signs_stmt;
 static sqlite3_stmt *load_blocks_stmt;
 static sqlite3_stmt *load_extras_stmt;
 static sqlite3_stmt *load_lights_stmt;
+static sqlite3_stmt *load_shapes_stmt;
 static sqlite3_stmt *load_signs_stmt;
 static sqlite3_stmt *get_sign_stmt;
 static sqlite3_stmt *get_light_stmt;
@@ -91,6 +93,14 @@ int db_init(char *path) {
         "    q int not null,"
         "    key int not null"
         ");"
+        "create table if not exists shape ("
+        "    p int not null,"
+        "    q int not null,"
+        "    x int not null,"
+        "    y int not null,"
+        "    z int not null,"
+        "    w int not null"
+        ");"
         "create table if not exists sign ("
         "    p int not null,"
         "    q int not null,"
@@ -109,6 +119,7 @@ int db_init(char *path) {
         "create unique index if not exists light_pqxyz_idx on light (p, q, x, y, z);"
         "create unique index if not exists key_pq_idx on key (p, q);"
         "create unique index if not exists option_idx on option (name);"
+        "create unique index if not exists shape_pqxyz_idx on shape (p, q, x, y, z);"
         "create unique index if not exists sign_xyzface_idx on sign (x, y, z, face);"
         "create index if not exists sign_pq_idx on sign (p, q);";
     static const char *insert_block_query =
@@ -119,6 +130,9 @@ int db_init(char *path) {
         "values (?, ?, ?, ?, ?, ?);";
     static const char *insert_light_query =
         "insert or replace into light (p, q, x, y, z, w) "
+        "values (?, ?, ?, ?, ?, ?);";
+    static const char *insert_shape_query =
+        "insert or replace into shape (p, q, x, y, z, w) "
         "values (?, ?, ?, ?, ?, ?);";
     static const char *insert_sign_query =
         "insert or replace into sign (p, q, x, y, z, face, text) "
@@ -133,6 +147,8 @@ int db_init(char *path) {
         "select x, y, z, w from extra where p = ? and q = ?;";
     static const char *load_lights_query =
         "select x, y, z, w from light where p = ? and q = ?;";
+    static const char *load_shapes_query =
+        "select x, y, z, w from shape where p = ? and q = ?;";
     static const char *load_signs_query =
         "select x, y, z, face, text from sign where p = ? and q = ?;";
     static const char *get_sign_query =
@@ -164,6 +180,9 @@ int db_init(char *path) {
         db, insert_light_query, -1, &insert_light_stmt, NULL);
     if (rc) return rc;
     rc = sqlite3_prepare_v2(
+        db, insert_shape_query, -1, &insert_shape_stmt, NULL);
+    if (rc) return rc;
+    rc = sqlite3_prepare_v2(
         db, insert_sign_query, -1, &insert_sign_stmt, NULL);
     if (rc) return rc;
     rc = sqlite3_prepare_v2(
@@ -177,6 +196,8 @@ int db_init(char *path) {
     rc = sqlite3_prepare_v2(db, load_extras_query, -1, &load_extras_stmt, NULL);
     if (rc) return rc;
     rc = sqlite3_prepare_v2(db, load_lights_query, -1, &load_lights_stmt, NULL);
+    if (rc) return rc;
+    rc = sqlite3_prepare_v2(db, load_shapes_query, -1, &load_shapes_stmt, NULL);
     if (rc) return rc;
     rc = sqlite3_prepare_v2(db, load_signs_query, -1, &load_signs_stmt, NULL);
     if (rc) return rc;
@@ -206,12 +227,14 @@ void db_close(void) {
     sqlite3_finalize(insert_block_stmt);
     sqlite3_finalize(insert_extra_stmt);
     sqlite3_finalize(insert_light_stmt);
+    sqlite3_finalize(insert_shape_stmt);
     sqlite3_finalize(insert_sign_stmt);
     sqlite3_finalize(delete_sign_stmt);
     sqlite3_finalize(delete_signs_stmt);
     sqlite3_finalize(load_blocks_stmt);
     sqlite3_finalize(load_extras_stmt);
     sqlite3_finalize(load_lights_stmt);
+    sqlite3_finalize(load_shapes_stmt);
     sqlite3_finalize(load_signs_stmt);
     sqlite3_finalize(get_sign_stmt);
     sqlite3_finalize(get_light_stmt);
@@ -407,6 +430,27 @@ int db_get_light(int p, int q, int x, int y, int z) {
     return 0;
 }
 
+void db_insert_shape(int p, int q, int x, int y, int z, int w) {
+    if (!db_enabled) {
+        return;
+    }
+    mtx_lock(&mtx);
+    ring_put_shape(&ring, p, q, x, y, z, w);
+    cnd_signal(&cnd);
+    mtx_unlock(&mtx);
+}
+
+void _db_insert_shape(int p, int q, int x, int y, int z, int w) {
+    sqlite3_reset(insert_shape_stmt);
+    sqlite3_bind_int(insert_shape_stmt, 1, p);
+    sqlite3_bind_int(insert_shape_stmt, 2, q);
+    sqlite3_bind_int(insert_shape_stmt, 3, x);
+    sqlite3_bind_int(insert_shape_stmt, 4, y);
+    sqlite3_bind_int(insert_shape_stmt, 5, z);
+    sqlite3_bind_int(insert_shape_stmt, 6, w);
+    sqlite3_step(insert_shape_stmt);
+}
+
 void db_insert_sign(
     int p, int q, int x, int y, int z, int face, const char *text)
 {
@@ -503,6 +547,24 @@ void db_load_lights(Map *map, int p, int q) {
         int y = sqlite3_column_int(load_lights_stmt, 1);
         int z = sqlite3_column_int(load_lights_stmt, 2);
         int w = sqlite3_column_int(load_lights_stmt, 3);
+        map_set(map, x, y, z, w);
+    }
+    mtx_unlock(&load_mtx);
+}
+
+void db_load_shapes(Map *map, int p, int q) {
+    if (!db_enabled) {
+        return;
+    }
+    mtx_lock(&load_mtx);
+    sqlite3_reset(load_shapes_stmt);
+    sqlite3_bind_int(load_shapes_stmt, 1, p);
+    sqlite3_bind_int(load_shapes_stmt, 2, q);
+    while (sqlite3_step(load_shapes_stmt) == SQLITE_ROW) {
+        int x = sqlite3_column_int(load_shapes_stmt, 0);
+        int y = sqlite3_column_int(load_shapes_stmt, 1);
+        int z = sqlite3_column_int(load_shapes_stmt, 2);
+        int w = sqlite3_column_int(load_shapes_stmt, 3);
         map_set(map, x, y, z, w);
     }
     mtx_unlock(&load_mtx);
@@ -637,6 +699,9 @@ int db_worker_run(__attribute__((unused)) void *arg) {
                 break;
             case EXTRA:
                 _db_insert_extra(e.p, e.q, e.x, e.y, e.z, e.w);
+                break;
+            case SHAPE:
+                _db_insert_shape(e.p, e.q, e.x, e.y, e.z, e.w);
                 break;
             case LIGHT:
                 _db_insert_light(e.p, e.q, e.x, e.y, e.z, e.w);

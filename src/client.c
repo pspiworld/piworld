@@ -177,6 +177,15 @@ void client_light(int x, int y, int z, int w) {
     client_send(buffer);
 }
 
+void client_shape(int x, int y, int z, int w) {
+    if (!client_enabled) {
+        return;
+    }
+    char buffer[1024];
+    snprintf(buffer, 1024, "s,%d,%d,%d,%d\n", x, y, z, w);
+    client_send(buffer);
+}
+
 void client_sign(int x, int y, int z, int face, const char *text) {
     if (!client_enabled) {
         return;

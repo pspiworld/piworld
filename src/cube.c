@@ -1,4 +1,5 @@
 #include <math.h>
+#include <stdio.h>
 #include "cube.h"
 #include "item.h"
 #include "matrix.h"
@@ -155,6 +156,127 @@ void make_plant(
     mat_translate(mb, px, py, pz);
     mat_multiply(ma, mb, ma);
     mat_apply(data, ma, 24, 0, 10);
+}
+
+void make_slab_faces(
+    float *data, float ao[6][4], float light[6][4],
+    int left, int right, int top, int bottom, int front, int back,
+    int wleft, int wright, int wtop, int wbottom, int wfront, int wback,
+    float x, float y, float z, float n, int slab)
+{
+    static const float positions[6][4][3] = {
+        {{-1, -1, -1}, {-1, -1, +1}, {-1,  0, -1}, {-1,  0, +1}},  // left
+        {{+1, -1, -1}, {+1, -1, +1}, {+1,  0, -1}, {+1,  0, +1}},  // right
+        {{-1,  0, -1}, {-1,  0, +1}, {+1,  0, -1}, {+1,  0, +1}},  // top
+        {{-1, -1, -1}, {-1, -1, +1}, {+1, -1, -1}, {+1, -1, +1}},  // bottom
+        {{-1, -1, -1}, {-1,  0, -1}, {+1, -1, -1}, {+1,  0, -1}},  // front
+        {{-1, -1, +1}, {-1,  0, +1}, {+1, -1, +1}, {+1,  0, +1}}   // back
+    };
+    static const float normals[6][3] = {
+        {-1, 0, 0},
+        {+1, 0, 0},
+        {0, +1, 0},
+        {0, -1, 0},
+        {0, 0, -1},
+        {0, 0, +1}
+    };
+    static const float uvs[6][4][2] =
+    {
+        {{0, 0}, {1, 0}, {0, 2}, {1, 2}},
+        {{1, 0}, {0, 0}, {1, 2}, {0, 2}},
+        {{0, 1}, {0, 0}, {1, 1}, {1, 0}},
+        {{0, 0}, {0, 1}, {1, 0}, {1, 1}},
+        {{0, 0}, {0, 2}, {1, 0}, {1, 2}},
+        {{1, 0}, {1, 2}, {0, 0}, {0, 2}}
+    };
+    static const float indices[6][6] = {
+        {0, 3, 2, 0, 1, 3},
+        {0, 3, 1, 0, 2, 3},
+        {0, 3, 2, 0, 1, 3},
+        {0, 3, 1, 0, 2, 3},
+        {0, 3, 2, 0, 1, 3},
+        {0, 3, 1, 0, 2, 3}
+    };
+    static const float flipped[6][6] = {
+        {0, 1, 2, 1, 3, 2},
+        {0, 2, 1, 2, 3, 1},
+        {0, 1, 2, 1, 3, 2},
+        {0, 2, 1, 2, 3, 1},
+        {0, 1, 2, 1, 3, 2},
+        {0, 2, 1, 2, 3, 1}
+    };
+    static const float height_offset_sixteenths[15] = {
+        -0.875, -0.75, -0.625, -0.5, -0.375, -0.25, -0.125,
+        0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875
+    };
+    static const float texture_offsets[15] = {
+        120, 112, 104, 96, 88, 80, 72, 64, 56, 48, 40, 32, 24, 16, 8
+    };
+    float height = height_offset_sixteenths[slab - SLAB1];
+    float texture_offset = texture_offsets[slab - SLAB1];
+    float *d = data;
+    float s = 0.0625;
+    float a = 0 + 1 / 2048.0;
+    float b = s - 1 / 2048.0;
+    int faces[6] = {left, right, top, bottom, front, back};
+    int tiles[6] = {wleft, wright, wtop, wbottom, wfront, wback};
+    for (int i = 0; i < 6; i++) {
+        if (faces[i] == 0) {
+            continue;
+        }
+        float du = (tiles[i] % 16) * s;
+        float dv = (tiles[i] / 16) * s;
+        int flip = ao[i][0] + ao[i][3] > ao[i][1] + ao[i][2];
+        for (int v = 0; v < 6; v++) {
+            int j = flip ? flipped[i][v] : indices[i][v];
+            *(d++) = x + n * positions[i][j][0];
+            if (i == 0 && (j == 2 || j == 3)) { // left, slab top
+                *(d++) = y + n * height;
+            } else if (i == 1 && (j == 2 || j == 3)) { // right, slab top
+                *(d++) = y + n * height;
+            } else if (i == 2) { // top, slab top
+                *(d++) = y + n * height;
+            } else if (i == 4 && (j == 1 || j == 3)) { // front, slab top
+                *(d++) = y + n * height;
+            } else if (i == 5 && (j == 1 || j == 3)) { // back, slab top
+                *(d++) = y + n * height;
+            } else {  // all other y positions
+                *(d++) = y + n * positions[i][j][1];
+            }
+            *(d++) = z + n * positions[i][j][2];
+            *(d++) = normals[i][0];
+            *(d++) = normals[i][1];
+            *(d++) = normals[i][2];
+            *(d++) = du + (uvs[i][j][0] ? b : a);
+            if (uvs[i][j][1] == 1) {
+                *(d++) = dv + b;
+            } else if (uvs[i][j][1] == 0) {
+                *(d++) = dv + a;
+            } else if (uvs[i][j][1] == 2) {
+                *(d++) = dv + b - (a*texture_offset);
+            }
+            *(d++) = ao[i][j];
+            *(d++) = light[i][j];
+        }
+    }
+}
+
+void make_slab(
+    float *data, float ao[6][4], float light[6][4],
+    int left, int right, int top, int bottom, int front, int back,
+    float x, float y, float z, float n, int w, int shape)
+{
+    int wleft = blocks[w][0];
+    int wright = blocks[w][1];
+    int wtop = blocks[w][2];
+    int wbottom = blocks[w][3];
+    int wfront = blocks[w][4];
+    int wback = blocks[w][5];
+    make_slab_faces(
+        data, ao, light,
+        left, right, top, bottom, front, back,
+        wleft, wright, wtop, wbottom, wfront, wback,
+        x, y, z, n, shape);
 }
 
 void make_player(
