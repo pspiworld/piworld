@@ -3309,7 +3309,7 @@ void populate_block_edit_menu(LocalPlayer *local, int w, char *sign_text,
     Menu *menu = &local->menu_block_edit;
     menu_clear_items(menu);
     char texture[MAX_TEXT_LENGTH];
-    snprintf(texture, MAX_TEXT_LENGTH, "Texture: %s", item_names[w]);
+    snprintf(texture, MAX_TEXT_LENGTH, "Texture: %s", item_names[w - 1]);
     local->menu_id_texture = menu_add(menu, texture);
     local->menu_id_sign_text = menu_add_line_edit(menu, "Sign Text");
     if (sign_text) {
@@ -3328,7 +3328,7 @@ void populate_block_edit_menu(LocalPlayer *local, int w, char *sign_text,
 
 void populate_texture_menu(Menu *menu)
 {
-    for (int i=1; i<item_count; i++) {
+    for (int i=0; i<item_count; i++) {
         menu_add(menu, (char *)item_names[i]);
     }
 }

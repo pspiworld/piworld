@@ -62,7 +62,6 @@ const int items[] = {
 const int item_count = sizeof(items) / sizeof(int);
 
 const char *item_names[] = {
-    "Empty",
     "Grass",
     "Sand",
     "Stone",
