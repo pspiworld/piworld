@@ -88,3 +88,5 @@ int is_obstacle(int w);
 int is_transparent(int w);
 int is_destructable(int w);
 
+float item_height(int shape);
+

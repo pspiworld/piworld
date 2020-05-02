@@ -1073,6 +1073,17 @@ int _gen_sign_buffer(
     if (face < 0 || face >= 8) {
         return 0;
     }
+
+    // Align sign to the item shape
+    int shape = get_shape(x, y, z);
+    float y_face_height = item_height(shape);
+    float face_height_offset = 0;
+    if (face >= 0 && face <= 3) { // side faces
+        face_height_offset = 0.5 - (y_face_height / 2);
+    } else if (face >= 4 && face <= 7) { // top faces
+        face_height_offset = 1 - y_face_height;
+    }
+
     float font_scaling = 1.0;
     float r = 0.0, g = 0.0, b = 0.0;
     if (strlen(text) > 2 && text[0] == '\\' &&
@@ -1092,7 +1103,8 @@ int _gen_sign_buffer(
     int ldz = line_dz[face];
     float n = 1.0 / (max_width / 10);
     float sx = x - n * (rows - 1) * (line_height / 2) * ldx;
-    float sy = y - n * (rows - 1) * (line_height / 2) * ldy;
+    float sy = y - n * (rows - 1) * (line_height / 2) * ldy -
+               face_height_offset;
     float sz = z - n * (rows - 1) * (line_height / 2) * ldz;
     char *key;
     char *line = tokenize(lines, "\n", &key);
@@ -2150,6 +2162,7 @@ int get_shape(int x, int y, int z) {
     }
     return 0;
 }
+
 void _set_block(int p, int q, int x, int y, int z, int w, int dirty) {
     Chunk *chunk = find_chunk(p, q);
     if (chunk) {
