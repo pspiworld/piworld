@@ -975,7 +975,8 @@ int hit_test_face(Player *player, int *x, int *y, int *z, int *face) {
     return 0;
 }
 
-int collide(int height, float *x, float *y, float *z) {
+int collide(int height, float *x, float *y, float *z, float *ydiff) {
+    #define AUTO_JUMP_LIMIT 0.5
     int result = 0;
     int p = chunked(*x);
     int q = chunked(*z);
@@ -984,6 +985,7 @@ int collide(int height, float *x, float *y, float *z) {
         return result;
     }
     Map *map = &chunk->map;
+    Map *shape_map = &chunk->shape;
     int nx = roundf(*x);
     int ny = roundf(*y);
     int nz = roundf(*z);
@@ -991,26 +993,53 @@ int collide(int height, float *x, float *y, float *z) {
     float py = *y - ny;
     float pz = *z - nz;
     float pad = 0.25;
+    uint8_t coll_ok = 1;
+    uint8_t need_jump = 0;
     for (int dy = 0; dy < height; dy++) {
         if (px < -pad && is_obstacle(map_get(map, nx - 1, ny - dy, nz))) {
             *x = nx - pad;
+            if (dy == 0) {
+                coll_ok = 0;
+            } else if (coll_ok &&
+                       item_height(map_get(shape_map, nx - 1, ny - dy, nz)) <= AUTO_JUMP_LIMIT) {
+                need_jump = 1;
+            }
         }
         if (px > pad && is_obstacle(map_get(map, nx + 1, ny - dy, nz))) {
             *x = nx + pad;
+            if (dy == 0) {
+                coll_ok = 0;
+            } else if (coll_ok &&
+                       item_height(map_get(shape_map, nx + 1, ny - dy, nz)) <= AUTO_JUMP_LIMIT) {
+                need_jump = 1;
+            }
         }
         if (py < -pad && is_obstacle(map_get(map, nx, ny - dy - 1, nz))) {
             *y = ny - pad;
             result = 1;
         }
         if (py > pad && is_obstacle(map_get(map, nx, ny - dy + 1, nz))) {
+            // reached when player jumps and hits their head on block above
             *y = ny + pad;
             result = 1;
         }
         if (pz < -pad && is_obstacle(map_get(map, nx, ny - dy, nz - 1))) {
             *z = nz - pad;
+            if (dy == 0) {
+                coll_ok = 0;
+            } else if (coll_ok &&
+                       item_height(map_get(shape_map, nx, ny - dy, nz - 1)) <= AUTO_JUMP_LIMIT) {
+                need_jump = 1;
+            }
         }
         if (pz > pad && is_obstacle(map_get(map, nx, ny - dy, nz + 1))) {
             *z = nz + pad;
+            if (dy == 0) {
+                coll_ok = 0;
+            } else if (coll_ok &&
+                       item_height(map_get(shape_map, nx, ny - dy, nz + 1)) <= AUTO_JUMP_LIMIT) {
+                need_jump = 1;
+            }
         }
 
         // check the 4 diagonally neighboring blocks for obstacle as well
@@ -1042,6 +1071,12 @@ int collide(int height, float *x, float *y, float *z) {
                 *z = nz - pad;
             }
         }
+    }
+    /* If there's no block at head height, a block at foot height, and
+       standing on firm ground, then autojump */
+    if (need_jump && result == 1) {
+        *ydiff = 8;
+        result = 0;
     }
     return result;
 }
@@ -3190,7 +3225,7 @@ void handle_movement(double dt, LocalPlayer *local) {
         if (local->crouch_is_pressed || stay_in_crouch) {
             player_min_height = player_couching_height;
         }
-        if (collide(player_min_height, &s->x, &s->y, &s->z)) {
+        if (collide(player_min_height, &s->x, &s->y, &s->z, &local->dy)) {
             local->dy = 0;
         }
     }

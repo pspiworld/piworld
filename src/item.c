@@ -297,6 +297,7 @@ int is_destructable(int w) {
 
 float item_height(int shape) {
     float height = 1.0;
+    shape = ABS(shape);
     if (shape >= SLAB1 && shape <= SLAB15) {
         height = 1.0 / (16.0 / shape);
     }
