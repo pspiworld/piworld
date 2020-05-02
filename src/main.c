@@ -459,9 +459,9 @@ GLuint gen_crosshair_buffer(void) {
     return gen_buffer(sizeof(data), data);
 }
 
-GLuint gen_wireframe_buffer(float x, float y, float z, float n) {
+GLuint gen_wireframe_buffer(float x, float y, float z, float n, float height) {
     float data[72];
-    make_cube_wireframe(data, x, y, z, n);
+    make_cube_wireframe(data, x, y, z, n, height);
     return gen_buffer(sizeof(data), data);
 }
 
@@ -2396,7 +2396,9 @@ void render_wireframe(Attrib *attrib, Player *player) {
         } else {
             glUniform4fv(attrib->extra1, 1, BLACK);
         }
-        GLuint wireframe_buffer = gen_wireframe_buffer(hx, hy, hz, 0.53);
+        int shape = get_shape(hx, hy, hz);
+        float h = item_height(shape) - 0.97;
+        GLuint wireframe_buffer = gen_wireframe_buffer(hx, hy, hz, 0.53, h);
         draw_lines(attrib, wireframe_buffer, 3, 24);
         del_buffer(wireframe_buffer);
     }

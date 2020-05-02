@@ -310,7 +310,8 @@ void make_player(
     mat_apply(data, ma, 36, 0, 10);
 }
 
-void make_cube_wireframe(float *data, float x, float y, float z, float n) {
+void make_cube_wireframe(float *data, float x, float y, float z, float n,
+                         float height) {
     static const float positions[8][3] = {
         {-1, -1, -1},
         {-1, -1, +1},
@@ -330,7 +331,11 @@ void make_cube_wireframe(float *data, float x, float y, float z, float n) {
     for (int i = 0; i < 24; i++) {
         int j = indices[i];
         *(d++) = x + n * positions[j][0];
-        *(d++) = y + n * positions[j][1];
+        if (j == 2 || j == 3 || j == 6 || j == 7) {
+            *(d++) = y + n + height;
+        } else {
+            *(d++) = y + n * positions[j][1];
+        }
         *(d++) = z + n * positions[j][2];
     }
 }
