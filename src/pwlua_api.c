@@ -27,6 +27,8 @@ static int pwlua_set_light(lua_State *L);
 static int pwlua_get_control(lua_State *L);
 static int pwlua_set_control(lua_State *L);
 static int pwlua_set_control_callback(lua_State *L);
+static int pwlua_get_shape(lua_State *L);
+static int pwlua_set_shape(lua_State *L);
 
 static int pwlua_map_set(lua_State *L);
 static int pwlua_simplex2(lua_State *L);
@@ -51,6 +53,8 @@ void pwlua_api_add_functions(lua_State *L)
     lua_register(L, "get_control", pwlua_get_control);
     lua_register(L, "set_control", pwlua_set_control);
     lua_register(L, "set_control_callback", pwlua_set_control_callback);
+    lua_register(L, "get_shape", pwlua_get_shape);
+    lua_register(L, "set_shape", pwlua_set_shape);
 }
 
 void pwlua_api_add_worldgen_functions(lua_State *L)
@@ -123,6 +127,23 @@ void pwlua_api_add_constants(lua_State *L)
     PUSH_BLOCK_TYPE(COLOR_29);
     PUSH_BLOCK_TYPE(COLOR_30);
     PUSH_BLOCK_TYPE(COLOR_31);
+
+    PUSH_BLOCK_TYPE(CUBE);
+    PUSH_BLOCK_TYPE(SLAB1);
+    PUSH_BLOCK_TYPE(SLAB2);
+    PUSH_BLOCK_TYPE(SLAB3);
+    PUSH_BLOCK_TYPE(SLAB4);
+    PUSH_BLOCK_TYPE(SLAB5);
+    PUSH_BLOCK_TYPE(SLAB6);
+    PUSH_BLOCK_TYPE(SLAB7);
+    PUSH_BLOCK_TYPE(SLAB8);
+    PUSH_BLOCK_TYPE(SLAB9);
+    PUSH_BLOCK_TYPE(SLAB10);
+    PUSH_BLOCK_TYPE(SLAB11);
+    PUSH_BLOCK_TYPE(SLAB12);
+    PUSH_BLOCK_TYPE(SLAB13);
+    PUSH_BLOCK_TYPE(SLAB14);
+    PUSH_BLOCK_TYPE(SLAB15);
 }
 
 #define ERROR_ARG_COUNT (luaL_error(L, "incorrect argument count"))
@@ -426,6 +447,38 @@ static int pwlua_set_control_callback(lua_State *L)
     lua_getglobal(L, "player_id");
     player_id = luaL_checkint(L, 2);
     set_control_block_callback(player_id, text);
+    return 0;
+}
+
+static int pwlua_get_shape(lua_State *L)
+{
+    int argcount = lua_gettop(L);
+    if (argcount != 3) {
+        return ERROR_ARG_COUNT;
+    }
+    int x, y, z, w;
+    x = luaL_checkint(L, 1);
+    y = luaL_checkint(L, 2);
+    z = luaL_checkint(L, 3);
+    w = get_shape(x, y, z);
+    lua_pushinteger(L, w);
+    return 1;
+}
+
+static int pwlua_set_shape(lua_State *L)
+{
+    int argcount = lua_gettop(L);
+    if (argcount != 4) {
+        return ERROR_ARG_COUNT;
+    }
+    int x, y, z, w;
+    x = luaL_checkint(L, 1);
+    y = luaL_checkint(L, 2);
+    z = luaL_checkint(L, 3);
+    w = luaL_checkint(L, 4);
+    mtx_lock(&force_chunks_mtx);
+    set_shape(x, y, z, w);
+    mtx_unlock(&force_chunks_mtx);
     return 0;
 }
 

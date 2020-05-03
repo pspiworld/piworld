@@ -31,6 +31,8 @@ int get_block(int x, int y, int z);
 void set_block(int x, int y, int z, int w);
 int get_extra(int x, int y, int z);
 void set_extra(int x, int y, int z, int w);
+int get_shape(int x, int y, int z);
+void set_shape(int x, int y, int z, int w);
 void add_message(int player_id, const char *text);
 void pw_get_player_pos(int pid, float *x, float *y, float *z);
 void pw_set_player_pos(int pid, float x, float y, float z);
