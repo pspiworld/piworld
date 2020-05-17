@@ -18,6 +18,7 @@ typedef struct {
 
 void sign_list_alloc(SignList *list, int capacity);
 void sign_list_free(SignList *list);
+void sign_list_copy(SignList *dst, SignList *src);
 void sign_list_grow(SignList *list);
 void sign_list_add(
     SignList *list, int x, int y, int z, int face, const char *text);

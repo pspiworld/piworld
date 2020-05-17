@@ -5,6 +5,7 @@
 #include <lauxlib.h>
 #include "world.h"
 
-void pwlua_worldgen(lua_State *L, int p, int q, void *arg);
+void pwlua_worldgen(lua_State *L, int p, int q, void *block_map,
+    void *extra_map, void *light_map, void *shape_map, void *sign_list);
 lua_State *pwlua_worldgen_init(char *filename);
 

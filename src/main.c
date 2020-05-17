@@ -105,6 +105,7 @@ typedef struct {
     Map *extra_maps[3][3];
     Map *light_maps[3][3];
     Map *shape_maps[3][3];
+    SignList signs;
     int miny;
     int maxy;
     int faces;
@@ -1631,8 +1632,10 @@ void load_chunk(WorkerItem *item, lua_State *L) {
     Map *extra_map = item->extra_maps[1][1];
     Map *light_map = item->light_maps[1][1];
     Map *shape_map = item->shape_maps[1][1];
+    SignList *signs = &item->signs;
+    sign_list_alloc(signs, 16);
     if (g->use_lua_worldgen) {
-        pwlua_worldgen(L, p, q, block_map);
+        pwlua_worldgen(L, p, q, block_map, extra_map, light_map, shape_map, signs);
     } else {
         create_world(p, q, map_set_func, block_map);
     }
@@ -1640,6 +1643,7 @@ void load_chunk(WorkerItem *item, lua_State *L) {
     db_load_extras(extra_map, p, q);
     db_load_lights(light_map, p, q);
     db_load_shapes(shape_map, p, q);
+    db_load_signs(signs, p, q);
 }
 
 void request_chunk(int p, int q) {
@@ -1657,7 +1661,6 @@ void init_chunk(Chunk *chunk, int p, int q) {
     dirty_chunk(chunk);
     SignList *signs = &chunk->signs;
     sign_list_alloc(signs, 16);
-    db_load_signs(signs, p, q);
     Map *block_map = &chunk->map;
     Map *extra_map = &chunk->extra;
     Map *light_map = &chunk->lights;
@@ -1683,6 +1686,7 @@ void create_chunk(Chunk *chunk, int p, int q) {
     item->light_maps[1][1] = &chunk->lights;
     item->shape_maps[1][1] = &chunk->shape;
     load_chunk(item, g->lua_worldgen);
+    sign_list_copy(&chunk->signs, &item->signs);
 
     request_chunk(p, q);
 }
@@ -1775,10 +1779,12 @@ void check_workers(void) {
                     map_free(&chunk->extra);
                     map_free(&chunk->lights);
                     map_free(&chunk->shape);
+                    sign_list_free(&chunk->signs);
                     map_copy(&chunk->map, block_map);
                     map_copy(&chunk->extra, extra_map);
                     map_copy(&chunk->lights, light_map);
                     map_copy(&chunk->shape, shape_map);
+                    sign_list_copy(&chunk->signs, &item->signs);
                     request_chunk(item->p, item->q);
                 }
                 generate_chunk(chunk, item);
@@ -2032,6 +2038,12 @@ void set_sign(int x, int y, int z, int face, const char *text) {
     int q = chunked(z);
     _set_sign(p, q, x, y, z, face, text, 1);
     client_sign(x, y, z, face, text);
+}
+
+void worldgen_set_sign(int x, int y, int z, int face, const char *text,
+                       SignList *sign_list)
+{
+    sign_list_add(sign_list, x, y, z, face, text);
 }
 
 const unsigned char *get_sign(int p, int q, int x, int y, int z, int face) {

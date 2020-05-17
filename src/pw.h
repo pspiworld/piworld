@@ -1,6 +1,7 @@
 #pragma once
 
 #include <GLES2/gl2.h>
+#include "sign.h"
 #include "tinycthread.h"
 
 #define ALIGN_LEFT 0
@@ -41,6 +42,8 @@ void pw_set_player_angle(int pid, float x, float y);
 int pw_get_crosshair(int pid, int *hx, int *hy, int *hz, int *face);
 const unsigned char *get_sign(int p, int q, int x, int y, int z, int face);
 void set_sign(int x, int y, int z, int face, const char *text);
+void worldgen_set_sign(int x, int y, int z, int face, const char *text,
+                       SignList *sign_list);
 int pw_get_time(void);
 void pw_set_time(int time);
 int get_light(int p, int q, int x, int y, int z);

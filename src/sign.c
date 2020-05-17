@@ -12,6 +12,13 @@ void sign_list_free(SignList *list) {
     free(list->data);
 }
 
+void sign_list_copy(SignList *dst, SignList *src) {
+    dst->capacity = src->capacity;
+    dst->size = src->size;
+    dst->data = (Sign *)calloc(dst->capacity, sizeof(Sign));
+    memcpy(dst->data, src->data, dst->capacity * sizeof(Sign));
+}
+
 void sign_list_grow(SignList *list) {
     SignList new_list;
     sign_list_alloc(&new_list, list->capacity * 2);

@@ -31,6 +31,10 @@ static int pwlua_get_shape(lua_State *L);
 static int pwlua_set_shape(lua_State *L);
 
 static int pwlua_map_set(lua_State *L);
+static int pwlua_map_set_extra(lua_State *L);
+static int pwlua_map_set_light(lua_State *L);
+static int pwlua_map_set_shape(lua_State *L);
+static int pwlua_map_set_sign(lua_State *L);
 static int pwlua_simplex2(lua_State *L);
 static int pwlua_simplex3(lua_State *L);
 
@@ -60,6 +64,10 @@ void pwlua_api_add_functions(lua_State *L)
 void pwlua_api_add_worldgen_functions(lua_State *L)
 {
     lua_register(L, "map_set", pwlua_map_set);
+    lua_register(L, "map_set_extra", pwlua_map_set_extra);
+    lua_register(L, "map_set_light", pwlua_map_set_light);
+    lua_register(L, "map_set_shape", pwlua_map_set_shape);
+    lua_register(L, "map_set_sign", pwlua_map_set_sign);
     lua_register(L, "simplex2", pwlua_simplex2);
     lua_register(L, "simplex3", pwlua_simplex3);
 }
@@ -500,6 +508,92 @@ static int pwlua_map_set(lua_State *L)
     z = lua_tointeger(L, 3);
     w = lua_tointeger(L, 4);
     map_set_func(x, y, z, w, block_map);
+    return 0;
+}
+
+static int pwlua_map_set_extra(lua_State *L)
+{
+    int n = lua_gettop(L);    /* number of arguments */
+    if (n != 4) {
+        lua_pushstring(L, "incorrect argument count");
+        lua_error(L);
+    }
+    int x, y, z, w;
+    void *extra_map;
+
+    lua_getglobal(L, "_extra_map");
+    extra_map = lua_touserdata(L, -1);
+
+    x = lua_tointeger(L, 1);
+    y = lua_tointeger(L, 2);
+    z = lua_tointeger(L, 3);
+    w = lua_tointeger(L, 4);
+    map_set_func(x, y, z, w, extra_map);
+    return 0;
+}
+
+static int pwlua_map_set_light(lua_State *L)
+{
+    int n = lua_gettop(L);    /* number of arguments */
+    if (n != 4) {
+        lua_pushstring(L, "incorrect argument count");
+        lua_error(L);
+    }
+    int x, y, z, w;
+    void *light_map;
+
+    lua_getglobal(L, "_light_map");
+    light_map = lua_touserdata(L, -1);
+
+    x = lua_tointeger(L, 1);
+    y = lua_tointeger(L, 2);
+    z = lua_tointeger(L, 3);
+    w = lua_tointeger(L, 4);
+    map_set_func(x, y, z, w, light_map);
+    return 0;
+}
+
+static int pwlua_map_set_shape(lua_State *L)
+{
+    int n = lua_gettop(L);    /* number of arguments */
+    if (n != 4) {
+        lua_pushstring(L, "incorrect argument count");
+        lua_error(L);
+    }
+    int x, y, z, w;
+    void *shape_map;
+
+    lua_getglobal(L, "_shape_map");
+    shape_map = lua_touserdata(L, -1);
+
+    x = lua_tointeger(L, 1);
+    y = lua_tointeger(L, 2);
+    z = lua_tointeger(L, 3);
+    w = lua_tointeger(L, 4);
+    map_set_func(x, y, z, w, shape_map);
+    return 0;
+}
+
+static int pwlua_map_set_sign(lua_State *L)
+{
+    int n = lua_gettop(L);    /* number of arguments */
+    if (n != 5) {
+        lua_pushstring(L, "incorrect argument count");
+        lua_error(L);
+    }
+    int x, y, z, face;
+    const char *text;
+    void *sign_list;
+
+    lua_getglobal(L, "_sign_list");
+    sign_list = lua_touserdata(L, -1);
+
+    x = lua_tointeger(L, 1);
+    y = lua_tointeger(L, 2);
+    z = lua_tointeger(L, 3);
+    face = lua_tointeger(L, 4);
+    text = lua_tolstring(L, 5, NULL);
+    worldgen_set_sign(x, y, z, face, text, sign_list);
     return 0;
 }
 
