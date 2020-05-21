@@ -643,7 +643,7 @@ void draw_text(Attrib *attrib, GLuint buffer, int length) {
 
 void draw_signs(Attrib *attrib, Chunk *chunk) {
     glEnable(GL_POLYGON_OFFSET_FILL);
-    glPolygonOffset(-8, -1024);
+    glPolygonOffset(-1.0, -2.0);
     draw_triangles_3d_text(attrib, chunk->sign_buffer, chunk->sign_faces * 6);
     glDisable(GL_POLYGON_OFFSET_FILL);
 }
