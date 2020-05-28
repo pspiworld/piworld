@@ -164,6 +164,18 @@ typedef struct {
 } TextLineHistory;
 
 typedef struct {
+    int x;
+    int y;
+    int z;
+    int texture;
+    int extra;
+    int light;
+    int shape;
+    SignList signs;
+    int has_sign;
+} UndoBlock;
+
+typedef struct {
     Player *player;
     int item_index;
     int flying;
@@ -248,6 +260,9 @@ typedef struct {
     Block block1;
     Block copy0;
     Block copy1;
+
+    UndoBlock undo_block;
+    int has_undo_block;
 
     int observe1;
     int observe1_client_id;
@@ -2982,6 +2997,7 @@ void clear_block_under_crosshair(LocalPlayer *local)
     int hx, hy, hz;
     int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     if (hy > 0 && hy < 256 && is_destructable(hw)) {
+        // If control block then run callback and do not remove.
         if (get_extra(hx, hy, hz)) {
             int face;
             hit_test_face(local->player, &hx, &hy, &hz, &face);
@@ -2989,6 +3005,35 @@ void clear_block_under_crosshair(LocalPlayer *local)
             pwlua_control_callback(local->player->id, hx, hy, hz, face);
             return;
         }
+
+        // Save the block to be removed.
+        int p = chunked(hx);
+        int q = chunked(hz);
+        Chunk *chunk = find_chunk(p, q);
+        local->undo_block.x = hx;
+        local->undo_block.y = hy;
+        local->undo_block.z = hz;
+        local->undo_block.texture = hw;
+        local->undo_block.extra = get_extra(hx, hy, hz);
+        local->undo_block.light = get_light(p, q, hx, hy, hz);
+        local->undo_block.shape = get_shape(hx, hy, hz);
+        if (local->undo_block.has_sign) {
+            sign_list_free(&local->undo_block.signs);
+        }
+        local->undo_block.has_sign = 0;
+        SignList *undo_signs = &local->undo_block.signs;
+        for (size_t i = 0; i < chunk->signs.size; i++) {
+            Sign *e = chunk->signs.data + i;
+            if (e->x == hx && e->y == hy && e->z == hz) {
+                if (local->undo_block.has_sign == 0) {
+                    sign_list_alloc(undo_signs, 1);
+                    local->undo_block.has_sign = 1;
+                }
+                sign_list_add(undo_signs, hx, hy, hz, e->face, e->text);
+            }
+        }
+        local->has_undo_block = 1;
+
         set_block(hx, hy, hz, 0);
         record_block(hx, hy, hz, 0, local);
         if (config->verbose) {
@@ -3624,6 +3669,8 @@ void reset_model(void) {
         memset(local->messages, 0,
                sizeof(char) * MAX_MESSAGES * MAX_TEXT_LENGTH);
         local->message_index = 0;
+        local->has_undo_block = 0;
+        local->undo_block.has_sign = 0;
     }
     g->day_length = DAY_LENGTH;
     const unsigned char *stored_time;
@@ -4044,6 +4091,27 @@ void handle_key_press(int keyboard_id, int mods, int keysym)
         p->typing_buffer[0] = '\0';
         p->typing_start = p->typing_history[CHAT_HISTORY].line_start;
         p->text_cursor = p->typing_start;
+        break;
+    case XK_u: case XK_U:
+        if (p->has_undo_block == 1) {
+            UndoBlock *b = &p->undo_block;
+            int bp = chunked(b->x);
+            int bq = chunked(b->z);
+            set_block(b->x, b->y, b->z, b->texture);
+            set_extra(b->x, b->y, b->z, b->extra);
+            set_light(bp, bq, b->x, b->y, b->z, b->light);
+            set_shape(b->x, b->y, b->z, b->shape);
+            if (b->has_sign) {
+                SignList *signs = &b->signs;
+                for (size_t i = 0; i < signs->size; i++) {
+                    Sign *e = signs->data + i;
+                    set_sign(e->x, e->y, e->z, e->face, e->text);
+                }
+                sign_list_free(signs);
+                b->has_sign = 0;
+            }
+            p->has_undo_block = 0;
+        }
         break;
     case XK_slash:
         p->typing = 1;
