@@ -4,7 +4,8 @@
 #include "pwlua_worldgen.h"
 
 void pwlua_worldgen(lua_State *L, int p, int q, void *block_map,
-    void *extra_map, void *light_map, void *shape_map, void *sign_list)
+    void *extra_map, void *light_map, void *shape_map, void *sign_list,
+    void *transform_map)
 {
     lua_pushlightuserdata(L, block_map);
     lua_setglobal(L, "_block_map");
@@ -16,6 +17,8 @@ void pwlua_worldgen(lua_State *L, int p, int q, void *block_map,
     lua_setglobal(L, "_shape_map");
     lua_pushlightuserdata(L, sign_list);
     lua_setglobal(L, "_sign_list");
+    lua_pushlightuserdata(L, transform_map);
+    lua_setglobal(L, "_transform_map");
 
     lua_getfield(L, LUA_GLOBALSINDEX, "worldgen");  /* function to be called */
     lua_pushinteger(L, p);                          /* 1st argument */

@@ -89,6 +89,18 @@ void ring_put_shape(Ring *ring, int p, int q, int x, int y, int z, int w) {
     ring_put(ring, &entry);
 }
 
+void ring_put_transform(Ring *ring, int p, int q, int x, int y, int z, int w) {
+    RingEntry entry;
+    entry.type = TRANSFORM;
+    entry.p = p;
+    entry.q = q;
+    entry.x = x;
+    entry.y = y;
+    entry.z = z;
+    entry.w = w;
+    ring_put(ring, &entry);
+}
+
 void ring_put_light(Ring *ring, int p, int q, int x, int y, int z, int w) {
     RingEntry entry;
     entry.type = LIGHT;
@@ -107,6 +119,22 @@ void ring_put_key(Ring *ring, int p, int q, int key) {
     entry.p = p;
     entry.q = q;
     entry.key = key;
+    ring_put(ring, &entry);
+}
+
+void ring_put_sign(Ring *ring, int p, int q, int x, int y, int z, int face,
+                   const char *text) {
+    RingEntry entry;
+    entry.type = SIGN;
+    entry.p = p;
+    entry.q = q;
+    entry.x = x;
+    entry.y = y;
+    entry.z = z;
+    entry.w = face;
+    int text_len = strlen(text);
+    entry.sign = malloc(sizeof(char) * text_len);
+    memcpy(entry.sign, text, sizeof(char) * text_len);
     ring_put(ring, &entry);
 }
 

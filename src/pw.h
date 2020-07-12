@@ -32,8 +32,17 @@ int get_block(int x, int y, int z);
 void set_block(int x, int y, int z, int w);
 int get_extra(int x, int y, int z);
 void set_extra(int x, int y, int z, int w);
+void set_extra_non_dirty(int x, int y, int z, int w);
 int get_shape(int x, int y, int z);
 void set_shape(int x, int y, int z, int w);
+int get_transform(int x, int y, int z);
+void set_transform(int x, int y, int z, int w);
+void queue_set_block(int x, int y, int z, int w);
+void queue_set_extra(int x, int y, int z, int w);
+void queue_set_light(int x, int y, int z, int w);
+void queue_set_shape(int x, int y, int z, int w);
+void queue_set_sign(int x, int y, int z, int face, const char *text);
+void queue_set_transform(int x, int y, int z, int w);
 void add_message(int player_id, const char *text);
 void pw_get_player_pos(int pid, float *x, float *y, float *z);
 void pw_set_player_pos(int pid, float x, float y, float z);
@@ -53,6 +62,3 @@ void render_text_rgba(
     Attrib *attrib, int justify, float x, float y, float n, char *text,
     const float *background, const float *text_color);
 void render_text_cursor(Attrib *attrib, float x, float y);
-
-extern mtx_t force_chunks_mtx;
-

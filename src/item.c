@@ -215,6 +215,8 @@ const int shapes[] = {
     SLAB13,
     SLAB14,
     SLAB15,
+    UPPER_DOOR,
+    LOWER_DOOR,
 };
 
 const int shape_count = sizeof(shapes) / sizeof(int);
@@ -236,6 +238,8 @@ const char *shape_names[] = {
     "Slab 13",
     "Slab 14",
     "Slab 15",
+    "Upper Door",
+    "Lower Door",
 };
 
 int is_plant(int w) {
@@ -253,9 +257,13 @@ int is_plant(int w) {
     }
 }
 
-int is_obstacle(int w) {
+int is_obstacle(int w, int shape, int extra) {
     w = ABS(w);
     if (is_plant(w)) {
+        return 0;
+    }
+    shape = ABS(shape);
+    if ((shape == UPPER_DOOR || shape == LOWER_DOOR) && is_open(extra)) {
         return 0;
     }
     switch (w) {
@@ -293,6 +301,16 @@ int is_destructable(int w) {
         default:
             return 1;
     }
+}
+
+int is_control(int w) {
+    w = ABS(w);
+    return (w & EXTRA_BIT_CONTROL) ? 1 : 0;
+}
+
+int is_open(int w) {
+    w = ABS(w);
+    return (w & EXTRA_BIT_OPEN) ? 1 : 0;
 }
 
 float item_height(int shape) {

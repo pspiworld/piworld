@@ -4,9 +4,11 @@ typedef enum {
     BLOCK,
     EXTRA,
     SHAPE,
+    TRANSFORM,
     LIGHT,
     KEY,
     COMMIT,
+    SIGN,
     EXIT
 } RingEntryType;
 
@@ -19,6 +21,7 @@ typedef struct {
     int z;
     int w;
     int key;
+    char *sign;  // face is w
 } RingEntry;
 
 typedef struct {
@@ -38,7 +41,10 @@ void ring_put(Ring *ring, RingEntry *entry);
 void ring_put_block(Ring *ring, int p, int q, int x, int y, int z, int w);
 void ring_put_extra(Ring *ring, int p, int q, int x, int y, int z, int w);
 void ring_put_shape(Ring *ring, int p, int q, int x, int y, int z, int w);
+void ring_put_transform(Ring *ring, int p, int q, int x, int y, int z, int w);
 void ring_put_light(Ring *ring, int p, int q, int x, int y, int z, int w);
+void ring_put_sign(Ring *ring, int p, int q, int x, int y, int z, int face,
+                   const char *text);
 void ring_put_key(Ring *ring, int p, int q, int key);
 void ring_put_commit(Ring *ring);
 void ring_put_exit(Ring *ring);

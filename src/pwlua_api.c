@@ -29,11 +29,16 @@ static int pwlua_set_control(lua_State *L);
 static int pwlua_set_control_callback(lua_State *L);
 static int pwlua_get_shape(lua_State *L);
 static int pwlua_set_shape(lua_State *L);
+static int pwlua_get_transform(lua_State *L);
+static int pwlua_set_transform(lua_State *L);
+static int pwlua_get_open(lua_State *L);
+static int pwlua_set_open(lua_State *L);
 
 static int pwlua_map_set(lua_State *L);
 static int pwlua_map_set_extra(lua_State *L);
 static int pwlua_map_set_light(lua_State *L);
 static int pwlua_map_set_shape(lua_State *L);
+static int pwlua_map_set_transform(lua_State *L);
 static int pwlua_map_set_sign(lua_State *L);
 static int pwlua_simplex2(lua_State *L);
 static int pwlua_simplex3(lua_State *L);
@@ -59,6 +64,10 @@ void pwlua_api_add_functions(lua_State *L)
     lua_register(L, "set_control_callback", pwlua_set_control_callback);
     lua_register(L, "get_shape", pwlua_get_shape);
     lua_register(L, "set_shape", pwlua_set_shape);
+    lua_register(L, "get_transform", pwlua_get_transform);
+    lua_register(L, "set_transform", pwlua_set_transform);
+    lua_register(L, "get_open", pwlua_get_open);
+    lua_register(L, "set_open", pwlua_set_open);
 }
 
 void pwlua_api_add_worldgen_functions(lua_State *L)
@@ -67,6 +76,7 @@ void pwlua_api_add_worldgen_functions(lua_State *L)
     lua_register(L, "map_set_extra", pwlua_map_set_extra);
     lua_register(L, "map_set_light", pwlua_map_set_light);
     lua_register(L, "map_set_shape", pwlua_map_set_shape);
+    lua_register(L, "map_set_transform", pwlua_map_set_transform);
     lua_register(L, "map_set_sign", pwlua_map_set_sign);
     lua_register(L, "simplex2", pwlua_simplex2);
     lua_register(L, "simplex3", pwlua_simplex3);
@@ -74,84 +84,95 @@ void pwlua_api_add_worldgen_functions(lua_State *L)
 
 void pwlua_api_add_constants(lua_State *L)
 {
-#define PUSH_BLOCK_TYPE(b) { lua_pushnumber(L, b); \
+#define PUSH_CONST(b) { lua_pushnumber(L, b); \
     lua_setglobal(L, ""#b""); }
 
-    PUSH_BLOCK_TYPE(CHUNK_SIZE);
-    PUSH_BLOCK_TYPE(BEDROCK);
+    PUSH_CONST(CHUNK_SIZE);
+    PUSH_CONST(BEDROCK);
 
-    PUSH_BLOCK_TYPE(EMPTY);
-    PUSH_BLOCK_TYPE(GRASS);
-    PUSH_BLOCK_TYPE(SAND);
-    PUSH_BLOCK_TYPE(STONE);
-    PUSH_BLOCK_TYPE(BRICK);
-    PUSH_BLOCK_TYPE(WOOD);
-    PUSH_BLOCK_TYPE(CEMENT);
-    PUSH_BLOCK_TYPE(DIRT);
-    PUSH_BLOCK_TYPE(PLANK);
-    PUSH_BLOCK_TYPE(SNOW);
-    PUSH_BLOCK_TYPE(GLASS);
-    PUSH_BLOCK_TYPE(COBBLE);
-    PUSH_BLOCK_TYPE(LIGHT_STONE);
-    PUSH_BLOCK_TYPE(DARK_STONE);
-    PUSH_BLOCK_TYPE(CHEST);
-    PUSH_BLOCK_TYPE(LEAVES);
-    PUSH_BLOCK_TYPE(TALL_GRASS);
-    PUSH_BLOCK_TYPE(YELLOW_FLOWER);
-    PUSH_BLOCK_TYPE(RED_FLOWER);
-    PUSH_BLOCK_TYPE(PURPLE_FLOWER);
-    PUSH_BLOCK_TYPE(SUN_FLOWER);
-    PUSH_BLOCK_TYPE(WHITE_FLOWER);
-    PUSH_BLOCK_TYPE(BLUE_FLOWER);
-    PUSH_BLOCK_TYPE(COLOR_00);
-    PUSH_BLOCK_TYPE(COLOR_01);
-    PUSH_BLOCK_TYPE(COLOR_02);
-    PUSH_BLOCK_TYPE(COLOR_03);
-    PUSH_BLOCK_TYPE(COLOR_04);
-    PUSH_BLOCK_TYPE(COLOR_05);
-    PUSH_BLOCK_TYPE(COLOR_06);
-    PUSH_BLOCK_TYPE(COLOR_07);
-    PUSH_BLOCK_TYPE(COLOR_08);
-    PUSH_BLOCK_TYPE(COLOR_09);
-    PUSH_BLOCK_TYPE(COLOR_10);
-    PUSH_BLOCK_TYPE(COLOR_11);
-    PUSH_BLOCK_TYPE(COLOR_12);
-    PUSH_BLOCK_TYPE(COLOR_13);
-    PUSH_BLOCK_TYPE(COLOR_14);
-    PUSH_BLOCK_TYPE(COLOR_15);
-    PUSH_BLOCK_TYPE(COLOR_16);
-    PUSH_BLOCK_TYPE(COLOR_17);
-    PUSH_BLOCK_TYPE(COLOR_18);
-    PUSH_BLOCK_TYPE(COLOR_19);
-    PUSH_BLOCK_TYPE(COLOR_20);
-    PUSH_BLOCK_TYPE(COLOR_21);
-    PUSH_BLOCK_TYPE(COLOR_22);
-    PUSH_BLOCK_TYPE(COLOR_23);
-    PUSH_BLOCK_TYPE(COLOR_24);
-    PUSH_BLOCK_TYPE(COLOR_25);
-    PUSH_BLOCK_TYPE(COLOR_26);
-    PUSH_BLOCK_TYPE(COLOR_27);
-    PUSH_BLOCK_TYPE(COLOR_28);
-    PUSH_BLOCK_TYPE(COLOR_29);
-    PUSH_BLOCK_TYPE(COLOR_30);
-    PUSH_BLOCK_TYPE(COLOR_31);
+    PUSH_CONST(EMPTY);
+    PUSH_CONST(GRASS);
+    PUSH_CONST(SAND);
+    PUSH_CONST(STONE);
+    PUSH_CONST(BRICK);
+    PUSH_CONST(WOOD);
+    PUSH_CONST(CEMENT);
+    PUSH_CONST(DIRT);
+    PUSH_CONST(PLANK);
+    PUSH_CONST(SNOW);
+    PUSH_CONST(GLASS);
+    PUSH_CONST(COBBLE);
+    PUSH_CONST(LIGHT_STONE);
+    PUSH_CONST(DARK_STONE);
+    PUSH_CONST(CHEST);
+    PUSH_CONST(LEAVES);
+    PUSH_CONST(TALL_GRASS);
+    PUSH_CONST(YELLOW_FLOWER);
+    PUSH_CONST(RED_FLOWER);
+    PUSH_CONST(PURPLE_FLOWER);
+    PUSH_CONST(SUN_FLOWER);
+    PUSH_CONST(WHITE_FLOWER);
+    PUSH_CONST(BLUE_FLOWER);
+    PUSH_CONST(COLOR_00);
+    PUSH_CONST(COLOR_01);
+    PUSH_CONST(COLOR_02);
+    PUSH_CONST(COLOR_03);
+    PUSH_CONST(COLOR_04);
+    PUSH_CONST(COLOR_05);
+    PUSH_CONST(COLOR_06);
+    PUSH_CONST(COLOR_07);
+    PUSH_CONST(COLOR_08);
+    PUSH_CONST(COLOR_09);
+    PUSH_CONST(COLOR_10);
+    PUSH_CONST(COLOR_11);
+    PUSH_CONST(COLOR_12);
+    PUSH_CONST(COLOR_13);
+    PUSH_CONST(COLOR_14);
+    PUSH_CONST(COLOR_15);
+    PUSH_CONST(COLOR_16);
+    PUSH_CONST(COLOR_17);
+    PUSH_CONST(COLOR_18);
+    PUSH_CONST(COLOR_19);
+    PUSH_CONST(COLOR_20);
+    PUSH_CONST(COLOR_21);
+    PUSH_CONST(COLOR_22);
+    PUSH_CONST(COLOR_23);
+    PUSH_CONST(COLOR_24);
+    PUSH_CONST(COLOR_25);
+    PUSH_CONST(COLOR_26);
+    PUSH_CONST(COLOR_27);
+    PUSH_CONST(COLOR_28);
+    PUSH_CONST(COLOR_29);
+    PUSH_CONST(COLOR_30);
+    PUSH_CONST(COLOR_31);
 
-    PUSH_BLOCK_TYPE(CUBE);
-    PUSH_BLOCK_TYPE(SLAB1);
-    PUSH_BLOCK_TYPE(SLAB2);
-    PUSH_BLOCK_TYPE(SLAB3);
-    PUSH_BLOCK_TYPE(SLAB4);
-    PUSH_BLOCK_TYPE(SLAB5);
-    PUSH_BLOCK_TYPE(SLAB6);
-    PUSH_BLOCK_TYPE(SLAB7);
-    PUSH_BLOCK_TYPE(SLAB8);
-    PUSH_BLOCK_TYPE(SLAB9);
-    PUSH_BLOCK_TYPE(SLAB10);
-    PUSH_BLOCK_TYPE(SLAB11);
-    PUSH_BLOCK_TYPE(SLAB12);
-    PUSH_BLOCK_TYPE(SLAB13);
-    PUSH_BLOCK_TYPE(SLAB14);
-    PUSH_BLOCK_TYPE(SLAB15);
+    PUSH_CONST(CUBE);
+    PUSH_CONST(SLAB1);
+    PUSH_CONST(SLAB2);
+    PUSH_CONST(SLAB3);
+    PUSH_CONST(SLAB4);
+    PUSH_CONST(SLAB5);
+    PUSH_CONST(SLAB6);
+    PUSH_CONST(SLAB7);
+    PUSH_CONST(SLAB8);
+    PUSH_CONST(SLAB9);
+    PUSH_CONST(SLAB10);
+    PUSH_CONST(SLAB11);
+    PUSH_CONST(SLAB12);
+    PUSH_CONST(SLAB13);
+    PUSH_CONST(SLAB14);
+    PUSH_CONST(SLAB15);
+    PUSH_CONST(UPPER_DOOR);
+    PUSH_CONST(LOWER_DOOR);
+
+    PUSH_CONST(DOOR_X);
+    PUSH_CONST(DOOR_X_PLUS);
+    PUSH_CONST(DOOR_Z);
+    PUSH_CONST(DOOR_Z_PLUS);
+    PUSH_CONST(DOOR_X_FLIP);
+    PUSH_CONST(DOOR_X_PLUS_FLIP);
+    PUSH_CONST(DOOR_Z_FLIP);
+    PUSH_CONST(DOOR_Z_PLUS_FLIP);
 }
 
 #define ERROR_ARG_COUNT (luaL_error(L, "incorrect argument count"))
@@ -201,9 +222,7 @@ static int pwlua_set_block(lua_State *L)
     y = luaL_checkint(L, 2);
     z = luaL_checkint(L, 3);
     w = luaL_checkint(L, 4);
-    mtx_lock(&force_chunks_mtx);
-    set_block(x, y, z, w);
-    mtx_unlock(&force_chunks_mtx);
+    queue_set_block(x, y, z, w);
     return 0;
 }
 
@@ -348,9 +367,7 @@ static int pwlua_set_sign(lua_State *L)
     z = luaL_checkint(L, 3);
     face = luaL_checkint(L, 4);
     text = lua_tolstring(L, 5, NULL);
-    mtx_lock(&force_chunks_mtx);
-    set_sign(x, y, z, face, text);
-    mtx_unlock(&force_chunks_mtx);
+    queue_set_sign(x, y, z, face, text);
     return 0;
 }
 
@@ -405,9 +422,7 @@ static int pwlua_set_light(lua_State *L)
     y = luaL_checkint(L, 2);
     z = luaL_checkint(L, 3);
     w = luaL_checkint(L, 4);
-    mtx_lock(&force_chunks_mtx);
-    set_light(chunked(x), chunked(z), x, y, z, w);
-    mtx_unlock(&force_chunks_mtx);
+    queue_set_light(x, y, z, w);
     return 0;
 }
 
@@ -421,7 +436,7 @@ static int pwlua_get_control(lua_State *L)
     x = luaL_checkint(L, 1);
     y = luaL_checkint(L, 2);
     z = luaL_checkint(L, 3);
-    w = get_extra(x, y, z);
+    w = is_control(get_extra(x, y, z));
     lua_pushinteger(L, w);
     return 1;
 }
@@ -437,9 +452,12 @@ static int pwlua_set_control(lua_State *L)
     y = luaL_checkint(L, 2);
     z = luaL_checkint(L, 3);
     w = luaL_checkint(L, 4);
-    mtx_lock(&force_chunks_mtx);
-    set_extra(x, y, z, w);
-    mtx_unlock(&force_chunks_mtx);
+    if (w) {
+        w = get_extra(x, y, z) | EXTRA_BIT_CONTROL;
+    } else {
+        w = get_extra(x, y, z) & ~EXTRA_BIT_CONTROL;
+    }
+    queue_set_extra(x, y, z, w);
     return 0;
 }
 
@@ -484,9 +502,72 @@ static int pwlua_set_shape(lua_State *L)
     y = luaL_checkint(L, 2);
     z = luaL_checkint(L, 3);
     w = luaL_checkint(L, 4);
-    mtx_lock(&force_chunks_mtx);
-    set_shape(x, y, z, w);
-    mtx_unlock(&force_chunks_mtx);
+    queue_set_shape(x, y, z, w);
+    return 0;
+}
+
+static int pwlua_get_transform(lua_State *L)
+{
+    int argcount = lua_gettop(L);
+    if (argcount != 3) {
+        return ERROR_ARG_COUNT;
+    }
+    int x, y, z, w;
+    x = luaL_checkint(L, 1);
+    y = luaL_checkint(L, 2);
+    z = luaL_checkint(L, 3);
+    w = get_transform(x, y, z);
+    lua_pushinteger(L, w);
+    return 1;
+}
+
+static int pwlua_set_transform(lua_State *L)
+{
+    int argcount = lua_gettop(L);
+    if (argcount != 4) {
+        return ERROR_ARG_COUNT;
+    }
+    int x, y, z, w;
+    x = luaL_checkint(L, 1);
+    y = luaL_checkint(L, 2);
+    z = luaL_checkint(L, 3);
+    w = luaL_checkint(L, 4);
+    queue_set_transform(x, y, z, w);
+    return 0;
+}
+
+static int pwlua_get_open(lua_State *L)
+{
+    int argcount = lua_gettop(L);
+    if (argcount != 3) {
+        return ERROR_ARG_COUNT;
+    }
+    int x, y, z, w;
+    x = luaL_checkint(L, 1);
+    y = luaL_checkint(L, 2);
+    z = luaL_checkint(L, 3);
+    w = is_open(get_extra(x, y, z));
+    lua_pushinteger(L, w);
+    return 1;
+}
+
+static int pwlua_set_open(lua_State *L)
+{
+    int argcount = lua_gettop(L);
+    if (argcount != 4) {
+        return ERROR_ARG_COUNT;
+    }
+    int x, y, z, w;
+    x = luaL_checkint(L, 1);
+    y = luaL_checkint(L, 2);
+    z = luaL_checkint(L, 3);
+    w = luaL_checkint(L, 4);
+    if (w) {
+        w = get_extra(x, y, z) | EXTRA_BIT_OPEN;
+    } else {
+        w = get_extra(x, y, z) & ~EXTRA_BIT_OPEN;
+    }
+    queue_set_extra(x, y, z, w);
     return 0;
 }
 
@@ -571,6 +652,27 @@ static int pwlua_map_set_shape(lua_State *L)
     z = lua_tointeger(L, 3);
     w = lua_tointeger(L, 4);
     map_set_func(x, y, z, w, shape_map);
+    return 0;
+}
+
+static int pwlua_map_set_transform(lua_State *L)
+{
+    int n = lua_gettop(L);    /* number of arguments */
+    if (n != 4) {
+        lua_pushstring(L, "incorrect argument count");
+        lua_error(L);
+    }
+    int x, y, z, w;
+    void *transform_map;
+
+    lua_getglobal(L, "_transform_map");
+    transform_map = lua_touserdata(L, -1);
+
+    x = lua_tointeger(L, 1);
+    y = lua_tointeger(L, 2);
+    z = lua_tointeger(L, 3);
+    w = lua_tointeger(L, 4);
+    map_set_func(x, y, z, w, transform_map);
     return 0;
 }
 

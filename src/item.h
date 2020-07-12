@@ -1,5 +1,6 @@
 #pragma once
 
+// Textures
 #define EMPTY 0
 #define GRASS 1
 #define SAND 2
@@ -57,6 +58,7 @@
 #define COLOR_30 62
 #define COLOR_31 63
 
+// Shapes
 #define CUBE 0
 #define SLAB1 1
 #define SLAB2 2
@@ -73,6 +75,21 @@
 #define SLAB13 13
 #define SLAB14 14
 #define SLAB15 15
+#define UPPER_DOOR 16
+#define LOWER_DOOR 17
+
+// Transformations
+#define DOOR_X 0
+#define DOOR_X_PLUS 1
+#define DOOR_Z 2
+#define DOOR_Z_PLUS 3
+#define DOOR_X_FLIP 4
+#define DOOR_X_PLUS_FLIP 5
+#define DOOR_Z_FLIP 6
+#define DOOR_Z_PLUS_FLIP 7
+
+#define EXTRA_BIT_CONTROL 1
+#define EXTRA_BIT_OPEN 2
 
 extern const int items[];
 extern const int item_count;
@@ -84,9 +101,12 @@ extern const int shape_count;
 extern const char *shape_names[];
 
 int is_plant(int w);
-int is_obstacle(int w);
+int is_obstacle(int w, int shape, int extra);
 int is_transparent(int w);
 int is_destructable(int w);
+
+int is_control(int w);
+int is_open(int w);
 
 float item_height(int shape);
 
