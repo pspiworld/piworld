@@ -133,8 +133,9 @@ void ring_put_sign(Ring *ring, int p, int q, int x, int y, int z, int face,
     entry.z = z;
     entry.w = face;
     int text_len = strlen(text);
-    entry.sign = malloc(sizeof(char) * text_len);
+    entry.sign = malloc(sizeof(char) * (text_len + 1));
     memcpy(entry.sign, text, sizeof(char) * text_len);
+    entry.sign[text_len] = '\0';
     ring_put(ring, &entry);
 }
 

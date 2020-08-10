@@ -33,6 +33,8 @@ static int pwlua_get_transform(lua_State *L);
 static int pwlua_set_transform(lua_State *L);
 static int pwlua_get_open(lua_State *L);
 static int pwlua_set_open(lua_State *L);
+static int pwlua_set_shell(lua_State *L);
+static int pwlua_sync_world(lua_State *L);
 
 static int pwlua_map_set(lua_State *L);
 static int pwlua_map_set_extra(lua_State *L);
@@ -68,6 +70,8 @@ void pwlua_api_add_functions(lua_State *L)
     lua_register(L, "set_transform", pwlua_set_transform);
     lua_register(L, "get_open", pwlua_get_open);
     lua_register(L, "set_open", pwlua_set_open);
+    lua_register(L, "set_shell", pwlua_set_shell);
+    lua_register(L, "sync_world", pwlua_sync_world);
 }
 
 void pwlua_api_add_worldgen_functions(lua_State *L)
@@ -465,14 +469,11 @@ static int pwlua_set_control_callback(lua_State *L)
 {
     int argcount = lua_gettop(L);
     const char *text;
-    int player_id;
     if (argcount != 1) {
         return ERROR_ARG_COUNT;
     }
     text = lua_tolstring(L, 1, NULL);
-    lua_getglobal(L, "player_id");
-    player_id = luaL_checkint(L, 2);
-    set_control_block_callback(player_id, text);
+    set_control_block_callback(L, text);
     return 0;
 }
 
@@ -696,6 +697,30 @@ static int pwlua_map_set_sign(lua_State *L)
     face = lua_tointeger(L, 4);
     text = lua_tolstring(L, 5, NULL);
     worldgen_set_sign(x, y, z, face, text, sign_list);
+    return 0;
+}
+
+static int pwlua_set_shell(lua_State *L)
+{
+    int argcount = lua_gettop(L);
+    if (argcount != 1) {
+        return ERROR_ARG_COUNT;
+    }
+    if (!lua_isnumber(L, 1)) {
+        return luaL_error(L, "incorrect argument type");
+    }
+    int shell = luaL_checkint(L, 1);
+    pwlua_set_is_shell(L, shell);
+    return 0;
+}
+
+static int pwlua_sync_world(lua_State *L)
+{
+    int argcount = lua_gettop(L);
+    if (argcount != 0) {
+        return ERROR_ARG_COUNT;
+    }
+    drain_edit_queue(100000, 1, 0);
     return 0;
 }
 

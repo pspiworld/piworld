@@ -62,3 +62,4 @@ void render_text_rgba(
     Attrib *attrib, int justify, float x, float y, float n, char *text,
     const float *background, const float *text_color);
 void render_text_cursor(Attrib *attrib, float x, float y);
+void drain_edit_queue(size_t max_items, double max_time, double now);

@@ -198,6 +198,8 @@ typedef struct {
     size_t text_cursor;
     size_t typing_start;
 
+    LuaThreadState* lua_shell;
+
     int mouse_x;
     int mouse_y;
     Menu menu;
@@ -4206,7 +4208,7 @@ void handle_key_press_typing(LocalPlayer *local, int mods, int keysym)
             } else if (local->typing_buffer[0] == CRAFT_KEY_COMMAND) {
                 parse_command(local, local->typing_buffer, 1);
             } else if (local->typing_buffer[0] == PW_KEY_LUA) {
-                pwlua_parse_line(local->player->id, local->typing_buffer);
+                pwlua_parse_line(local->lua_shell, local->typing_buffer);
             } else {
                 client_talk(local->typing_buffer);
             }
@@ -4760,7 +4762,8 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             }
             char lua_code[LUA_MAXINPUT];
             snprintf(lua_code, sizeof(lua_code), "$dofile(\"%s\")\n", path);
-            pwlua_parse_line(local->player->id, lua_code);
+            LuaThreadState* new_lua_instance = pwlua_new(local->player->id);
+            pwlua_parse_line(new_lua_instance, lua_code);
         }
     }
 }
@@ -5731,6 +5734,10 @@ int main(int argc, char **argv) {
             if (!loaded) {
                 snprintf(local->player->name, MAX_NAME_LENGTH, "player%d", i + 1);
             }
+
+            if (local->lua_shell == NULL) {
+                local->lua_shell = pwlua_new_shell(local->player->id);
+            }
         }
 
         for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
@@ -5771,6 +5778,8 @@ int main(int argc, char **argv) {
 
             // DRAIN EDIT QUEUE //
             drain_edit_queue(100000, 0.005, now);
+
+            pwlua_remove_closed_threads();
 
             // HANDLE MOVEMENT //
             for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
@@ -5908,6 +5917,7 @@ int main(int argc, char **argv) {
         menu_clear_items(&local->menu_shape);
         menu_clear_items(&local->menu_script);
         menu_clear_items(&local->menu_script_run);
+        pwlua_remove(local->lua_shell);
     }
 
     if (g->use_lua_worldgen == 1) {

@@ -8,6 +8,7 @@
 #include <lualib.h>
 #include <lauxlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "config.h"
 #include "pw.h"
@@ -29,7 +30,7 @@
 #define EOFMARK		"<eof>"
 #define marklen		(sizeof(EOFMARK)/sizeof(char) - 1)
 
-typedef struct  {
+struct LuaThreadState {
     thrd_t thread;
     mtx_t mtx;
     cnd_t cnd;
@@ -39,59 +40,128 @@ typedef struct  {
     int player_id;
     int state;
     int terminate;
-} LuaThreadState;
+    int is_shell;
+    struct LuaThreadState *next, *prev;
+};
+
+static LuaThreadState *lua_threads;
 
 int pwlua_thread_run(LuaThreadState *lts);
 
-// One Lua thread per local player.
-LuaThreadState lts_players[MAX_LOCAL_PLAYERS];
 
-LuaThreadState *get_lua_state(int player_id)
+LuaThreadState *pwlua_new(int player_id)
 {
-    LuaThreadState *lts = NULL;
-    if (player_id < 1 || player_id > MAX_LOCAL_PLAYERS) {
-        printf("Invalid player ID: %d\n", player_id);
+    LuaThreadState *lts = malloc(sizeof(LuaThreadState));
+    lts->lua_code[0] = '\0';
+    lts->control_callback[0] = '\0';
+    lts->player_id = player_id;
+    lts->state = AVAILABLE;
+    lts->is_shell = 0;
+    lts->terminate = 0;
+    if (lua_threads == NULL) {
+        // First lua thread
+        lua_threads = lts;
+        lts->next = NULL;
+        lts->prev = NULL;
     } else {
-        lts = &lts_players[player_id - 1];
+        // Insert at end of list
+        LuaThreadState *last_lts = lua_threads;
+        while (last_lts->next != NULL) {
+            last_lts = last_lts->next;
+        }
+        last_lts->next = lts;
+        lts->prev = last_lts;
+        lts->next = NULL;
     }
     return lts;
 }
 
+LuaThreadState *pwlua_new_shell(int player_id)
+{
+    LuaThreadState *lts = pwlua_new(player_id);
+    lts->is_shell = 1;
+    return lts;
+}
+
+void pwlua_remove(LuaThreadState *lts)
+{
+    if (lts->prev == NULL && lts->next == NULL) {
+        // No more Lua threads left
+        lua_threads = NULL;
+    } else {
+        if (lts->prev == NULL) {
+            lua_threads = lts->next;
+            lts->next->prev = NULL;
+        } else {
+            if (lts->next == NULL) {
+                lts->prev->next = NULL;
+            } else {
+                lts->prev->next = lts->next;
+                lts->next->prev = lts->prev;
+            }
+        }
+    }
+    free(lts);
+}
+
+LuaThreadState *get_lua_state(lua_State *L)
+{
+    LuaThreadState *lts_match = NULL;
+    for (LuaThreadState *lts=lua_threads; lts; lts=lts->next) {
+        if (L == lts->L) {
+            lts_match = lts;
+            break;
+        }
+    }
+    return lts_match;
+}
+
+void pwlua_set_is_shell(lua_State *L, int is_shell)
+{
+    LuaThreadState *lts = get_lua_state(L);
+    if (lts == NULL) {
+        return;
+    }
+    lts->is_shell = is_shell;
+}
+
 void pwlua_control_callback(int player_id, int x, int y, int z, int face)
 {
-    for (int i=1; i<=MAX_LOCAL_PLAYERS; i++) {
-        LuaThreadState *lts = get_lua_state(i);
+    for (LuaThreadState *lts=lua_threads; lts; lts=lts->next) {
         char lua_code[LUA_MAXINPUT];
         if (strlen(lts->control_callback) == 0) {
             continue;
         }
         snprintf(lua_code, LUA_MAXINPUT, "$%s(%d,%d,%d,%d,%d)",
                  lts->control_callback, player_id, x, y, z, face);
-        pwlua_parse_line(lts->player_id, lua_code);
+        pwlua_parse_line(lts, lua_code);
     }
 }
 
-void set_control_block_callback(int player_id, const char *text)
+void set_control_block_callback(lua_State *L, const char *text)
 {
-    LuaThreadState *lts = get_lua_state(player_id);
+    LuaThreadState *lts = get_lua_state(L);
     if (lts == NULL) {
         return;
     }
-    // Validate the callback function name by only allowing alphanumeric
-    // and underscore characters.
-    for (size_t i=0; i<strlen(text); i++) {
-        char c = text[i];
-        if (!isalnum(c) && c != '_') {
-            printf("Invalid function name: %s\n", text);
-            return;
+    if (text == NULL) {
+        lts->control_callback[0] = '\0';
+    } else {
+        // Validate the callback function name by only allowing alphanumeric
+        // and underscore characters.
+        for (size_t i=0; i<strlen(text); i++) {
+            char c = text[i];
+            if (!isalnum(c) && c != '_') {
+                printf("Invalid function name: %s\n", text);
+                return;
+            }
         }
+        snprintf(lts->control_callback, LUA_MAX_CALLBACK_NAME, "%s", text);
     }
-    snprintf(lts->control_callback, LUA_MAX_CALLBACK_NAME, "%s", text);
 }
 
-void pwlua_parse_line(int player_id, const char *buffer)
+void pwlua_parse_line(LuaThreadState *lts, const char *buffer)
 {
-    LuaThreadState *lts = get_lua_state(player_id);
     if (lts == NULL) {
         return;
     }
@@ -104,7 +174,6 @@ void pwlua_parse_line(int player_id, const char *buffer)
 
     if (lts->state == AVAILABLE) {
         // Start the Lua thread and run the line of Lua code.
-        lts->player_id = player_id;
         lts->state = STARTING;
         snprintf(lts->lua_code, LUA_MAXINPUT, "%s", buffer + 1);
         lts->control_callback[0] = '\0';
@@ -117,7 +186,22 @@ void pwlua_parse_line(int player_id, const char *buffer)
         cnd_signal(&lts->cnd);
     } else {
         char *still_running_msg = "Lua still running";
-        add_message(player_id, still_running_msg);
+        add_message(lts->player_id, still_running_msg);
+    }
+}
+
+void pwlua_remove_closed_threads(void)
+{
+    LuaThreadState *lts = lua_threads;
+    while (lts) {
+        LuaThreadState *lts_to_check = lts;
+        lts = lts->next;
+        if (lts_to_check->state == STOPPED && !lts_to_check->is_shell) {
+            thrd_join(lts_to_check->thread, NULL);
+            cnd_destroy(&lts_to_check->cnd);
+            mtx_destroy(&lts_to_check->mtx);
+            pwlua_remove(lts_to_check);
+        }
     }
 }
 
@@ -315,6 +399,9 @@ int pwlua_thread_run_protected_mode(lua_State *L)
 
     do {
         process_lua_code_line(lts);
+        if (!lts->is_shell) {
+            break;
+        }
         lts->state = WAITING;
         cnd_wait(&lts->cnd, &lts->mtx);
     } while (!lts->terminate);
