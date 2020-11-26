@@ -307,6 +307,7 @@ typedef struct {
     int suppress_char;
     int mode;
     int mode_changed;
+    int render_option_changed;
     char db_path[MAX_PATH_LENGTH];
     int day_length;
     int time_changed;
@@ -1755,7 +1756,7 @@ void load_chunk(WorkerItem *item, lua_State *L) {
     Map *transform_map = item->transform_maps[1][1];
     SignList *signs = &item->signs;
     sign_list_alloc(signs, 16);
-    if (g->use_lua_worldgen) {
+    if (L != NULL) {
         pwlua_worldgen(L, p, q, block_map, extra_map, light_map, shape_map, signs, transform_map);
     } else {
         create_world(p, q, map_set_func, block_map);
@@ -2128,6 +2129,9 @@ int worker_run(void *arg) {
         while (worker->state != WORKER_BUSY) {
             cnd_wait(&worker->cnd, &worker->mtx);
             if (worker->exit_requested) {
+                if (L != NULL) {
+                    lua_close(L);
+                }
                 thrd_exit(1);
             }
         }
@@ -2141,7 +2145,7 @@ int worker_run(void *arg) {
         worker->state = WORKER_DONE;
         mtx_unlock(&worker->mtx);
     }
-    if (g->use_lua_worldgen == 1) {
+    if (L != NULL) {
         lua_close(L);
     }
     return 0;
@@ -2511,6 +2515,42 @@ void set_block(int x, int y, int z, int w) {
         }
     }
     client_block(x, y, z, w);
+}
+
+static int file_readable(const char *filename)
+{
+    FILE *f = fopen(filename, "r");  /* try to open file */
+    if (f == NULL) return 0;  /* open failed */
+    fclose(f);
+    return 1;
+}
+
+void set_worldgen(char *worldgen)
+{
+    if (g->use_lua_worldgen) {
+        lua_close(g->lua_worldgen);
+        g->lua_worldgen = NULL;
+        config->worldgen_path[0] = '\0';
+        g->use_lua_worldgen = 0;
+    }
+    if (worldgen && strlen(worldgen) > 0) {
+        char wg_path[MAX_PATH_LENGTH];
+        if (!file_readable(worldgen)) {
+            snprintf(wg_path, MAX_PATH_LENGTH, "%s/worldgen/%s.lua",
+                     get_data_dir(), worldgen);
+        } else {
+            snprintf(wg_path, MAX_PATH_LENGTH, "%s", worldgen);
+        }
+        if (!file_readable(wg_path)) {
+            printf("Worldgen file not found: %s\n", wg_path);
+            return;
+        }
+        strncpy(config->worldgen_path, wg_path, sizeof(config->worldgen_path));
+        config->worldgen_path[sizeof(config->worldgen_path)-1] = '\0';
+        g->lua_worldgen = pwlua_worldgen_init(config->worldgen_path);
+        g->use_lua_worldgen = 1;
+    }
+    g->render_option_changed = 1;
 }
 
 void queue_set_block(int x, int y, int z, int w) {
@@ -3069,6 +3109,7 @@ void parse_command(LocalPlayer *local, const char *buffer, int forward) {
     char name[MAX_NAME_LENGTH];
     int int_option, radius, count, p, q, xc, yc, zc;
     char window_title[MAX_TITLE_LENGTH];
+    char worldgen_path[MAX_PATH_LENGTH];
     Player *player = local->player;
     if (strcmp(buffer, "/fullscreen") == 0) {
         pg_toggle_fullscreen();
@@ -3159,11 +3200,15 @@ void parse_command(LocalPlayer *local, const char *buffer, int forward) {
         config->show_chat_text = int_option;
     }
     else if (sscanf(buffer, "/show-clouds %d", &int_option) == 1) {
-        char value[2];
-        snprintf(value, 2, "%d", int_option);
-        db_set_option("show-clouds", value);
-        config->show_clouds = int_option;
-        g->mode_changed = 1;  // regenerate world
+        if (g->mode == MODE_OFFLINE) {
+            char value[2];
+            snprintf(value, 2, "%d", int_option);
+            db_set_option("show-clouds", value);
+            config->show_clouds = int_option;
+            g->render_option_changed = 1;  // regenerate world
+        } else {
+            printf("Cannot change worldgen when connected to server.\n");
+        }
     }
     else if (sscanf(buffer, "/show-crosshairs %d", &int_option) == 1) {
         config->show_crosshairs = int_option;
@@ -3175,25 +3220,53 @@ void parse_command(LocalPlayer *local, const char *buffer, int forward) {
         config->show_info_text = int_option;
     }
     else if (sscanf(buffer, "/show-lights %d", &int_option) == 1) {
-        config->show_lights = int_option;
-        g->mode_changed = 1;  // regenerate world
+        if (g->mode == MODE_OFFLINE) {
+            config->show_lights = int_option;
+            g->render_option_changed = 1;  // regenerate world
+        } else {
+            printf("Cannot change worldgen when connected to server.\n");
+        }
     }
     else if (sscanf(buffer, "/show-plants %d", &int_option) == 1) {
-        char value[2];
-        snprintf(value, 2, "%d", int_option);
-        db_set_option("show-plants", value);
-        config->show_plants = int_option;
-        g->mode_changed = 1;  // regenerate world
+        if (g->mode == MODE_OFFLINE) {
+            char value[2];
+            snprintf(value, 2, "%d", int_option);
+            db_set_option("show-plants", value);
+            config->show_plants = int_option;
+            g->render_option_changed = 1;  // regenerate world
+        } else {
+            printf("Cannot change worldgen when connected to server.\n");
+        }
     }
     else if (sscanf(buffer, "/show-player-names %d", &int_option) == 1) {
         config->show_player_names = int_option;
     }
     else if (sscanf(buffer, "/show-trees %d", &int_option) == 1) {
-        char value[2];
-        snprintf(value, 2, "%d", int_option);
-        db_set_option("show-trees", value);
-        config->show_trees = int_option;
-        g->mode_changed = 1;  // regenerate world
+        if (g->mode == MODE_OFFLINE) {
+            char value[2];
+            snprintf(value, 2, "%d", int_option);
+            db_set_option("show-trees", value);
+            config->show_trees = int_option;
+            g->render_option_changed = 1;  // regenerate world
+        } else {
+            printf("Cannot change worldgen when connected to server.\n");
+        }
+    }
+    else if (strcmp(buffer, "/worldgen") == 0) {
+        if (g->mode == MODE_OFFLINE) {
+            set_worldgen(NULL);
+        } else {
+            printf("Cannot change worldgen when connected to server.\n");
+        }
+    }
+    else if (sscanf(buffer, "/worldgen %512c", worldgen_path) == 1) {
+        if (g->mode == MODE_OFFLINE) {
+            int prefix_length = strlen("/worldgen ");;
+            worldgen_path[strlen(buffer) - prefix_length] = '\0';
+            set_worldgen(worldgen_path);
+        } else {
+            printf("Cannot change worldgen when connected to server.\n");
+        }
     }
     else if (sscanf(buffer, "/show-wireframe %d", &int_option) == 1) {
         config->show_wireframe = int_option;
@@ -3757,19 +3830,35 @@ void parse_buffer(char *buffer) {
                 (int_value == 0 || int_value == 1)) {
                 if (int_value != config->show_plants) {
                     config->show_plants = int_value;
-                    g->mode_changed = 1;  // regenerate world
+                    g->render_option_changed = 1;  // regenerate world
                 }
             } else if (strncmp(name, "show-trees", 9) == 0 &&
                        (int_value == 0 || int_value == 1)) {
                 if (int_value != config->show_trees) {
                     config->show_trees = int_value;
-                    g->mode_changed = 1;  // regenerate world
+                    g->render_option_changed = 1;  // regenerate world
                 }
             } else if (strncmp(name, "show-clouds", 11) == 0 &&
                        (int_value == 0 || int_value == 1)) {
                 if (int_value != config->show_clouds) {
                     config->show_clouds = int_value;
-                    g->mode_changed = 1;  // regenerate world
+                    g->render_option_changed = 1;  // regenerate world
+                }
+            } else if (strncmp(name, "worldgen", 8) == 0) {
+                // Only except a named worldgen or empty for default.
+                // Only a worldgen script under the client's ./worldgen dir
+                // will be excepted.
+                if (strlen(value) > 0) {
+                    if (strchr(value, '/')) {
+                        printf(
+                "Path component not allowed in worldgen from server: %s\n"
+                "Please ask the server admin to use named worldgens only.\n",
+                               value);
+                        goto next_line;
+                    }
+                    set_worldgen(value);
+                } else {
+                    set_worldgen(NULL);
                 }
             }
             goto next_line;
@@ -5471,6 +5560,36 @@ void drain_edit_queue(size_t max_items, double max_time, double now)
     }
 }
 
+void initialize_worker_threads(void)
+{
+    for (int i = 0; i < WORKERS; i++) {
+        Worker *worker = g->workers + i;
+        worker->index = i;
+        worker->state = WORKER_IDLE;
+        worker->exit_requested = False;
+        mtx_init(&worker->mtx, mtx_plain);
+        cnd_init(&worker->cnd);
+        thrd_create(&worker->thrd, worker_run, worker);
+    }
+}
+
+void deinitialize_worker_threads(void)
+{
+    // Stop thread processing
+    for (int i = 0; i < WORKERS; i++) {
+        Worker *worker = g->workers + i;
+        worker->exit_requested = True;
+        cnd_signal(&worker->cnd);
+    }
+    // Wait for worker threads to exit
+    for (int i = 0; i < WORKERS; i++) {
+        Worker *worker = g->workers + i;
+        thrd_join(worker->thrd, NULL);
+        cnd_destroy(&worker->cnd);
+        mtx_destroy(&worker->mtx);
+    }
+}
+
 int main(int argc, char **argv) {
     // INITIALIZATION //
     init_data_dir();
@@ -5483,8 +5602,7 @@ int main(int argc, char **argv) {
     }
     parse_startup_config(argc, argv);
     if (strlen(config->worldgen_path) > 0) {
-        g->use_lua_worldgen = 1;
-        g->lua_worldgen = pwlua_worldgen_init(config->worldgen_path);
+        set_worldgen(config->worldgen_path);
     }
 
     if (config->benchmark_create_chunks) {
@@ -5654,15 +5772,7 @@ int main(int argc, char **argv) {
     while (running) {
 
         // INITIALIZE WORKER THREADS
-        for (int i = 0; i < WORKERS; i++) {
-            Worker *worker = g->workers + i;
-            worker->index = i;
-            worker->state = WORKER_IDLE;
-            worker->exit_requested = False;
-            mtx_init(&worker->mtx, mtx_plain);
-            cnd_init(&worker->cnd);
-            thrd_create(&worker->thrd, worker_run, worker);
-        }
+        initialize_worker_threads();
 
         // DATABASE INITIALIZATION //
         if (g->mode == MODE_OFFLINE || config->use_cache) {
@@ -5862,25 +5972,19 @@ int main(int argc, char **argv) {
                 g->mode_changed = 0;
                 break;
             }
+            if (g->render_option_changed) {
+                g->render_option_changed = 0;
+                deinitialize_worker_threads();
+                initialize_worker_threads();
+                delete_all_chunks();
+            }
         }
         if (terminate) {
             running = 0;
         }
 
         // DEINITIALIZE WORKER THREADS
-        // Stop thread processing
-        for (int i = 0; i < WORKERS; i++) {
-            Worker *worker = g->workers + i;
-            worker->exit_requested = True;
-            cnd_signal(&worker->cnd);
-        }
-        // Wait for worker threads to exit
-        for (int i = 0; i < WORKERS; i++) {
-            Worker *worker = g->workers + i;
-            thrd_join(worker->thrd, NULL);
-            cnd_destroy(&worker->cnd);
-            mtx_destroy(&worker->mtx);
-        }
+        deinitialize_worker_threads();
 
         // SHUTDOWN //
         history_save();

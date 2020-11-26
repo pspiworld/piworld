@@ -70,6 +70,8 @@ TRANSFORM = 't'
 VERSION = 'V'
 YOU = 'U'
 
+worldgen = ""
+
 try:
     from config import *
 except ImportError:
@@ -854,6 +856,8 @@ class Model(object):
         rows = list(self.execute(query))
         for name, value in rows:
             client.send(OPTION, name, value)
+        if worldgen:
+            client.send(OPTION, "worldgen", worldgen)
     def send_nick(self, client, player_index):
         for other in self.clients:
             other.send(NICK, client.client_id, player_index,
@@ -944,6 +948,13 @@ def main():
         cleanup()
         return
     host, port = DEFAULT_HOST, DEFAULT_PORT
+    if '--worldgen' in sys.argv:
+        global worldgen
+        i = sys.argv.index('--worldgen')
+        worldgen_value = sys.argv[i+1]
+        worldgen = worldgen_value
+        del sys.argv[i+1]
+        del sys.argv[i]
     if len(sys.argv) > 1:
         host = sys.argv[1]
     if len(sys.argv) > 2:
