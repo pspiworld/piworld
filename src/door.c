@@ -127,6 +127,20 @@ int door_map_set(DoorMap *map, int x, int y, int z, int w,
     return 0;
 }
 
+void door_map_clear(DoorMap *map, int x, int y, int z)
+{
+    unsigned int index = door_hash(x, y, z) & map->mask;
+    DoorMapEntry *entry = map->data + index;
+    if (x != map->dx + entry->x || y != map->dy + entry->y ||
+        z != map->dz + entry->z) {
+        return;
+    }
+    entry->w = 0;
+    entry->shape = 0;
+    entry->extra = 0;
+    entry->transform = 0;
+}
+
 DoorMapEntry *door_map_get(DoorMap *map, int x, int y, int z) {
     unsigned int index = door_hash(x, y, z) & map->mask;
     x -= map->dx;

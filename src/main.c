@@ -2493,6 +2493,7 @@ void _set_block(int p, int q, int x, int y, int z, int w, int dirty) {
         _set_extra(p, q, x, y, z, 0, 1);
         _set_shape(p, q, x, y, z, 0, 1);
         _set_transform(p, q, x, y, z, 0, 1);
+        door_map_clear(&chunk->doors, x, y, z);
     }
 }
 

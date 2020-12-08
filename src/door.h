@@ -62,6 +62,7 @@ int door_map_set(DoorMap *map, int x, int y, int z, int w,
     float light[6][4], int left, int right, int top,
     int bottom, int front, int back, float n, int shape,
     int extra, int transform);
+void door_map_clear(DoorMap *map, int x, int y, int z);
 DoorMapEntry *door_map_get(DoorMap *map, int x, int y, int z);
 
 void make_door(
