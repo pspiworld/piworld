@@ -3256,6 +3256,7 @@ void parse_command(LocalPlayer *local, const char *buffer, int forward) {
     else if (strcmp(buffer, "/worldgen") == 0) {
         if (g->mode == MODE_OFFLINE) {
             set_worldgen(NULL);
+            db_set_option("worldgen", "");
         } else {
             printf("Cannot change worldgen when connected to server.\n");
         }
@@ -3265,6 +3266,7 @@ void parse_command(LocalPlayer *local, const char *buffer, int forward) {
             int prefix_length = strlen("/worldgen ");;
             worldgen_path[strlen(buffer) - prefix_length] = '\0';
             set_worldgen(worldgen_path);
+            db_set_option("worldgen", worldgen_path);
         } else {
             printf("Cannot change worldgen when connected to server.\n");
         }
@@ -5561,6 +5563,23 @@ void drain_edit_queue(size_t max_items, double max_time, double now)
     }
 }
 
+void move_players_to_empty_block(void)
+{
+    for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
+        g->local_players[i].player = &g->clients->players[i];
+        LocalPlayer *local = &g->local_players[i];
+        State *s = &local->player->state;
+        if (local->player->is_active) {
+            int w = get_block(roundf(s->x), s->y, roundf(s->z));
+            int shape = get_shape(roundf(s->x), s->y, roundf(s->z));
+            int extra = get_extra(roundf(s->x), s->y, roundf(s->z));
+            if (is_obstacle(w, shape, extra)) {
+                s->y = highest_block(s->x, s->z) + 2;
+            }
+        }
+    }
+}
+
 void initialize_worker_threads(void)
 {
     for (int i = 0; i < WORKERS; i++) {
@@ -5592,6 +5611,7 @@ void deinitialize_worker_threads(void)
 }
 
 int main(int argc, char **argv) {
+    int override_worldgen_from_command_line = 0;
     // INITIALIZATION //
     init_data_dir();
     srand(time(NULL));
@@ -5604,6 +5624,7 @@ int main(int argc, char **argv) {
     parse_startup_config(argc, argv);
     if (strlen(config->worldgen_path) > 0) {
         set_worldgen(config->worldgen_path);
+        override_worldgen_from_command_line = 1;
     }
 
     if (config->benchmark_create_chunks) {
@@ -5785,7 +5806,20 @@ int main(int argc, char **argv) {
                 // TODO: support proper caching of signs (handle deletions)
                 db_delete_all_signs();
             } else {
+                // Setup worldgen from local config
                 const unsigned char *value;
+                if (!override_worldgen_from_command_line) {
+                    value = db_get_option("worldgen");
+                    if (value != NULL) {
+                        snprintf(config->worldgen_path, MAX_PATH_LENGTH, "%s", value);
+                        set_worldgen(config->worldgen_path);
+                    } else {
+                        set_worldgen(NULL);
+                    }
+                } else if (strlen(config->worldgen_path) == 0) {
+                    set_worldgen(NULL);
+                }
+                override_worldgen_from_command_line = 0;
                 value = db_get_option("show-clouds");
                 if (value != NULL) {
                     config->show_clouds = atoi((char *)value);
@@ -5819,6 +5853,7 @@ int main(int argc, char **argv) {
 
         g->client_count = 1;
         g->clients->id = 0;
+        int check_players_position = 1;
 
         for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {
             g->local_players[i].player = &g->clients->players[i];
@@ -5837,9 +5872,6 @@ int main(int argc, char **argv) {
             // LOAD STATE FROM DATABASE //
             int loaded = db_load_state(&s->x, &s->y, &s->z, &s->rx, &s->ry, i);
             force_chunks(local->player);
-            if (!loaded) {
-                s->y = highest_block(s->x, s->z) + 2;
-            }
 
             loaded = db_load_player_name(local->player->name, MAX_NAME_LENGTH, i);
             if (!loaded) {
@@ -5973,7 +6005,12 @@ int main(int argc, char **argv) {
                 g->mode_changed = 0;
                 break;
             }
+            if (check_players_position) {
+                move_players_to_empty_block();
+                check_players_position = 0;
+            }
             if (g->render_option_changed) {
+                check_players_position = 1;
                 g->render_option_changed = 0;
                 deinitialize_worker_threads();
                 initialize_worker_threads();
@@ -6007,6 +6044,7 @@ int main(int argc, char **argv) {
         delete_all_chunks();
         delete_all_players();
         ring_free(&g->edit_ring);
+        set_worldgen(NULL);
     }
     mtx_destroy(&edit_ring_mtx);
 
