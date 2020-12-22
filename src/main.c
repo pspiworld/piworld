@@ -214,6 +214,7 @@ typedef struct {
     int menu_id_fullscreen;
     int menu_id_verbose;
     int menu_id_wireframe;
+    int menu_id_worldgen;
     int menu_id_options_resume;
     Menu menu_new;
     int menu_id_new_game_name;
@@ -245,6 +246,12 @@ typedef struct {
     Menu menu_script_run;
     char menu_script_run_dir[MAX_DIR_LENGTH];
     int menu_id_script_run_cancel;
+    Menu menu_worldgen;
+    int menu_id_worldgen_cancel;
+    int menu_id_worldgen_select;
+    Menu menu_worldgen_select;
+    char menu_worldgen_dir[MAX_DIR_LENGTH];
+    int menu_id_worldgen_select_cancel;
     Menu *active_menu;
 
     int view_x;
@@ -3904,6 +3911,7 @@ void create_menus(LocalPlayer *local)
     local->menu_id_fullscreen = menu_add_option(menu, "Fullscreen");
     local->menu_id_verbose = menu_add_option(menu, "Verbose");
     local->menu_id_wireframe = menu_add_option(menu, "Wireframe");
+    local->menu_id_worldgen = menu_add(menu, "Worldgen");
     local->menu_id_options_resume = menu_add(menu, "Resume");
     menu_set_option(menu, local->menu_id_crosshairs, config->show_crosshairs);
     menu_set_option(menu, local->menu_id_fullscreen, config->fullscreen);
@@ -3955,6 +3963,19 @@ void create_menus(LocalPlayer *local)
     snprintf(local->menu_script_run_dir, MAX_DIR_LENGTH, path);
     free(path);
     menu_set_title(menu, "RUN SCRIPT");
+
+    // Worldgen menu
+    menu = &local->menu_worldgen;
+    menu_set_title(menu, "WORLDGEN");
+    local->menu_id_worldgen_select = menu_add(menu, "Select");
+    local->menu_id_worldgen_cancel = menu_add(menu, "Cancel");
+
+    // Worldgen select menu
+    menu = &local->menu_worldgen_select;
+    path = realpath(".", NULL);
+    snprintf(local->menu_worldgen_dir, MAX_DIR_LENGTH, "%s/worldgen", path);
+    free(path);
+    menu_set_title(menu, "SELECT WORLDGEN");
 }
 
 void populate_block_edit_menu(LocalPlayer *local, int w, char *sign_text,
@@ -4063,6 +4084,43 @@ void populate_script_run_menu(LocalPlayer *local)
     closedir(dir);
     menu_sort(menu);
     local->menu_id_script_run_cancel = menu_add(menu, "Cancel");
+}
+
+void populate_worldgen_select_menu(LocalPlayer *local)
+{
+    Menu *menu = &local->menu_worldgen_select;
+    menu_clear_items(menu);
+    DIR *dir = opendir(local->menu_worldgen_dir);
+    struct dirent *dp;
+    for (;;) {
+        dp = readdir(dir);
+        if (dp == NULL) {
+            break;
+        }
+        if (dp->d_name[0] == '.') {
+            continue;  // ignore hidden files
+        }
+        char path[MAX_PATH_LENGTH];
+        char wg[MAX_PATH_LENGTH];
+        snprintf(path, MAX_PATH_LENGTH, "%s/%s", local->menu_worldgen_dir,
+                 dp->d_name);
+        struct stat sb;
+        stat(path, &sb);
+        if (S_ISDIR(sb.st_mode)) {
+            continue;  // ignore directories
+        } else {
+            if (strlen(dp->d_name) <= 4 ||
+                strcmp(dp->d_name + (strlen(dp->d_name) - 4), ".lua") != 0) {
+                continue;
+            }
+            snprintf(wg, MAX_PATH_LENGTH, "%s", dp->d_name);
+            *strrchr(wg, '.') = '\0';
+        }
+        menu_add(menu, wg);
+    }
+    closedir(dir);
+    menu_sort(menu);
+    local->menu_id_worldgen_select_cancel = menu_add(menu, "Cancel");
 }
 
 void reset_model(void) {
@@ -4714,6 +4772,8 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             close_menu(local);
         } else if (event == local->menu_id_script) {
             open_menu(local, &local->menu_script);
+        } else if (event == local->menu_id_worldgen) {
+            open_menu(local, &local->menu_worldgen);
         } else if (event == local->menu_id_fullscreen) {
             pg_toggle_fullscreen();
         } else if (event == local->menu_id_crosshairs) {
@@ -4834,6 +4894,13 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             populate_script_run_menu(local);
             open_menu(local, &local->menu_script_run);
         }
+    } else if (menu == &local->menu_worldgen) {
+        if (event == local->menu_id_worldgen_cancel) {
+            close_menu(local);
+        } else if (event == local->menu_id_worldgen_select) {
+            populate_worldgen_select_menu(local);
+            open_menu(local, &local->menu_worldgen_select);
+        }
     } else if (menu == &local->menu_script_run) {
         if (event == local->menu_id_script_run_cancel) {
             close_menu(local);
@@ -4856,6 +4923,13 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             snprintf(lua_code, sizeof(lua_code), "$dofile(\"%s\")\n", path);
             LuaThreadState* new_lua_instance = pwlua_new(local->player->id);
             pwlua_parse_line(new_lua_instance, lua_code);
+        }
+    } else if (menu == &local->menu_worldgen_select) {
+        if (event == local->menu_id_worldgen_select_cancel) {
+            close_menu(local);
+        } else if (event > 0) {
+            set_worldgen(menu_get_name(menu, event));
+            db_set_option("worldgen", menu_get_name(menu, event));
         }
     }
 }
@@ -6060,6 +6134,8 @@ int main(int argc, char **argv) {
         menu_clear_items(&local->menu_shape);
         menu_clear_items(&local->menu_script);
         menu_clear_items(&local->menu_script_run);
+        menu_clear_items(&local->menu_worldgen);
+        menu_clear_items(&local->menu_worldgen_select);
         pwlua_remove(local->lua_shell);
     }
 
