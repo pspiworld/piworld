@@ -3972,9 +3972,8 @@ void create_menus(LocalPlayer *local)
 
     // Worldgen select menu
     menu = &local->menu_worldgen_select;
-    path = realpath(".", NULL);
-    snprintf(local->menu_worldgen_dir, MAX_DIR_LENGTH, "%s/worldgen", path);
-    free(path);
+    snprintf(local->menu_worldgen_dir, MAX_DIR_LENGTH, "%s/worldgen",
+             get_data_dir());
     menu_set_title(menu, "SELECT WORLDGEN");
 }
 
