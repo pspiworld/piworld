@@ -93,6 +93,7 @@ the terrain generation just like the client.
 
 ### Controls
 
+- Esc to open the menu.
 - WASD to move forward, left, backward, right.
 - Space to jump.
 - C to crouch.
@@ -100,8 +101,10 @@ the terrain generation just like the client.
 - Right Click or Ctrl + Left Click to create a block.
 - Ctrl + Right Click to toggle a block as a light source.
 - 1-9 to select the block type to create.
+- I to open the block type menu.
 - E to cycle through the block types.
 - Tab to toggle between walking and flying.
+- U to undo the removal of the last removed block.
 - Z to zoom.
 - F to show the scene in orthographic mode.
 - O to observe players in the main view.
@@ -110,6 +113,7 @@ the terrain generation just like the client.
 - Forward slash (/) to enter a command (see section: In Game Command Line).
 - Backquote (`) to write text on any block (signs)
   (see section: Sign Text Markup).
+- Dollar sign ($) to enter a Lua command.
 - Arrow keys emulate mouse movement.
 - Enter emulates mouse click.
 - F8 to cycle current keyboard and mouse pair around local players.
@@ -153,6 +157,14 @@ new shape will occupy before using any /shape command - you can destroy entire
 worlds with these commands, **SECOND WARNING** any shape larger than the
 current view area will freeze, for possibly a long time, the game until all
 the blocks have been added and will create a large game save file)
+
+Change the worldgen:
+
+    /worldgen [checkerboard,city1,worldgen1]
+
+Change worldgen to the default:
+
+    /worldgen
 
 ### Startup Options
 
@@ -199,6 +211,10 @@ Set the window title:
 Set the window position:
 
     --window-xy XxY
+
+worldgen:
+
+    --worldgen city1
 
 ### Chat Commands
 
