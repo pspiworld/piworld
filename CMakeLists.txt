@@ -23,8 +23,15 @@ if(RASPI)
         )
 endif()
 
-set(COMMON_LIBS dl m pthread sqlite3 X11 Xcursor Xi
-    ${CMAKE_SOURCE_DIR}/deps/moonjit/src/libluajit.a)
+set(COMMON_LIBS dl m pthread X11 Xcursor Xi
+     ${CMAKE_SOURCE_DIR}/deps/moonjit/src/libluajit.a)
+
+if(SQLITE_BUILTIN)
+    list(APPEND SOURCE_FILES deps/sqlite/sqlite3.c)
+    include_directories(deps/sqlite)
+else()
+    list(APPEND COMMON_LIBS sqlite3)
+endif()
 
 if(MESA)
     # The MESA driver is only for the pi2/3.
