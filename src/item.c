@@ -217,6 +217,13 @@ const int shapes[] = {
     SLAB15,
     UPPER_DOOR,
     LOWER_DOOR,
+    FENCE,
+    FENCE_POST,
+    FENCE_HALF,
+    FENCE_L,
+    FENCE_T,
+    FENCE_X,
+    GATE,
 };
 
 const int shape_count = sizeof(shapes) / sizeof(int);
@@ -240,6 +247,13 @@ const char *shape_names[] = {
     "Slab 15",
     "Upper Door",
     "Lower Door",
+    "Fence",
+    "Fence Post",
+    "Fence Half",
+    "Fence L",
+    "Fence T",
+    "Fence X",
+    "Gate",
 };
 
 int is_plant(int w) {
@@ -263,7 +277,8 @@ int is_obstacle(int w, int shape, int extra) {
         return 0;
     }
     shape = ABS(shape);
-    if ((shape == UPPER_DOOR || shape == LOWER_DOOR) && is_open(extra)) {
+    if ((shape == UPPER_DOOR || shape == LOWER_DOOR || shape == GATE) &&
+        is_open(extra)) {
         return 0;
     }
     switch (w) {

@@ -10,15 +10,6 @@
 #include "pw.h"
 #include "util.h"
 
-#define P00 -1
-#define P02 -0.75
-#define P14 +0.75
-#define P16 +1
-
-#define UV01 (1 / 2048.0)
-#define UV14 (14 / 256.0)
-#define UV16 (1 / 16.0 - 1 / 2048.0)
-
 void make_door_in_buffer_sub_data(int buffer, int float_size, DoorMapEntry *door);
 
 int door_hash_int(int key) {
@@ -94,7 +85,7 @@ int door_map_set(DoorMap *map, int x, int y, int z, int w,
     DoorMapEntry *entry = map->data + index;
     int overwrite = 0;
     while (!DOOR_EMPTY_ENTRY(entry)) {
-        if (entry->x == x && entry->y == y && entry->z == z) {
+        if (entry->e.x == x && entry->e.y == y && entry->e.z == z) {
             overwrite = 1;
             break;
         }
@@ -105,16 +96,16 @@ int door_map_set(DoorMap *map, int x, int y, int z, int w,
         door_entry_copy(entry, offset_into_gl_buffer, face_count_in_gl_buffer,
             ao, light, left, right, top, bottom, front, back, n, shape, extra,
             transform);
-        if (entry->w != w) {
-            entry->w = w;
+        if (entry->e.w != w) {
+            entry->e.w = w;
             return 1;
         }
     }
     else if (w) {
-        entry->x = x;
-        entry->y = y;
-        entry->z = z;
-        entry->w = w;
+        entry->e.x = x;
+        entry->e.y = y;
+        entry->e.z = z;
+        entry->e.w = w;
         door_entry_copy(entry, offset_into_gl_buffer, face_count_in_gl_buffer,
             ao, light, left, right, top, bottom, front, back, n, shape, extra,
             transform);
@@ -131,11 +122,11 @@ void door_map_clear(DoorMap *map, int x, int y, int z)
 {
     unsigned int index = door_hash(x, y, z) & map->mask;
     DoorMapEntry *entry = map->data + index;
-    if (x != map->dx + entry->x || y != map->dy + entry->y ||
-        z != map->dz + entry->z) {
+    if (x != map->dx + entry->e.x || y != map->dy + entry->e.y ||
+        z != map->dz + entry->e.z) {
         return;
     }
-    entry->w = 0;
+    entry->e.w = 0;
     entry->shape = 0;
     entry->extra = 0;
     entry->transform = 0;
@@ -151,7 +142,7 @@ DoorMapEntry *door_map_get(DoorMap *map, int x, int y, int z) {
     if (z < 0 || z > 255) return 0;
     DoorMapEntry *entry = map->data + index;
     while (!DOOR_EMPTY_ENTRY(entry)) {
-        if (entry->x == x && entry->y == y && entry->z == z) {
+        if (entry->e.x == x && entry->e.y == y && entry->e.z == z) {
             return entry;
         }
         index = (index + 1) & map->mask;
@@ -188,8 +179,8 @@ void make_door_in_buffer_sub_data(int buffer, int float_size,
     GLfloat door_data[6*10*6];  // 6 * components * faces
     make_door(
         door_data, door->ao, door->light, door->left, door->right, door->top,
-        door->bottom, door->front, door->back, door->x, door->y, door->z,
-        door->n, door->w, door->shape, door->extra, door->transform);
+        door->bottom, door->front, door->back, door->e.x, door->e.y, door->e.z,
+        door->n, door->e.w, door->shape, door->extra, door->transform);
     glBindBuffer(GL_ARRAY_BUFFER, buffer);
     if (config->use_hfloat) {
         hfloat hdata[6*10*6];
@@ -470,7 +461,7 @@ void door_toggle_open(DoorMap *door_map, DoorMapEntry *door, int x, int y,
         }
     }
     if (matching_door) {
-        _door_toggle_open(matching_door, x, matching_door->y, z, buffer,
+        _door_toggle_open(matching_door, x, matching_door->e.y, z, buffer,
             float_size);
     }
 }

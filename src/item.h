@@ -77,6 +77,13 @@
 #define SLAB15 15
 #define UPPER_DOOR 16
 #define LOWER_DOOR 17
+#define FENCE 18
+#define FENCE_POST 19
+#define FENCE_HALF 20
+#define FENCE_L 21
+#define FENCE_T 22
+#define FENCE_X 23
+#define GATE 24
 
 // Transformations
 #define DOOR_X 0

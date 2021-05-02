@@ -18,6 +18,7 @@
 #include "cube.h"
 #include "db.h"
 #include "door.h"
+#include "fence.h"
 #include "item.h"
 #include "map.h"
 #include "matrix.h"
@@ -1555,14 +1556,18 @@ void compute_chunk(WorkerItem *item) {
                 if (shape >= SLAB1 && shape <= SLAB15) {
                     // Top face of slab is viewable when a block is above the slab.
                     f3 = 1;
+                    total = f1 + f2 + f3 + f4 + f5 + f6;
                 } else if (shape == UPPER_DOOR || shape == LOWER_DOOR) {
                     // Different side faces of a door may be visible when open.
                     f1 = 1;
                     f2 = 1;
                     f5 = 1;
                     f6 = 1;
+                    total = f1 + f2 + f3 + f4 + f5 + f6;
+                } else if (shape >= FENCE && shape <= GATE) {
+                    // Hidden face removal not yet enabled for fence shapes.
+                    total = fence_face_count(shape);
                 }
-                total = f1 + f2 + f3 + f4 + f5 + f6;
             }
         }
         miny = MIN(miny, ey);
@@ -1595,14 +1600,18 @@ void compute_chunk(WorkerItem *item) {
             if (shape >= SLAB1 && shape <= SLAB15) {
                 // Top face of slab is viewable when a block is above the slab.
                 f3 = 1;
+                total = f1 + f2 + f3 + f4 + f5 + f6;
             } else if (shape == UPPER_DOOR || shape == LOWER_DOOR) {
                 // Different side faces of a door may be visible when open.
                 f1 = 1;
                 f2 = 1;
                 f5 = 1;
                 f6 = 1;
+                total = f1 + f2 + f3 + f4 + f5 + f6;
+            } else if (shape >= FENCE && shape <= GATE) {
+                f1 = 1; f2 = 1; f3 = 1; f4 = 1; f5 = 1; f6 = 1;
+                total = fence_face_count(shape);
             }
-            total = f1 + f2 + f3 + f4 + f5 + f6;
         }
         char neighbors[27] = {0};
         char lights[27] = {0};
@@ -1669,7 +1678,22 @@ void compute_chunk(WorkerItem *item) {
                         f1, f2, f3, f4, f5, f6,
                         entry->e.x, entry->e.y, entry->e.z, 0.5, ew, shape,
                         extra, transform);
+                } else if (shape >= FENCE && shape <= GATE) {
+                    int extra = 0;
+                    if (has_extra && extra_map)  {
+                        extra = map_get(extra_map, ex, ey, ez);
+                    }
+                    if (shape == GATE) {
+                        door_map_set(door_map, ex, ey, ez, ew, offset, total, ao,
+                            light, f1, f2, f3, f4, f5, f6, 0.5, shape, extra,
+                            transform);
+                    }
+                    make_fence(data + offset, ao, light,
+                        f1, f2, f3, f4, f5, f6,
+                        entry->e.x, entry->e.y, entry->e.z, 0.5, ew, shape,
+                        extra, transform);
                 }
+
             } else {
                 make_cube(
                     data + offset, ao, light,
@@ -3003,6 +3027,54 @@ void cube(Block *b1, Block *b2, int fill) {
     }
 }
 
+void fence(Block *b1, Block *b2) {
+    if (b1->w != b2->w) {
+        return;
+    }
+    int w = b1->w;
+    int x1 = MIN(b1->x, b2->x);
+    int y1 = MIN(b1->y, b2->y);
+    int z1 = MIN(b1->z, b2->z);
+    int x2 = MAX(b1->x, b2->x);
+    int y2 = MAX(b1->y, b2->y);
+    int z2 = MAX(b1->z, b2->z);
+    int a = (x1 == x2) + (y1 == y2) + (z1 == z2);
+    for (int x = x1; x <= x2; x++) {
+        for (int y = y1; y <= y2; y++) {
+            for (int z = z1; z <= z2; z++) {
+                int n = 0;
+                n += x == x1 || x == x2;
+                n += y == y1 || y == y2;
+                n += z == z1 || z == z2;
+                if (n <= a) {
+                    continue;
+                }
+                if (x > x1 && x < x2 && z > z1 && z < z2) {
+                    continue;
+                }
+                builder_block(x, y, z, w);
+                int shape = FENCE;
+                if (x == x1 && z == z1) {
+                    shape = FENCE_L;  // corner
+                    set_transform(x, y, z, 2);
+                } else if (x == x2 && z == z1) {
+                    shape = FENCE_L;  // corner
+                } else if (x == x2 && z == z2) {
+                    shape = FENCE_L;  // corner
+                    set_transform(x, y, z, 1);
+                } else if (x == x1 && z == z2) {
+                    shape = FENCE_L;  // corner
+                    set_transform(x, y, z, 3);
+                } else if (x != x1 && x != x2) {
+                    // other two sides of the fence
+                    set_transform(x, y, z, 1);
+                }
+                set_shape(x, y, z, shape);
+            }
+        }
+    }
+}
+
 void sphere(Block *center, int radius, int fill, int fx, int fy, int fz) {
     static const float offsets[8][3] = {
         {-0.5, -0.5, -0.5},
@@ -3350,6 +3422,9 @@ void parse_command(LocalPlayer *local, const char *buffer, int forward) {
     else if (sscanf(buffer, "/cylinder %d", &radius) == 1) {
         cylinder(&local->block0, &local->block1, radius, 0);
     }
+    else if (strcmp(buffer, "/fence") == 0) {
+        fence(&local->block0, &local->block1);
+    }
     else if (sscanf(buffer, "/delete-radius %d", &radius) == 1) {
         if (radius >= g->create_radius && radius <= g->create_radius + 30) {
             set_view_radius(g->render_radius, radius);
@@ -3448,6 +3523,14 @@ void set_block_under_crosshair(LocalPlayer *local)
             return;
         } else if (is_control(extra)) {
             open_menu(local, &local->menu);
+            return;
+        } else if (shape == GATE) {
+            // toggle open/close
+            int p = chunked(hx2);
+            int q = chunked(hz2);
+            Chunk *chunk = find_chunk(p, q);
+            DoorMapEntry *gate = door_map_get(&chunk->doors, hx2, hy2, hz2);
+            gate_toggle_open(gate, hx2, hy2, hz2, chunk->buffer, g->float_size);
             return;
         }
     }
@@ -5721,6 +5804,9 @@ int main(int argc, char **argv) {
         g->gl_float_type = GL_FLOAT;
         g->float_size = sizeof(GLfloat);
     }
+
+    // SHAPE INITIALIZATION //
+    fence_init();
 
     // WINDOW INITIALIZATION //
     g->width = config->window_width;

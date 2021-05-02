@@ -7,8 +7,7 @@
  * data set for that chunk.
  */
 
-#define DOOR_EMPTY_ENTRY(entry) \
-    ((entry)->x == 0 && (entry)->y == 0 && (entry)->y == 0 && (entry)->w == 0)
+#define DOOR_EMPTY_ENTRY(entry) ((entry)->value == 0)
 
 #define DOOR_MAP_FOR_EACH(map, ex, ey, ez, ew) \
     for (unsigned int i = 0; i <= map->mask; i++) { \
@@ -16,18 +15,23 @@
         if (DOOR_EMPTY_ENTRY(entry)) { \
             continue; \
         } \
-        int ex = entry->x + map->dx; \
-        int ey = entry->y + map->dy; \
-        int ez = entry->z + map->dz; \
-        int ew = entry->w;
+        int ex = entry->e.x + map->dx; \
+        int ey = entry->e.y + map->dy; \
+        int ez = entry->e.z + map->dz; \
+        int ew = entry->e.w;
 
 #define END_DOOR_MAP_FOR_EACH }
 
 typedef struct {
-    unsigned char x;
-    unsigned char y;
-    unsigned char z;
-    signed char w;
+    union {
+        unsigned int value;
+        struct {
+            unsigned char x;
+            unsigned char y;
+            unsigned char z;
+            signed char w;
+        } e;
+    };
     int offset_into_gl_buffer;
     int face_count_in_gl_buffer;
     float ao[6][4];
@@ -52,6 +56,29 @@ typedef struct {
     unsigned int size;
     DoorMapEntry *data;
 } DoorMap;
+
+#define POS_PIX (0.0625 * 2)
+#define P00 -1
+#define P01 (P00 + POS_PIX)
+#define P02 (P00 + POS_PIX * 2)
+#define P03 (P00 + POS_PIX * 3)
+#define P04 (P00 + POS_PIX * 4)
+#define P05 (P00 + POS_PIX * 5)
+#define P06 (P00 + POS_PIX * 6)
+#define P07 (P00 + POS_PIX * 7)
+#define P08 (P00 + POS_PIX * 8)
+#define P09 (P00 + POS_PIX * 9)
+#define P10 (P00 + POS_PIX * 10)
+#define P11 (P00 + POS_PIX * 11)
+#define P12 (P00 + POS_PIX * 12)
+#define P13 (P00 + POS_PIX * 13)
+#define P14 (P00 + POS_PIX * 14)
+#define P15 (P00 + POS_PIX * 15)
+#define P16 +1
+
+#define UV01 (1 / 2048.0)
+#define UV14 (14 / 256.0)
+#define UV16 (1 / 16.0 - 1 / 2048.0)
 
 void door_map_alloc(DoorMap *map, int dx, int dy, int dz, int mask);
 void door_map_free(DoorMap *map);
