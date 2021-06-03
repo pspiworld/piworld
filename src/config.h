@@ -54,6 +54,7 @@ typedef struct {
     int fullscreen;
     int fullscreen_width;
     int fullscreen_height;
+    int lua_standalone;
     int players;
     int port;
     int show_chat_text;

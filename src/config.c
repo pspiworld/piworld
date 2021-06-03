@@ -24,6 +24,7 @@ void reset_config() {
     config->fullscreen_width = 0;
 #endif
     config->fullscreen_height = 0;
+    config->lua_standalone = 0;
     config->players = -1;
     config->port = DEFAULT_PORT;
     config->server[0] = '\0';
@@ -88,6 +89,7 @@ void parse_startup_config(int argc, char **argv) {
         static struct option long_options[] = {
             {"fullscreen",        no_argument,       0,  0 },
             {"fullscreen-size",   required_argument, 0,  0 },
+            {"lua-standalone",    no_argument,       0,  0 },
             {"players",           required_argument, 0,  0 },
             {"port",              required_argument, 0,  0 },
             {"server",            required_argument, 0,  0 },
@@ -130,6 +132,8 @@ void parse_startup_config(int argc, char **argv) {
                               &config->fullscreen_height) == 3) {
             } else if (strncmp(opt_name, "fullscreen", 10) == 0) {
                  config->fullscreen = 1;
+            } else if (strncmp(opt_name, "lua-standalone", 14) == 0) {
+                 config->lua_standalone = 1;
             } else if (strncmp(opt_name, "players", 7) == 0 &&
                 sscanf(optarg, "%d", &config->players) == 1) {
             } else if (strncmp(opt_name, "port", 4) == 0 &&

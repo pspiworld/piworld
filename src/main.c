@@ -27,6 +27,7 @@
 #include "pg_joystick.h"
 #include "pw.h"
 #include "pwlua.h"
+#include "pwlua_standalone.h"
 #include "pwlua_worldgen.h"
 #include "ring.h"
 #include "sign.h"
@@ -5795,6 +5796,11 @@ int main(int argc, char **argv) {
                    config->benchmark_create_chunks);
         }
         return EXIT_SUCCESS;
+    }
+
+    if (config->lua_standalone) {
+        pwlua_standalone_REPL();
+        return EXIT_SUCCESS;  //TODO: exit status of lua instance
     }
 
     if (config->use_hfloat) {
