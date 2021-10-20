@@ -1,7 +1,7 @@
 #pragma once
 
 #include "config.h"
-#include "pw.h"
+#include "util.h"
 
 #define MENU_CANCELLED -1
 #define MENU_REMAINS_OPEN 0
@@ -12,7 +12,6 @@
 #define MENU_LINE_EDIT 2
 
 #define MAX_MENU_ITEMS 16
-#define MAX_TEXT_LENGTH 256
 
 #define MOUSE_CURSOR_SIZE 16
 
@@ -59,5 +58,4 @@ int menu_handle_key_press(Menu *menu, int mods, int keysym);
 void menu_handle_joystick_axis(Menu *menu, int axis, float value);
 int menu_handle_joystick_button(Menu *menu, int button, int state);
 
-void menu_render(Menu *menu, Attrib *text_attrib, Attrib *line_attrib,
-                 int view_width, int view_height);
+void menu_render(Menu *menu, int view_width, int view_height, float scale);

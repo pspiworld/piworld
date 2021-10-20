@@ -2,6 +2,7 @@
 #include <string.h>
 #include "ui.h"
 #include "pw.h"
+#include "render.h"
 #include "util.h"
 #include "x11_event_handler.h"
 
@@ -354,8 +355,7 @@ int longest_str_len(Menu *menu)
     return longest;
 }
 
-void menu_render(Menu *menu, Attrib *text_attrib, Attrib *line_attrib,
-                 int view_width, int view_height)
+void menu_render(Menu *menu, int view_width, int view_height, float scale)
 {
     float ts = 8;  // font size
     char text_buffer[1024];
@@ -390,7 +390,7 @@ void menu_render(Menu *menu, Attrib *text_attrib, Attrib *line_attrib,
     int pad_len = menu_line_len - (strlen(menu->title) + 2);
     pad_len = MAX(0, pad_len);
     snprintf(text_buffer, 1024, " %s%*.*s ", menu->title, pad_len, pad_len, "");
-    render_text_rgba(text_attrib, ALIGN_CENTER, view_width/2,
+    render_text_rgba(ALIGN_CENTER, view_width/2,
                 view_height/2 + menu_height/2 - menu_text_size,
                 menu_text_size, text_buffer, menu_title_bg_color,
                 menu_title_text_color);
@@ -440,21 +440,21 @@ void menu_render(Menu *menu, Attrib *text_attrib, Attrib *line_attrib,
             }
             // Line edit text
             text_color = line_edit_color;
-            render_text_rgba(text_attrib, ALIGN_CENTER, view_width/2,
+            render_text_rgba(ALIGN_CENTER, view_width/2,
                 item->y - menu_text_size, menu_text_size, text_buffer,
                 menu_bg_color, text_color);
             // Label
             if (strlen(item->text) == 0) {
                 glClear(GL_DEPTH_BUFFER_BIT);
-                render_text_rgba(text_attrib, ALIGN_CENTER, view_width/2,
+                render_text_rgba(ALIGN_CENTER, view_width/2,
                     item->y - menu_text_size, menu_text_size, item->name,
                     menu_bg_color, line_edit_label_color);
             }
             // Text cursor
             glClear(GL_DEPTH_BUFFER_BIT);
-            render_text_cursor(line_attrib, cursor_x, cursor_y);
+            render_text_cursor(cursor_x, cursor_y);
         } else {
-            render_text_rgba(text_attrib, ALIGN_CENTER, view_width/2,
+            render_text_rgba(ALIGN_CENTER, view_width/2,
                 item->y - menu_text_size, menu_text_size, text_buffer,
                 menu_bg_color, text_color);
         }

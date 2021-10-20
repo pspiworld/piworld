@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <GLES2/gl2.h>
+#include "chunks.h"
 #include "cube.h"
 #include "door.h"
 #include "fence.h"
@@ -392,8 +393,7 @@ void make_gate_in_buffer_sub_data(int buffer, int float_size,
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
-void _gate_toggle_open(DoorMapEntry *gate, int x, int y, int z, GLuint buffer,
-    size_t float_size)
+void _gate_toggle_open(DoorMapEntry *gate, int x, int y, int z, GLuint buffer)
 {
     if (is_open(gate->extra)) {
         gate->extra &= ~EXTRA_BIT_OPEN;
@@ -401,12 +401,12 @@ void _gate_toggle_open(DoorMapEntry *gate, int x, int y, int z, GLuint buffer,
         gate->extra |= EXTRA_BIT_OPEN;
     }
     set_extra_non_dirty(x, y, z, gate->extra);
-    make_gate_in_buffer_sub_data(buffer, float_size, gate);
+    make_gate_in_buffer_sub_data(buffer, get_float_size(), gate);
 }
 
 void gate_toggle_open(DoorMapEntry *gate, int x, int y,
-    int z, GLuint buffer, size_t float_size)
+    int z, GLuint buffer)
 {
-    _gate_toggle_open(gate, x, y, z, buffer, float_size);
+    _gate_toggle_open(gate, x, y, z, buffer);
 }
 

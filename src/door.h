@@ -6,6 +6,7 @@
  * be edited with the new door state without having to regenerate the entire
  * data set for that chunk.
  */
+#include <stddef.h>
 
 #define DOOR_EMPTY_ENTRY(entry) ((entry)->value == 0)
 
@@ -99,4 +100,4 @@ void make_door(
     int transform);
 
 void door_toggle_open(DoorMap *door_map, DoorMapEntry *door, int x, int y,
-    int z, GLuint buffer, size_t float_size);
+    int z, GLuint buffer);

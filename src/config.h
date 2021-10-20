@@ -83,6 +83,7 @@ typedef struct {
     int time;
     int use_hfloat;
     char worldgen_path[MAX_PATH_LENGTH];
+    int day_length;
 } Config;
 
 extern Config *config;

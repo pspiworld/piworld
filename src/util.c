@@ -71,6 +71,17 @@ void update_fps(FPS *fps) {
     }
 }
 
+float time_of_day(void) {
+    if (config->day_length <= 0) {
+        return 0.5;
+    }
+    float t;
+    t = pg_get_time();
+    t = t / config->day_length;
+    t = t - (int)t;
+    return t;
+}
+
 char *load_file(const char *path) {
     FILE *file = fopen(path, "rb");
     if (!file) {

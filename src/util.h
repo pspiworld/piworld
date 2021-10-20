@@ -3,6 +3,7 @@
 #include <GLES2/gl2.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+#include <stddef.h>
 #include "config.h"
 
 #define PI 3.14159265359
@@ -14,6 +15,9 @@
 #define SIGN(x) (((x) > 0) - ((x) < 0))
 
 #define MAX_COLOR_STRING_LENGTH 11
+
+#define MAX_NAME_LENGTH 32
+#define MAX_TEXT_LENGTH 256
 
 #if DEBUG
     #define LOG(...) printf(__VA_ARGS__)
@@ -35,6 +39,7 @@ char *get_data_dir(void);
 int rand_int(int n);
 double rand_double(void);
 void update_fps(FPS *fps);
+float time_of_day(void);
 
 GLuint gen_buffer(GLsizei size, const void *data);
 void del_buffer(GLuint buffer);

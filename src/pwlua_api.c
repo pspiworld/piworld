@@ -3,6 +3,8 @@
 #include <lualib.h>
 #include <lauxlib.h>
 #include "config.h"
+#include "chunk.h"
+#include "chunks.h"
 #include "db.h"
 #include "item.h"
 #include "noise.h"

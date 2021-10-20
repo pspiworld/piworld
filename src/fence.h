@@ -12,5 +12,5 @@ void make_fence(
     int rotate);
 
 void gate_toggle_open(DoorMapEntry *gate, int x, int y,
-    int z, GLuint buffer, size_t float_size);
+    int z, GLuint buffer);
 

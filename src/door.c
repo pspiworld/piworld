@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <GLES2/gl2.h>
+#include "chunks.h"
 #include "config.h"
 #include "cube.h"
 #include "door.h"
@@ -444,9 +445,9 @@ void _door_toggle_open(DoorMapEntry *door, int x, int y, int z, GLuint buffer,
 }
 
 void door_toggle_open(DoorMap *door_map, DoorMapEntry *door, int x, int y,
-    int z, GLuint buffer, size_t float_size)
+    int z, GLuint buffer)
 {
-    _door_toggle_open(door, x, y, z, buffer, float_size);
+    _door_toggle_open(door, x, y, z, buffer, get_float_size());
 
     DoorMapEntry *matching_door = NULL;
     if (door->shape == UPPER_DOOR) {
@@ -462,6 +463,6 @@ void door_toggle_open(DoorMap *door_map, DoorMapEntry *door, int x, int y,
     }
     if (matching_door) {
         _door_toggle_open(matching_door, x, matching_door->e.y, z, buffer,
-            float_size);
+            get_float_size());
     }
 }
