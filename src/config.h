@@ -84,6 +84,8 @@ typedef struct {
     int use_hfloat;
     char worldgen_path[MAX_PATH_LENGTH];
     int day_length;
+    int ignore_gamepad;
+    int always_use_osk;
 } Config;
 
 extern Config *config;

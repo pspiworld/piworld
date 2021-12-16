@@ -16,6 +16,7 @@ void menu_clear_items(Menu *menu)
     menu->item_count = 0;
     menu->allocated_item_count = 0;
     menu->first_item_shown = 0;
+    menu->open_box = NULL;
 }
 
 void menu_set_title(Menu *menu, char *title)
@@ -50,6 +51,7 @@ MenuItem* menu_add_item(Menu *menu, char *name)
     item->text[0] = '\0';
     item->text_cursor = 0;
     menu->item_count++;
+    item->parent = menu->open_box;
     return item;
 }
 
@@ -103,6 +105,28 @@ char *menu_get_name(Menu *menu, int i)
     return menu->items[i - 1].name;
 }
 
+int menu_start_hbox(Menu *menu)
+{
+    MenuItem *item = menu_add_item(menu, "");
+    if (item) {
+        item->type = MENU_HBOX_START;
+        item->data = 0;
+    }
+    menu->open_box = item;
+    return menu->item_count;
+}
+
+int menu_end_hbox(Menu *menu)
+{
+    MenuItem *item = menu_add_item(menu, "");
+    if (item) {
+        item->type = MENU_HBOX_END;
+        item->data = 0;
+    }
+    menu->open_box = NULL;
+    return menu->item_count;
+}
+
 void menu_set_highlighted_item(Menu *menu, int i)
 {
     menu->highlighted_item = i;
@@ -118,7 +142,7 @@ void menu_scroll_up(Menu *menu)
 void menu_scroll_down(Menu *menu)
 {
     if (menu->item_count >=
-        (menu->max_menu_row_count + menu->first_item_shown)) {
+        (menu->max_menu_row_count + menu->first_item_shown - 1)) {
         menu->first_item_shown++;
     }
 }
@@ -130,10 +154,10 @@ void menu_highlight_next(Menu *menu)
     if (menu->highlighted_item == 0) {
         menu->highlighted_item = 1;
     }
-    if (menu->item_count >= (menu->max_menu_row_count +
+    if ((menu->item_count+1) >= (menu->max_menu_row_count +
         menu->first_item_shown)) {
         int last_item_in_view = menu->first_item_shown +
-                                menu->max_menu_row_count;
+                                menu->max_menu_row_count - 1;
         if (last_item_in_view == menu->highlighted_item) {
             menu->first_item_shown++;
         }
@@ -156,7 +180,150 @@ void menu_highlight_previous(Menu *menu)
     }
     if (menu->highlighted_item == menu->item_count) {
         menu->first_item_shown = menu->item_count -
-                                 menu->max_menu_row_count + 1;
+                                 menu->max_menu_row_count + 2;
+    }
+}
+
+void menu_highlight_left(Menu *menu)
+{
+    if (menu->highlighted_item <= 0) {
+        // if nothing highlighted - then highlight first non-container
+        if (menu->items[0].type == MENU_HBOX_START) {
+            menu->highlighted_item = 2;
+        } else {
+            menu->highlighted_item = 1;
+        }
+    } else {
+        if (menu->items[menu->highlighted_item].parent) {
+            menu->highlighted_item -= 1;
+            if (menu->items[menu->highlighted_item-1].type == MENU_HBOX_START) {
+                for (int i=menu->highlighted_item; i<menu->item_count; i++) {
+                    MenuItem* item = &menu->items[i];
+                    if (item->type == MENU_HBOX_END) {
+                        menu->highlighted_item = i; // last item in hbox
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void menu_highlight_right(Menu *menu)
+{
+    if (menu->highlighted_item <= 0) {
+        // if nothing highlighted - then highlight first non-container
+        if (menu->items[0].type == MENU_HBOX_START) {
+            menu->highlighted_item = 2;
+        } else {
+            menu->highlighted_item = 1;
+        }
+    } else {
+        if (menu->items[menu->highlighted_item].parent) {
+            menu->highlighted_item += 1;
+            if (menu->items[menu->highlighted_item-1].type == MENU_HBOX_END) {
+                for (int i=menu->highlighted_item-3; i>=0; i--) {
+                    MenuItem* item = &menu->items[i];
+                    if (item->type == MENU_HBOX_START) {
+                        menu->highlighted_item = i + 2; // first item in hbox
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void menu_highlight_up(Menu *menu)
+{
+    if (menu->highlighted_item <= 0) {
+        // if nothing highlighted - then highlight first non-container
+        if (menu->items[0].type == MENU_HBOX_START) {
+            menu->highlighted_item = 2;
+        } else {
+            menu->highlighted_item = 1;
+        }
+    } else {
+        MenuItem *current_item = &menu->items[menu->highlighted_item-1];
+        if (current_item->parent) {
+            int found_item = 0;
+            for (int i=menu->highlighted_item; i>0; i--) {
+                MenuItem *item = &menu->items[i];
+                if (item->type == MENU_HBOX_START ||
+                    item->type == MENU_HBOX_END) {
+                    continue;
+                }
+                if (item->y > current_item->y && item->x <= current_item->x) {
+                    found_item = i;
+                    break;
+                }
+            }
+            if (found_item == 0) {
+                for (int i=menu->item_count-2; i>0; i--) {
+                    MenuItem *item = &menu->items[i];
+                    if (item->type == MENU_HBOX_START ||
+                        item->type == MENU_HBOX_END) {
+                        continue;
+                    }
+                    if (item->x <= current_item->x) {
+                        found_item = i;
+                        break;
+                    }
+                }
+            }
+            menu->highlighted_item = found_item + 1;
+        } else {
+            menu_highlight_previous(menu);
+        }
+    }
+}
+
+void menu_highlight_down(Menu *menu)
+{
+    if (menu->highlighted_item <= 0) {
+        // if nothing highlighted - then highlight first non-container
+        if (menu->items[0].type == MENU_HBOX_START) {
+            menu->highlighted_item = 2;
+        } else {
+            menu->highlighted_item = 1;
+        }
+    } else {
+        MenuItem *current_item = &menu->items[menu->highlighted_item-1];
+        if (current_item->parent) {
+            int found_item = 0;
+            for (int i=menu->highlighted_item; i<menu->item_count; i++) {
+                MenuItem *item = &menu->items[i];
+                if (item->type == MENU_HBOX_START ||
+                    item->type == MENU_HBOX_END) {
+                    continue;
+                }
+                if (item->y < current_item->y &&
+                    (item->x >= current_item->x ||
+                    (current_item->x > item->x &&
+                    current_item->x < (item->x + item->w)))) {
+                    found_item = i;
+                    break;
+                }
+            }
+            if (found_item == 0) {
+                for (int i=0; i<menu->highlighted_item+1; i++) {
+                    MenuItem *item = &menu->items[i];
+                    if (item->type == MENU_HBOX_START ||
+                        item->type == MENU_HBOX_END) {
+                        continue;
+                    }
+                    if (item->x >= current_item->x ||
+                        (current_item->x > item->x &&
+                        current_item->x < (item->x + item->w)) ) {
+                        found_item = i;
+                        break;
+                    }
+                }
+            }
+            menu->highlighted_item = found_item + 1;
+        } else {
+            menu_highlight_next(menu);
+        }
     }
 }
 
@@ -168,7 +335,8 @@ void menu_activate_item(Menu *menu, int i)
     }
 }
 
-void menu_insert_into_typing_buffer(MenuItem *item, unsigned char c) {
+void menu_insert_into_typing_buffer(MenuItem *item, unsigned char c)
+{
     size_t n = strlen(item->text);
     if (n < MAX_TEXT_LENGTH - 1) {
         if (item->text_cursor != n) {
@@ -249,10 +417,10 @@ int menu_handle_key_press(Menu *menu, int mods, int keysym)
         result = MENU_CANCELLED;
         break;
     case XK_Up:
-        menu_highlight_previous(menu);
+        menu_highlight_up(menu);
         break;
     case XK_Down:
-        menu_highlight_next(menu);
+        menu_highlight_down(menu);
         break;
     case XK_Return:
         result = menu->highlighted_item;
@@ -264,6 +432,12 @@ int menu_handle_key_press(Menu *menu, int mods, int keysym)
         if (item->type == MENU_LINE_EDIT) {
             result = menu_handle_key_press_typing(item,
                 menu->highlighted_item, mods, keysym);
+        } else {
+            if (keysym == XK_Left) {
+                menu_highlight_left(menu);
+            } else if (keysym ==  XK_Right) {
+                menu_highlight_right(menu);
+            }
         }
         }
         break;
@@ -284,6 +458,7 @@ int menu_handle_mouse_release(Menu *menu, int x, int y, int b)
             } else if (b == 5) {
                 menu_scroll_down(menu);
             } else {
+                result = i + 1;
                 if (item->type == MENU_LINE_EDIT) {
                     // Position the text cursor
                     size_t tx = (x - item->x) / menu->font_size - 1;
@@ -291,7 +466,6 @@ int menu_handle_mouse_release(Menu *menu, int x, int y, int b)
                     item->text_cursor = tx;
                     menu->highlighted_item = i + 1;
                 } else {
-                    result = i + 1;
                     menu_activate_item(menu, menu->hover_item);
                 }
             }
@@ -319,9 +493,15 @@ void menu_handle_joystick_axis(Menu *menu, int axis, float value)
 {
     if (axis == 1 || axis == 5) {
         if (value < 0) {
-            menu_highlight_previous(menu);
+            menu_highlight_up(menu);
         } else if (value > 0) {
-            menu_highlight_next(menu);
+            menu_highlight_down(menu);
+        }
+    } else if (axis == 0 || axis == 4) {
+        if (value < 0) {
+            menu_highlight_left(menu);
+        } else if (value > 0) {
+            menu_highlight_right(menu);
         }
     }
 }
@@ -332,7 +512,6 @@ int menu_handle_joystick_button(Menu *menu, int button, int state)
     if (button == 0) {
         if (state) {
             result = menu->highlighted_item;
-            menu_activate_item(menu, menu->highlighted_item);
         }
     } else if (button == 9) {
         if (state) {
@@ -342,14 +521,49 @@ int menu_handle_joystick_button(Menu *menu, int button, int state)
     return result;
 }
 
-int longest_str_len(Menu *menu)
+int calc_menu_line_count(Menu *menu)
 {
-    size_t longest = strlen(menu->title) + 2;;
+    size_t count = 1;  // start with 1 line for the menu title
+    int in_hbox = 0;
+    for (int i=0; i<menu->item_count; i++) {
+        MenuItem *item = &menu->items[i];
+        if (item->type == MENU_HBOX_START) {
+            in_hbox = 1;
+            count++;
+        } else if (item->type == MENU_HBOX_END) {
+            in_hbox = 0;
+            continue;
+        }
+        if (in_hbox) {
+            continue;
+        }
+        count++;
+    }
+    return count;
+}
+
+int calc_menu_line_length(Menu *menu)
+{
+    size_t longest = strlen(menu->title) + 2;
+    int in_hbox = 0;
+    size_t hbox_str_len = 0;
     for (int i=0; i<menu->item_count; i++) {
         MenuItem *item = &menu->items[i];
         longest = MAX(longest, strlen(item->name));
         if (item->type == MENU_OPTION) {
             longest = MAX(longest, strlen(item->name) + 2);
+        } else if (item->type == MENU_HBOX_START) {
+            in_hbox = 1;
+            hbox_str_len = 0;
+            continue;
+        } else if (item->type == MENU_HBOX_END) {
+            in_hbox = 0;
+            hbox_str_len = 0;
+            continue;
+        }
+        if (in_hbox) {
+            hbox_str_len += strlen(item->name);
+            longest = MAX(longest, hbox_str_len);
         }
     }
     return longest;
@@ -359,8 +573,8 @@ void menu_render(Menu *menu, int view_width, int view_height, float scale)
 {
     float ts = 8;  // font size
     char text_buffer[1024];
-    int menu_line_count = menu->item_count + 1;  // items + title
-    int menu_line_len = longest_str_len(menu);
+    int menu_line_count = calc_menu_line_count(menu);  // item lines + title
+    int menu_line_len = calc_menu_line_length(menu);
     float menu_text_size = ts * 2;
     float menu_width = menu_line_len * menu_text_size + 2;
     float menu_height = menu_line_count * menu_text_size * 2;
@@ -396,12 +610,25 @@ void menu_render(Menu *menu, int view_width, int view_height, float scale)
                 menu_title_text_color);
 
     // Items
+    int in_hbox = 0;
+    int line_count = 0;
+    float hbox_x_offset = 0;
     for (int i=menu->first_item_shown-1; i<menu->item_count; i++) {
-        if (i-menu->first_item_shown+1 == menu->max_menu_row_count) {
+        if (line_count+1 == menu->max_menu_row_count) {
             break;
         }
         MenuItem *item = &menu->items[i];
         char item_text[MAX_TEXT_LENGTH + 2];
+        if (item->type == MENU_HBOX_START) {
+            in_hbox = 1;
+            hbox_x_offset = 0;
+            continue;
+        } else if (item->type == MENU_HBOX_END) {
+            in_hbox = 0;
+            line_count += 1;
+            hbox_x_offset = 0;
+            continue;
+        }
         if (item->type == MENU_OPTION) {
             snprintf(item_text, MAX_TEXT_LENGTH + 2, "%s %s",
                      (item->data == 0) ? "-" : "+",
@@ -411,25 +638,38 @@ void menu_render(Menu *menu, int view_width, int view_height, float scale)
         } else {
             snprintf(item_text, MAX_TEXT_LENGTH, "%s", item->name);
         }
-        pad_len = menu_line_len - strlen(item_text);
-        pad_len = MAX(0, pad_len);
+        if (!in_hbox) {
+            pad_len = menu_line_len - strlen(item_text);
+            pad_len = MAX(0, pad_len);
+        } else {
+            pad_len = 0;
+        }
         if (menu->hover_item == i+1) {
-            snprintf(text_buffer, 1024, ">%s%*.*s<", item_text, pad_len,
-                     pad_len, "");
             text_color = hover_color;
         } else if (menu->highlighted_item == i+1) {
+            text_color = highlighted_color;
+        } else {
+            text_color = menu_text_color;
+        }
+        if (text_color != menu_text_color && item->parent == NULL) {
             snprintf(text_buffer, 1024, ">%s%*.*s<", item_text, pad_len,
                      pad_len, "");
-            text_color = highlighted_color;
         } else {
             snprintf(text_buffer, 1024, "%s%*.*s", item_text, pad_len,
                      pad_len, "");
-            text_color = menu_text_color;
         }
-        item->x = view_width/2 - (menu_text_size *
-                  (strlen(text_buffer) - 1) / 2) - (menu_text_size/2);
-        item->y = view_height/2 - (menu_text_size * (2*(i+1))) +
-                  menu_height/2 + ((menu->first_item_shown-1)*menu_text_size*2);
+        float text_width = menu_text_size * strlen(item_text);  // sans padding
+        if (!in_hbox) {
+            item->x = view_width/2 - (menu_text_size *
+                      (strlen(text_buffer) - 1) / 2) - (menu_text_size/2);
+            item->y = view_height/2 - (menu_text_size * (2*(i+1))) +
+                      menu_height/2 + ((menu->first_item_shown-1)*menu_text_size*2);
+        } else {
+            item->x = view_width/2 - ((menu_line_len*menu_text_size)/2) +
+                      hbox_x_offset;
+            item->y = view_height/2 - (menu_text_size * (2*(line_count+1))) +
+                      menu_height/2 + ((menu->first_item_shown-1)*menu_text_size*2);
+        }
         item->w = menu_text_size * strlen(text_buffer);
         item->h = menu_text_size * 2;
         if (item->type == MENU_LINE_EDIT) {
@@ -454,9 +694,20 @@ void menu_render(Menu *menu, int view_width, int view_height, float scale)
             glClear(GL_DEPTH_BUFFER_BIT);
             render_text_cursor(cursor_x, cursor_y);
         } else {
-            render_text_rgba(ALIGN_CENTER, view_width/2,
-                item->y - menu_text_size, menu_text_size, text_buffer,
-                menu_bg_color, text_color);
+            if (!in_hbox) {
+                render_text_rgba(ALIGN_CENTER, view_width/2,
+                    item->y - menu_text_size, menu_text_size, text_buffer,
+                    menu_bg_color, text_color);
+            } else {
+                render_text_rgba(ALIGN_LEFT, item->x + menu_text_size/2,
+                    item->y - menu_text_size, menu_text_size, text_buffer,
+                    menu_bg_color, text_color);
+            }
+        }
+        if (!in_hbox) {
+            line_count += 1;
+        } else {
+            hbox_x_offset += text_width;
         }
     }
 }

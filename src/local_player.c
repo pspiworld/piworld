@@ -90,6 +90,8 @@ void local_player_clear_menus(LocalPlayer *local)
     menu_clear_items(&local->menu_script_run);
     menu_clear_items(&local->menu_worldgen);
     menu_clear_items(&local->menu_worldgen_select);
+    menu_clear_items(&local->menu_command_lines);
+    menu_clear_items(&local->osk);
 }
 
 void local_player_clear(LocalPlayer *local)
@@ -149,6 +151,12 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
         } else if (event == local->menu_id_wireframe) {
             config->show_wireframe = menu_get_option(&local->menu_options,
                 local->menu_id_wireframe);
+        } else if (event == local->menu_id_options_command_lines) {
+            open_menu(local, &local->menu_command_lines);
+        } else if (event == local->menu_id_options_edit_block) {
+            open_menu_for_item_under_crosshair(local);
+        } else if (event == local->menu_id_options_item_in_hand) {
+            open_menu(local, &local->menu_item_in_hand);
         }
     } else if (menu == &local->menu_new) {
         if (event == local->menu_id_new_cancel) {
@@ -290,6 +298,68 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             set_worldgen(menu_get_name(menu, event));
             db_set_option("worldgen", menu_get_name(menu, event));
         }
+    } else if (menu == &local->menu_command_lines) {
+        if (event == local->menu_id_action) {
+            close_menu(local);
+            open_action_command_line(local);
+        } else if (event == local->menu_id_chat) {
+            close_menu(local);
+            open_chat_command_line(local);
+        } else if (event == local->menu_id_lua) {
+            close_menu(local);
+            open_lua_command_line(local);
+        } else if (event == local->menu_id_sign) {
+            close_menu(local);
+            open_sign_command_line(local);
+        }
+    } else if (menu == &local->osk) {
+        MenuItem* item = &local->osk.items[event-1];
+        if (event == local->osk_id_ok) {
+            handle_key_press_typing(local, 0, XK_Return);
+            close_menu(local);
+            if (local->osk_open_for_menu) {
+                Menu *osk_open_for_menu = local->osk_open_for_menu;
+                MenuItem *line_edit = &osk_open_for_menu->items[local->osk_open_for_menu_line_edit_id - 1];
+                local->osk_open_for_menu = NULL;
+                open_menu(local, osk_open_for_menu);
+                strncpy(line_edit->text, local->typing_buffer + 1,
+                        MAX_TEXT_LENGTH - 1);
+                // Fake event to confirm changes to the menu item that the OSK
+                // was opened for.
+                handle_menu_event(local, osk_open_for_menu,
+                    local->osk_open_for_menu_line_edit_id);
+            }
+        } else if (event == local->osk_id_cancel) {
+            handle_key_press_typing(local, 0, XK_Escape);
+            close_menu(local);
+            if (local->osk_open_for_menu) {
+                open_menu(local, local->osk_open_for_menu);
+                local->osk_open_for_menu = NULL;
+            }
+        } else if (event == local->osk_id_space) {
+            handle_key_press_typing(local, 0, XK_space);
+        } else if (event == local->osk_id_backspace) {
+            handle_key_press_typing(local, 0, XK_BackSpace);
+        } else if (event == local->osk_id_delete) {
+            handle_key_press_typing(local, 0, XK_Delete);
+        } else if (event == local->osk_id_left) {
+            handle_key_press_typing(local, 0, XK_Left);
+        } else if (event == local->osk_id_right) {
+            handle_key_press_typing(local, 0, XK_Right);
+        } else if (event == local->osk_id_up) {
+            handle_key_press_typing(local, 0, XK_Up);
+        } else if (event == local->osk_id_down) {
+            handle_key_press_typing(local, 0, XK_Down);
+        } else if (event == local->osk_id_home) {
+            handle_key_press_typing(local, 0, XK_Home);
+        } else if (event == local->osk_id_end) {
+            handle_key_press_typing(local, 0, XK_End);
+        } else {
+            if (strlen(item->name) == 1 || strlen(item->name) == 2) {
+                int osk_keysym = (int)item->name[0];
+                handle_key_press_typing(local, 0, osk_keysym);
+            }
+        }
     }
 }
 
@@ -320,6 +390,7 @@ void reset_history(LocalPlayer *local)
     local->typing_history[COMMAND_HISTORY].line_start = 1;
     local->typing_history[SIGN_HISTORY].line_start = 1;
     local->typing_history[LUA_HISTORY].line_start = 1;
+    local->typing_history[MENU_LINE_EDIT_HISTORY].line_start = 1;
 }
 
 void history_add(TextLineHistory *history, char *line)
@@ -396,6 +467,8 @@ TextLineHistory* current_history(LocalPlayer *local)
         return &local->typing_history[COMMAND_HISTORY];
     } else if (local->typing_buffer[0] == PW_KEY_LUA) {
         return &local->typing_history[LUA_HISTORY];
+    } else if (local->typing_buffer[0] == '>') {
+        return &local->typing_history[MENU_LINE_EDIT_HISTORY];
     } else {
         return &local->typing_history[CHAT_HISTORY];
     }
@@ -418,6 +491,10 @@ void get_history_path(int history_type, int player_id, char *path)
         break;
     case LUA_HISTORY:
         snprintf(path, MAX_PATH_LENGTH, "%s/lua%d.history",
+                 config->path, player_id);
+        break;
+    case MENU_LINE_EDIT_HISTORY:
+        snprintf(path, MAX_PATH_LENGTH, "%s/menu%d.history",
                  config->path, player_id);
         break;
     }
@@ -487,6 +564,9 @@ void create_menus(LocalPlayer *local)
     local->menu_id_verbose = menu_add_option(menu, "Verbose");
     local->menu_id_wireframe = menu_add_option(menu, "Wireframe");
     local->menu_id_worldgen = menu_add(menu, "Worldgen");
+    local->menu_id_options_command_lines = menu_add(menu, "Command Lines");
+    local->menu_id_options_edit_block = menu_add(menu, "Edit Block");
+    local->menu_id_options_item_in_hand = menu_add(menu, "Item in Hand");
     local->menu_id_options_resume = menu_add(menu, "Resume");
     menu_set_option(menu, local->menu_id_crosshairs, config->show_crosshairs);
     menu_set_option(menu, local->menu_id_fullscreen, config->fullscreen);
@@ -550,6 +630,141 @@ void create_menus(LocalPlayer *local)
     snprintf(local->menu_worldgen_dir, MAX_DIR_LENGTH, "%s/worldgen",
              get_data_dir());
     menu_set_title(menu, "SELECT WORLDGEN");
+
+    // Command Lines menu
+    menu = &local->menu_command_lines;
+    menu_set_title(menu, "COMMAND LINES");
+    local->menu_id_action = menu_add(menu, "Action");
+    local->menu_id_chat = menu_add(menu, "Chat");
+    local->menu_id_lua = menu_add(menu, "Lua");
+    local->menu_id_sign = menu_add(menu, "Sign");
+
+    // OSK
+    menu = &local->osk;
+    menu_set_title(menu, "KEYBOARD");
+    // line 1: abcde ABCDE 12345   OK
+    menu_start_hbox(menu);
+    menu_add(menu, "a");
+    menu_add(menu, "b");
+    menu_add(menu, "c");
+    menu_add(menu, "d");
+    menu_add(menu, "e ");
+    menu_add(menu, "A");
+    menu_add(menu, "B");
+    menu_add(menu, "C");
+    menu_add(menu, "D");
+    menu_add(menu, "E ");
+    menu_add(menu, "1");
+    menu_add(menu, "2");
+    menu_add(menu, "3");
+    menu_add(menu, "4");
+    menu_add(menu, "5 ");
+    local->osk_id_ok = menu_add(menu, "  OK  ");
+    menu_end_hbox(menu);
+    // line 2: fghij FGHIJ 67890 Cancel
+    menu_start_hbox(menu);
+    menu_add(menu, "f");
+    menu_add(menu, "g");
+    menu_add(menu, "h");
+    menu_add(menu, "i");
+    menu_add(menu, "j ");
+    menu_add(menu, "F");
+    menu_add(menu, "G");
+    menu_add(menu, "H");
+    menu_add(menu, "I");
+    menu_add(menu, "J ");
+    menu_add(menu, "6");
+    menu_add(menu, "7");
+    menu_add(menu, "8");
+    menu_add(menu, "9");
+    menu_add(menu, "0 ");
+    local->osk_id_cancel = menu_add(menu, "Cancel");
+    menu_end_hbox(menu);
+    // line 3: klmno KLMNO .,!~#Backsp
+    menu_start_hbox(menu);
+    menu_add(menu, "k");
+    menu_add(menu, "l");
+    menu_add(menu, "m");
+    menu_add(menu, "n");
+    menu_add(menu, "o ");
+    menu_add(menu, "K");
+    menu_add(menu, "L");
+    menu_add(menu, "M");
+    menu_add(menu, "N");
+    menu_add(menu, "O ");
+    menu_add(menu, ".");
+    menu_add(menu, ",");
+    menu_add(menu, "!");
+    menu_add(menu, "~");
+    menu_add(menu, "# ");
+    local->osk_id_backspace = menu_add(menu, "Backsp");
+    menu_end_hbox(menu);
+    // line 4: pqrst PQRST +-/*\:; Del
+    menu_start_hbox(menu);
+    menu_add(menu, "p");
+    menu_add(menu, "q");
+    menu_add(menu, "r");
+    menu_add(menu, "s");
+    menu_add(menu, "t ");
+    menu_add(menu, "P");
+    menu_add(menu, "Q");
+    menu_add(menu, "R");
+    menu_add(menu, "S");
+    menu_add(menu, "T ");
+    menu_add(menu, "+");
+    menu_add(menu, "-");
+    menu_add(menu, "/");
+    menu_add(menu, "*");
+    menu_add(menu, "\\ ");
+    menu_add(menu, ":");
+    menu_add(menu, ";");
+    local->osk_id_delete = menu_add(menu, " Del");
+    menu_end_hbox(menu);
+    // line 5: uvwxy UVWXY $%&"' <>^vHE
+    menu_start_hbox(menu);
+    menu_add(menu, "u");
+    menu_add(menu, "v");
+    menu_add(menu, "w");
+    menu_add(menu, "x");
+    menu_add(menu, "y ");
+    menu_add(menu, "U");
+    menu_add(menu, "V");
+    menu_add(menu, "W");
+    menu_add(menu, "X");
+    menu_add(menu, "Y ");
+    menu_add(menu, "$");
+    menu_add(menu, "%%");
+    menu_add(menu, "&");
+    menu_add(menu, "\"");
+    menu_add(menu, "' ");
+    local->osk_id_left = menu_add(menu, "<");
+    local->osk_id_right = menu_add(menu, ">");
+    local->osk_id_up = menu_add(menu, "^");
+    local->osk_id_down = menu_add(menu, "v");
+    local->osk_id_home = menu_add(menu, "H");
+    local->osk_id_end = menu_add(menu, "E");
+    menu_end_hbox(menu);
+    // line 6: z^_=| Z<>{} ()[]` @?Spac
+    menu_start_hbox(menu);
+    menu_add(menu, "z");
+    menu_add(menu, "^");
+    menu_add(menu, "_");
+    menu_add(menu, "=");
+    menu_add(menu, "| ");
+    menu_add(menu, "Z");
+    menu_add(menu, "<");
+    menu_add(menu, ">");
+    menu_add(menu, "{");
+    menu_add(menu, "} ");
+    menu_add(menu, "(");
+    menu_add(menu, ")");
+    menu_add(menu, "[");
+    menu_add(menu, "]");
+    menu_add(menu, "` ");
+    menu_add(menu, "@");
+    menu_add(menu, "?");
+    local->osk_id_space = menu_add(menu, "Spac");
+    menu_end_hbox(menu);
 }
 
 void populate_block_edit_menu(LocalPlayer *local, int w, char *sign_text,
@@ -1010,3 +1225,92 @@ void handle_movement(double dt, LocalPlayer *local)
     }
 }
 
+void open_on_screen_keyboard(LocalPlayer* local)
+{
+    open_menu(local, &local->osk);
+}
+
+void open_chat_command_line(LocalPlayer* local)
+{
+    local->typing = 1;
+    local->typing_buffer[0] = '\0';
+    local->typing_start = local->typing_history[CHAT_HISTORY].line_start;
+    local->text_cursor = local->typing_start;
+    if (local->keyboard_id == UNASSIGNED || config->always_use_osk) {
+        open_on_screen_keyboard(local);
+    }
+}
+
+void open_action_command_line(LocalPlayer* local)
+{
+    local->typing = 1;
+    local->typing_buffer[0] = CRAFT_KEY_COMMAND;
+    local->typing_buffer[1] = '\0';
+    local->typing_start = local->typing_history[COMMAND_HISTORY].line_start;
+    local->text_cursor = local->typing_start;
+    if (local->keyboard_id == UNASSIGNED || config->always_use_osk) {
+        open_on_screen_keyboard(local);
+    }
+}
+
+void open_lua_command_line(LocalPlayer* local)
+{
+    local->typing = 1;
+    local->typing_buffer[0] = PW_KEY_LUA;
+    local->typing_buffer[1] = '\0';
+    local->typing_start = local->typing_history[LUA_HISTORY].line_start;
+    local->text_cursor = local->typing_start;
+    if (local->keyboard_id == UNASSIGNED || config->always_use_osk) {
+        open_on_screen_keyboard(local);
+    }
+}
+
+void open_sign_command_line(LocalPlayer* local)
+{
+    local->typing = 1;
+    local->typing_buffer[0] = CRAFT_KEY_SIGN;
+    local->typing_buffer[1] = '\0';
+    int x, y, z, face;
+    if (hit_test_face(local->player, &x, &y, &z, &face)) {
+        const unsigned char *existing_sign = get_sign(
+            chunked(x), chunked(z), x, y, z, face);
+        if (existing_sign) {
+            strncpy(local->typing_buffer + 1, (char *)existing_sign,
+                    MAX_TEXT_LENGTH - 1);
+            local->typing_buffer[MAX_TEXT_LENGTH - 1] = '\0';
+        }
+    }
+    local->typing_start = local->typing_history[SIGN_HISTORY].line_start;
+    local->text_cursor = local->typing_start;
+    if (local->keyboard_id == UNASSIGNED || config->always_use_osk) {
+        open_on_screen_keyboard(local);
+    }
+}
+
+void open_menu_line_edit_command_line(LocalPlayer* local)
+{
+    local->typing = 1;
+    local->typing_buffer[0] = '>';
+    local->typing_buffer[1] = '\0';
+    local->typing_start = local->typing_history[MENU_LINE_EDIT_HISTORY].line_start;
+    local->text_cursor = local->typing_start;
+    if (local->keyboard_id == UNASSIGNED || config->always_use_osk) {
+        open_on_screen_keyboard(local);
+    }
+}
+
+void open_osk_for_menu_line_edit(LocalPlayer *local, int item)
+{
+    if (local->active_menu && item > 0 &&
+        local->active_menu->items[item-1].type == MENU_LINE_EDIT &&
+        (local->keyboard_id == UNASSIGNED || config->always_use_osk)) {
+        local->osk_open_for_menu = local->active_menu;
+        local->osk_open_for_menu_line_edit_id = item;
+        open_menu_line_edit_command_line(local);
+        open_on_screen_keyboard(local);
+        strncpy(local->typing_buffer + 1,
+          local->osk_open_for_menu->items[local->osk_open_for_menu_line_edit_id - 1].text,
+          MAX_TEXT_LENGTH - 1);
+        local->typing_buffer[MAX_TEXT_LENGTH - 1] = '\0';
+    }
+}

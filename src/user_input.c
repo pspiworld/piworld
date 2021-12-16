@@ -77,7 +77,7 @@ void handle_key_press_typing(LocalPlayer *local, int mods, int keysym)
                 parse_command(local, local->typing_buffer, 1);
             } else if (local->typing_buffer[0] == PW_KEY_LUA) {
                 pwlua_parse_line(local->lua_shell, local->typing_buffer);
-            } else {
+            } else if (local->osk_open_for_menu == NULL) {
                 client_talk(local->typing_buffer);
             }
             history_add(current_history(local), local->typing_buffer);
@@ -132,12 +132,31 @@ void handle_key_press_typing(LocalPlayer *local, int mods, int keysym)
 void local_player_handle_key_press(LocalPlayer *local, int mods, int keysym)
 {
     if (local->typing) {
-        handle_key_press_typing(local, mods, keysym);
+        if (&local->osk == local->active_menu) {
+            // Enable testing of OSK using keyboard with only the cursor keys,
+            // return and escape.
+            if (keysym == XK_Escape || keysym == XK_Up || keysym == XK_Down ||
+                keysym == XK_Left || keysym == XK_Right ||
+                keysym == XK_Return) {
+                int r = menu_handle_key_press(local->active_menu, mods, keysym);
+                handle_menu_event(local, local->active_menu, r);
+
+                // extra Escape: close command line as well as OSK
+                if (keysym == XK_Escape) {
+                    handle_key_press_typing(local, mods, keysym);
+                }
+            } else { // handle key press as usual for command line
+                handle_key_press_typing(local, mods, keysym);
+            }
+        } else {
+            handle_key_press_typing(local, mods, keysym);
+        }
         return;
     }
     if (local->active_menu) {
         int r = menu_handle_key_press(local->active_menu, mods, keysym);
         handle_menu_event(local, local->active_menu, r);
+        open_osk_for_menu_line_edit(local, r);
         return;
     }
     switch (keysym) {
@@ -235,10 +254,7 @@ void local_player_handle_key_press(LocalPlayer *local, int mods, int keysym)
         toggle_picture_in_picture_observe_view(local);
         break;
     case XK_t: case XK_T:
-        local->typing = 1;
-        local->typing_buffer[0] = '\0';
-        local->typing_start = local->typing_history[CHAT_HISTORY].line_start;
-        local->text_cursor = local->typing_start;
+        open_chat_command_line(local);
         break;
     case XK_u: case XK_U:
         if (local->has_undo_block == 1) {
@@ -263,35 +279,13 @@ void local_player_handle_key_press(LocalPlayer *local, int mods, int keysym)
         }
         break;
     case XK_slash:
-        local->typing = 1;
-        local->typing_buffer[0] = CRAFT_KEY_COMMAND;
-        local->typing_buffer[1] = '\0';
-        local->typing_start = local->typing_history[COMMAND_HISTORY].line_start;
-        local->text_cursor = local->typing_start;
+        open_action_command_line(local);
         break;
     case XK_dollar:
-        local->typing = 1;
-        local->typing_buffer[0] = PW_KEY_LUA;
-        local->typing_buffer[1] = '\0';
-        local->typing_start = local->typing_history[LUA_HISTORY].line_start;
-        local->text_cursor = local->typing_start;
+        open_lua_command_line(local);
         break;
     case XK_grave:
-        local->typing = 1;
-        local->typing_buffer[0] = CRAFT_KEY_SIGN;
-        local->typing_buffer[1] = '\0';
-        int x, y, z, face;
-        if (hit_test_face(local->player, &x, &y, &z, &face)) {
-            const unsigned char *existing_sign = get_sign(
-                chunked(x), chunked(z), x, y, z, face);
-            if (existing_sign) {
-                strncpy(local->typing_buffer + 1, (char *)existing_sign,
-                        MAX_TEXT_LENGTH - 1);
-                local->typing_buffer[MAX_TEXT_LENGTH - 1] = '\0';
-            }
-        }
-        local->typing_start = local->typing_history[SIGN_HISTORY].line_start;
-        local->text_cursor = local->typing_start;
+        open_sign_command_line(local);
         break;
     case XK_Return:
         if (mods & ControlMask) {
@@ -349,8 +343,11 @@ void local_player_handle_mouse_release(LocalPlayer *local, int b, int mods)
 {
     if (local->active_menu) {
         int r = menu_handle_mouse_release(local->active_menu, local->mouse_x,
-                                            local->mouse_y, b);
+                                          local->mouse_y, b);
         handle_menu_event(local, local->active_menu, r);
+        if (local->keyboard_id == UNASSIGNED || config->always_use_osk) {
+            open_osk_for_menu_line_edit(local, r);
+        }
         return;
     }
     if (b == 1) {
@@ -371,6 +368,8 @@ void local_player_handle_mouse_release(LocalPlayer *local, int b, int mods)
         cycle_item_in_hand_up(local);
     } else if (b == 5) {
         cycle_item_in_hand_down(local);
+    } else {
+        open_menu(local, &local->menu);
     }
 }
 
@@ -464,6 +463,7 @@ void local_player_handle_joystick_button(LocalPlayer *local, PG_Joystick *j,
     if (local->active_menu) {
         int r = menu_handle_joystick_button(local->active_menu, button, state);
         handle_menu_event(local, local->active_menu, r);
+        open_osk_for_menu_line_edit(local, r);
         return;
     }
 

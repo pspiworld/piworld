@@ -10,17 +10,18 @@
 #define MENU_BUTTON 0
 #define MENU_OPTION 1
 #define MENU_LINE_EDIT 2
-
-#define MAX_MENU_ITEMS 16
+#define MENU_HBOX_START 3
+#define MENU_HBOX_END 4
 
 #define MOUSE_CURSOR_SIZE 16
 
-typedef struct {
+typedef struct MenuItem {
     char name[MAX_TEXT_LENGTH];
     int type;
     int data;
     char text[MAX_TEXT_LENGTH];
     size_t text_cursor;
+    struct MenuItem* parent;
     float x;
     float y;
     float w;
@@ -37,6 +38,7 @@ typedef struct {
     float font_size;
     int first_item_shown;
     int max_menu_row_count;
+    MenuItem *open_box;
 } Menu;
 
 void menu_clear_items(Menu *menu);
@@ -50,6 +52,8 @@ void menu_set_text(Menu *menu, int i, char *text);
 int menu_add_line_edit(Menu *menu, char *label);
 char *menu_get_line_edit(Menu *menu, int i);
 char *menu_get_name(Menu *menu, int i);
+int menu_start_hbox(Menu *menu);
+int menu_end_hbox(Menu *menu);
 void menu_set_highlighted_item(Menu *menu, int i);
 
 int menu_handle_mouse_release(Menu *menu, int x, int y, int b);

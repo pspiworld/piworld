@@ -72,8 +72,10 @@ int main(int argc, char **argv)
     }
     set_view_radius(config->view, config->delete_radius);
 
-    pg_set_joystick_button_handler(*handle_joystick_button);
-    pg_set_joystick_axis_handler(*handle_joystick_axis);
+    if (config->ignore_gamepad == 0) {
+        pg_set_joystick_button_handler(*handle_joystick_button);
+        pg_set_joystick_axis_handler(*handle_joystick_axis);
+    }
 
     render_init();
 

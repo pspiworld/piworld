@@ -10,7 +10,8 @@
 #define COMMAND_HISTORY 1
 #define SIGN_HISTORY 2
 #define LUA_HISTORY 3
-#define NUM_HISTORIES 4
+#define MENU_LINE_EDIT_HISTORY 4
+#define NUM_HISTORIES 5
 #define NOT_IN_HISTORY -1
 
 typedef struct {
@@ -72,6 +73,9 @@ typedef struct {
     int menu_id_verbose;
     int menu_id_wireframe;
     int menu_id_worldgen;
+    int menu_id_options_command_lines;
+    int menu_id_options_edit_block;
+    int menu_id_options_item_in_hand;
     int menu_id_options_resume;
     Menu menu_new;
     int menu_id_new_game_name;
@@ -109,7 +113,27 @@ typedef struct {
     Menu menu_worldgen_select;
     char menu_worldgen_dir[MAX_DIR_LENGTH];
     int menu_id_worldgen_select_cancel;
+    Menu menu_command_lines;
+    int menu_id_action;
+    int menu_id_chat;
+    int menu_id_lua;
+    int menu_id_sign;
+    Menu osk;
+    int osk_id_ok;
+    int osk_id_cancel;
+    int osk_id_backspace;
+    int osk_id_delete;
+    int osk_id_space;
+    int osk_id_left;
+    int osk_id_right;
+    int osk_id_up;
+    int osk_id_down;
+    int osk_id_home;
+    int osk_id_end;
     Menu *active_menu;
+
+    Menu *osk_open_for_menu;
+    int osk_open_for_menu_line_edit_id;
 
     int view_x;
     int view_y;
@@ -176,3 +200,9 @@ void cycle_item_in_hand_down(LocalPlayer *player);
 void cycle_item_in_hand_up(LocalPlayer *player);
 void on_light(LocalPlayer *local);
 void handle_movement(double dt, LocalPlayer *local);
+void open_chat_command_line(LocalPlayer* local);
+void open_action_command_line(LocalPlayer* local);
+void open_lua_command_line(LocalPlayer* local);
+void open_sign_command_line(LocalPlayer* local);
+void open_menu_line_edit_command_line(LocalPlayer* local);
+void open_osk_for_menu_line_edit(LocalPlayer *local, int item);
