@@ -13,7 +13,11 @@
 #include "pw.h"
 #include "pwlua_standalone.h"
 #include "render.h"
+#include "user_input.h"
 #include "x11_event_handler.h"
+
+#define STB_DS_IMPLEMENTATION
+#include "stb_ds.h"
 
 static int terminate;
 
@@ -58,6 +62,7 @@ int main(int argc, char **argv)
     pg_swap_interval(config->vsync);
     set_key_press_handler(*handle_key_press);
     set_key_release_handler(*handle_key_release);
+    set_mouse_press_handler(*handle_mouse_press);
     set_mouse_release_handler(*handle_mouse_release);
     set_mouse_motion_handler(*handle_mouse_motion);
     set_window_close_handler(*handle_window_close);
@@ -77,6 +82,7 @@ int main(int argc, char **argv)
         pg_set_joystick_axis_handler(*handle_joystick_axis);
     }
 
+    user_input_init();
     render_init();
 
     // OUTER LOOP //
@@ -273,6 +279,7 @@ int main(int argc, char **argv)
         pw_unload_game();
     }
     render_deinit();
+    user_input_deinit();
     pw_deinit();
 
     for (int i=0; i<MAX_LOCAL_PLAYERS; i++) {

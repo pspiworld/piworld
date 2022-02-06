@@ -6,12 +6,12 @@ project(piworld)
 set(CMAKE_VERBOSE_MAKEFILE TRUE)
 
 FILE(GLOB SOURCE_FILES
-    src/chunk.c src/chunks.c src/client.c src/clients.c src/config.c
-    src/cube.c src/db.c src/door.c src/item.c src/fence.c src/local_player.c
-    src/local_players.c src/local_player_command_line.c src/main.c src/map.c
-    src/matrix.c src/pw.c src/pwlua_api.c src/pwlua_standalone.c
-    src/pwlua_worldgen.c src/pwlua.c src/render.c src/ring.c src/sign.c
-    src/ui.c src/user_input.c src/util.c src/world.c
+    src/action.c src/chunk.c src/chunks.c src/client.c src/clients.c
+    src/config.c src/cube.c src/db.c src/door.c src/item.c src/fence.c
+    src/local_player.c src/local_players.c src/local_player_command_line.c
+    src/main.c src/map.c src/matrix.c src/pw.c src/pwlua_api.c
+    src/pwlua_standalone.c src/pwlua_worldgen.c src/pwlua.c src/render.c
+    src/ring.c src/sign.c src/ui.c src/user_input.c src/util.c src/world.c
     deps/linenoise/linenoise.c
     deps/lodepng/lodepng.c
     deps/noise/noise.c
@@ -100,6 +100,7 @@ include_directories(deps/noise)
 include_directories(deps/pg)
 include_directories(deps/RPi.GPIO/source)
 include_directories(deps/rpi-gpio-lua/lua)
+include_directories(deps/stb)
 include_directories(deps/tinycthread)
 
 # Setup for make install

@@ -1,5 +1,5 @@
-#include <math.h>
 #include <string.h>
+#include "action.h"
 #include "client.h"
 #include "chunk.h"
 #include "chunks.h"
@@ -8,24 +8,11 @@
 #include "local_players.h"
 #include "pg.h"
 #include "pw.h"
+#include "stb_ds.h"
 #include "user_input.h"
 #include "x11_event_handler.h"
 
-#define DEADZONE 0.0
-
-#define CROUCH_JUMP 0
-#define REMOVE_ADD 1
-#define CYCLE_DOWN_UP 2
-#define FLY_PICK 3
-#define ZOOM_ORTHO 4
-#define SHOULDER_BUTTON_MODE_COUNT 5
-const char *shoulder_button_modes[SHOULDER_BUTTON_MODE_COUNT] = {
-    "Crouch/Jump",
-    "Remove/Add",
-    "Previous/Next",
-    "Fly/Pick",
-    "Zoom/Ortho"
-};
+KeyBinding* default_key_bindings;
 
 void insert_into_typing_buffer(LocalPlayer *local, unsigned char c) {
     size_t n = strlen(local->typing_buffer);
@@ -131,6 +118,12 @@ void handle_key_press_typing(LocalPlayer *local, int mods, int keysym)
 
 void local_player_handle_key_press(LocalPlayer *local, int mods, int keysym)
 {
+    Event event = { 0 };
+    event.type = KEYBOARD;
+    event.button = keysym;
+    event.mods = mods;
+    event.state = 1;
+
     if (local->typing) {
         if (&local->osk == local->active_menu) {
             // Enable testing of OSK using keyboard with only the cursor keys,
@@ -159,188 +152,72 @@ void local_player_handle_key_press(LocalPlayer *local, int mods, int keysym)
         open_osk_for_menu_line_edit(local, r);
         return;
     }
-    switch (keysym) {
-    case XK_w: case XK_W:
-        local->forward_is_pressed = 1;
-        local->movement_speed_forward_back = 1;
-        break;
-    case XK_s: case XK_S:
-        local->back_is_pressed = 1;
-        local->movement_speed_forward_back = 1;
-        break;
-    case XK_a: case XK_A:
-        local->left_is_pressed = 1;
-        local->movement_speed_left_right = 1;
-        break;
-    case XK_d: case XK_D:
-        local->right_is_pressed = 1;
-        local->movement_speed_left_right = 1;
-        break;
-    case XK_Escape:
-        if (local->active_menu) {
-            close_menu(local);
-        } else {
-            open_menu(local, &local->menu);
-        }
-        break;
-    case XK_i: case XK_I:
-        open_menu(local, &local->menu_item_in_hand);
-        break;
-    case XK_F1:
-        set_mouse_absolute();
-        break;
-    case XK_F2:
-        set_mouse_relative();
-        break;
-    case XK_F8:
-        move_local_player_keyboard_and_mouse_to_next_active_player(local);
-        break;
-    case XK_F11:
-        pg_toggle_fullscreen();
-        break;
-    case XK_Up:
-        local->view_up_is_pressed = 1;
-        local->view_speed_up_down = 1;
-        break;
-    case XK_Down:
-        local->view_down_is_pressed = 1;
-        local->view_speed_up_down = 1;
-        break;
-    case XK_Left:
-        local->view_left_is_pressed = 1;
-        local->view_speed_left_right = 1;
-        break;
-    case XK_Right:
-        local->view_right_is_pressed = 1;
-        local->view_speed_left_right = 1;
-        break;
-    case XK_space:
-        local->jump_is_pressed = 1;
-        break;
-    case XK_c: case XK_C:
-        local->crouch_is_pressed = 1;
-        break;
-    case XK_z: case XK_Z:
-        local->zoom_is_pressed = 1;
-        break;
-    case XK_f: case XK_F:
-        local->ortho_is_pressed = 1;
-        break;
-    case XK_Tab:
-        if (!mods) {
-            local->flying = !local->flying;
-        }
-        break;
-    case XK_1: case XK_2: case XK_3: case XK_4: case XK_5: case XK_6:
-    case XK_7: case XK_8: case XK_9:
-        local->item_index = keysym - XK_1;
-        break;
-    case XK_0:
-        local->item_index = 9;
-        break;
-    case XK_e: case XK_E:
-        cycle_item_in_hand_up(local);
-        break;
-    case XK_r: case XK_R:
-        cycle_item_in_hand_down(local);
-        break;
-    case XK_g: case XK_G:
-        set_item_in_hand_to_item_under_crosshair(local);
-        break;
-    case XK_o: case XK_O:
-        toggle_observe_view(local);
-        break;
-    case XK_p: case XK_P:
-        toggle_picture_in_picture_observe_view(local);
-        break;
-    case XK_t: case XK_T:
-        open_chat_command_line(local);
-        break;
-    case XK_u: case XK_U:
-        if (local->has_undo_block == 1) {
-            UndoBlock *b = &local->undo_block;
-            int bp = chunked(b->x);
-            int bq = chunked(b->z);
-            set_block(b->x, b->y, b->z, b->texture);
-            set_extra(b->x, b->y, b->z, b->extra);
-            set_light(bp, bq, b->x, b->y, b->z, b->light);
-            set_shape(b->x, b->y, b->z, b->shape);
-            set_transform(b->x, b->y, b->z, b->transform);
-            if (b->has_sign) {
-                SignList *signs = &b->signs;
-                for (size_t i = 0; i < signs->size; i++) {
-                    Sign *e = signs->data + i;
-                    set_sign(e->x, e->y, e->z, e->face, e->text);
-                }
-                sign_list_free(signs);
-                b->has_sign = 0;
-            }
-            local->has_undo_block = 0;
-        }
-        break;
-    case XK_slash:
-        open_action_command_line(local);
-        break;
-    case XK_dollar:
-        open_lua_command_line(local);
-        break;
-    case XK_grave:
-        open_sign_command_line(local);
-        break;
-    case XK_Return:
-        if (mods & ControlMask) {
-            set_block_under_crosshair(local);
-        } else {
-            clear_block_under_crosshair(local);
-        }
-        break;
+
+    action_t action = hmget(local->key_bindings, keysym);
+
+    if (action == NULL) {
+        action = hmget(default_key_bindings, keysym);
+    }
+
+    if (action != NULL) {
+        action(local, &event);
+        return;
     }
 }
 
 void local_player_handle_key_release(LocalPlayer *local, int keysym)
 {
-    switch (keysym) {
-    case XK_w: case XK_W:
-        local->forward_is_pressed = 0;
-        break;
-    case XK_s: case XK_S:
-        local->back_is_pressed = 0;
-        break;
-    case XK_a: case XK_A:
-        local->left_is_pressed = 0;
-        break;
-    case XK_d: case XK_D:
-        local->right_is_pressed = 0;
-        break;
-    case XK_space:
-        local->jump_is_pressed = 0;
-        break;
-    case XK_c: case XK_C:
-        local->crouch_is_pressed = 0;
-        break;
-    case XK_z: case XK_Z:
-        local->zoom_is_pressed = 0;
-        break;
-    case XK_f: case XK_F:
-        local->ortho_is_pressed = 0;
-        break;
-    case XK_Up:
-        local->view_up_is_pressed = 0;
-        break;
-    case XK_Down:
-        local->view_down_is_pressed = 0;
-        break;
-    case XK_Left:
-        local->view_left_is_pressed = 0;
-        break;
-    case XK_Right:
-        local->view_right_is_pressed = 0;
-        break;
+    Event event = { 0 };
+    event.type = KEYBOARD;
+    event.button = keysym;
+    event.state = 0;
+
+    action_t action = hmget(local->key_bindings, keysym);
+
+    if (action == NULL) {
+        action = hmget(default_key_bindings, keysym);
+    }
+
+    if (action != NULL) {
+        action(local, &event);
+        return;
+    }
+}
+
+void local_player_handle_mouse_press(LocalPlayer *local, int b, int mods)
+{
+    Event event = { 0 };
+    event.type = MOUSE_BUTTON;
+    event.button = b;
+    event.state = 1;
+    event.mods = mods;
+
+    if (local->active_menu) {
+        return;
+    }
+    action_t action = NULL;
+    if (local->mouse_bindings[b] != NULL) {
+        action = local->mouse_bindings[b];
+    } else if (b == 4) {
+        action = &action_next_item_in_hand;
+    } else if (b == 5) {
+        action = &action_previous_item_in_hand;
+    }
+
+    if (action != NULL) {
+        action(local, &event);
+        return;
     }
 }
 
 void local_player_handle_mouse_release(LocalPlayer *local, int b, int mods)
 {
+    Event event = { 0 };
+    event.type = MOUSE_BUTTON;
+    event.button = b;
+    event.state = 0;
+    event.mods = mods;
+
     if (local->active_menu) {
         int r = menu_handle_mouse_release(local->active_menu, local->mouse_x,
                                           local->mouse_y, b);
@@ -350,26 +227,26 @@ void local_player_handle_mouse_release(LocalPlayer *local, int b, int mods)
         }
         return;
     }
-    if (b == 1) {
-        if (mods & ControlMask) {
-            set_block_under_crosshair(local);
-        } else {
-            clear_block_under_crosshair(local);
-        }
+    action_t action = NULL;
+    if (local->mouse_bindings[b] != NULL) {
+        action = local->mouse_bindings[b];
+    } else if (b == 1) {
+        action = &action_primary_mouse_action;
     } else if (b == 2) {
-        open_menu_for_item_under_crosshair(local);
+        action = &action_tertiary_mouse_action;
     } else if (b == 3) {
-        if (mods & ControlMask) {
-            on_light(local);
-        } else {
-            set_block_under_crosshair(local);
-        }
+        action = &action_secondary_mouse_action;
     } else if (b == 4) {
-        cycle_item_in_hand_up(local);
+        action = &action_next_item_in_hand;
     } else if (b == 5) {
-        cycle_item_in_hand_down(local);
+        action = &action_previous_item_in_hand;
     } else {
-        open_menu(local, &local->menu);
+        action = &action_open_menu_on_release;
+    }
+
+    if (action != NULL) {
+        action(local, &event);
+        return;
     }
 }
 
@@ -413,180 +290,193 @@ void local_player_handle_mouse_motion(LocalPlayer *local, float x, float y)
 void local_player_handle_joystick_axis(LocalPlayer *local, PG_Joystick *j,
     int axis, float value)
 {
-    if (local->active_menu) {
-        menu_handle_joystick_axis(local->active_menu, axis, value);
+    Event event = { 0 };
+    event.type = JOYSTICK_AXIS;
+    event.button = axis;
+    event.x = value;
+    Menu *menu = local->active_menu;
+    action_t action;
+
+    if (menu) {
+        action = local->gamepad_axes_bindings[axis];
+        if (action == &action_move_forward_back) {
+            if (value > 0.5) {
+                menu_highlight_up(menu);
+            } else if (value < -0.5) {
+                menu_highlight_down(menu);
+            }
+        } else if (action == &action_move_left_right) {
+            if (value > 0.5) {
+                menu_highlight_right(menu);
+            } else if (value < -0.5) {
+                menu_highlight_left(menu);
+            }
+        } else {
+            menu_handle_joystick_axis(local->active_menu, axis, value);
+        }
         return;
     }
+    static action_t no_stick_gamepad[] = {
+        &action_move_left_right,
+        &action_move_forward_back,
+    };
+    static const int no_stick_gamepad_count = sizeof(no_stick_gamepad) / sizeof(action_t);
 
-    if (j->axis_count < 4) {
-        if (axis == 0) {
-            local->left_is_pressed = (value < 0) ? 1 : 0;
-            local->right_is_pressed = (value > 0) ? 1 : 0;
-            local->movement_speed_left_right = fabs(value);
-        } else if (axis == 1) {
-            local->forward_is_pressed = (value < 0) ? 1 : 0;
-            local->back_is_pressed = (value > 0) ? 1 : 0;
-            local->movement_speed_forward_back = fabs(value);
+    static action_t two_stick_gamepad[] = {
+        &action_move_left_right,
+        &action_move_forward_back,
+        &action_view_up_down,
+        &action_view_left_right,
+        &action_move_left_right,
+        &action_move_forward_back,
+    };
+    static const int two_stick_gamepad_count = sizeof(two_stick_gamepad) / sizeof(action_t);
+
+    action = NULL;
+
+    if (local->gamepad_axes_bindings[axis] != NULL) {
+        action = local->gamepad_axes_bindings[axis];
+    } else if (j->axis_count < 4) {
+        if (axis < no_stick_gamepad_count) {
+            action = no_stick_gamepad[axis];
         }
     } else {
-        if (axis == 0) {
-            local->movement_speed_left_right = fabs(value) * 2.0;
-            local->left_is_pressed = (value < -DEADZONE);
-            local->right_is_pressed = (value > DEADZONE);
-        } else if (axis == 1) {
-            local->movement_speed_forward_back = fabs(value) * 2.0;
-            local->forward_is_pressed = (value < -DEADZONE);
-            local->back_is_pressed = (value > DEADZONE);
-        } else if (axis == 2) {
-            local->view_speed_up_down = fabs(value) * 2.0;
-            local->view_up_is_pressed = (value < -DEADZONE);
-            local->view_down_is_pressed = (value > DEADZONE);
-        } else if (axis == 3) {
-            local->view_speed_left_right = fabs(value) * 2.0;
-            local->view_left_is_pressed = (value < -DEADZONE);
-            local->view_right_is_pressed = (value > DEADZONE);
-        } else if (axis == 4) {
-            local->movement_speed_left_right = fabs(value);
-            local->left_is_pressed = (value < 0) ? 1 : 0;
-            local->right_is_pressed = (value > 0) ? 1 : 0;
-        } else if (axis == 5) {
-            local->movement_speed_forward_back = fabs(value);
-            local->forward_is_pressed = (value < 0) ? 1 : 0;
-            local->back_is_pressed = (value > 0) ? 1 : 0;
+        if (axis < two_stick_gamepad_count) {
+            action = two_stick_gamepad[axis];
         }
+    }
+
+    if (action != NULL) {
+        action(local, &event);
+        return;
     }
 }
 
 void local_player_handle_joystick_button(LocalPlayer *local, PG_Joystick *j,
     int button, int state)
 {
-    if (local->active_menu) {
-        int r = menu_handle_joystick_button(local->active_menu, button, state);
-        handle_menu_event(local, local->active_menu, r);
-        open_osk_for_menu_line_edit(local, r);
+    Event event = { 0 };
+    event.type = JOYSTICK_BUTTON;
+    event.button = button;
+    event.state = state;
+    Menu *menu = local->active_menu;
+    action_t action;
+
+    if (menu) {
+        int r;
+        action = local->gamepad_bindings[button];
+        if (action == &action_move_forward && state == 1) {
+            menu_highlight_up(menu);
+        } else if (action == &action_move_back && state == 1) {
+            menu_highlight_down(menu);
+        } else if (action == &action_move_left && state == 1) {
+            menu_highlight_left(menu);
+        } else if (action == &action_move_right && state == 1) {
+            menu_highlight_right(menu);
+        } else {
+            r = menu_handle_joystick_button(local->active_menu, button, state);
+            handle_menu_event(local, local->active_menu, r);
+            open_osk_for_menu_line_edit(local, r);
+        }
         return;
     }
 
-    if (j->axis_count < 4) {
-        if (button == 0) {
-            local->view_up_is_pressed = state;
-            local->view_speed_up_down = 1;
-        } else if (button == 2) {
-            local->view_down_is_pressed = state;
-            local->view_speed_up_down = 1;
-        } else if (button == 3) {
-            local->view_left_is_pressed = state;
-            local->view_speed_left_right = 1;
-        } else if (button == 1) {
-            local->view_right_is_pressed = state;
-            local->view_speed_left_right = 1;
-        } else if (button == 5) {
-            switch (local->shoulder_button_mode) {
-                case CROUCH_JUMP:
-                    local->jump_is_pressed = state;
-                    break;
-                case REMOVE_ADD:
-                    if (state) {
-                        set_block_under_crosshair(local);
-                    }
-                    break;
-                case CYCLE_DOWN_UP:
-                    if (state) {
-                        cycle_item_in_hand_up(local);
-                    }
-                    break;
-                case FLY_PICK:
-                    if (state) {
-                        set_item_in_hand_to_item_under_crosshair(local);
-                    }
-                    break;
-                case ZOOM_ORTHO:
-                    local->ortho_is_pressed = state;
-                    break;
-            }
-        } else if (button == 4) {
-           switch (local->shoulder_button_mode) {
-                case CROUCH_JUMP:
-                    local->crouch_is_pressed = state;
-                    break;
-                case REMOVE_ADD:
-                    if (state) {
-                        clear_block_under_crosshair(local);
-                    }
-                    break;
-                case CYCLE_DOWN_UP:
-                    if (state) {
-                        cycle_item_in_hand_down(local);
-                    }
-                    break;
-                case FLY_PICK:
-                    if (state) {
-                        local->flying = !local->flying;
-                    }
-                    break;
-                case ZOOM_ORTHO:
-                    local->zoom_is_pressed = state;
-                    break;
-            }
-        } else if (button == 8) {
-            if (state) {
-                local->shoulder_button_mode += 1;
-                local->shoulder_button_mode %= SHOULDER_BUTTON_MODE_COUNT;
-                add_message(local->player->id,
-                            shoulder_button_modes[local->shoulder_button_mode]);
-            }
-        } else if (button == 9) {
-            if (state) {
-                if (local->active_menu) {
-                    close_menu(local);
-                } else {
-                    open_menu(local, &local->menu);
-                }
-            }
+    static action_t no_stick_gamepad[] = {
+        &action_view_up,
+        &action_view_right,
+        &action_view_down,
+        &action_view_left,
+        &action_mode2,
+        &action_mode1,
+        NULL,
+        NULL,
+        &action_next_mode,
+        &action_menu,
+    };
+    static const int no_stick_gamepad_count = sizeof(no_stick_gamepad) / sizeof(action_t);
+
+    static action_t two_stick_gamepad[] = {
+        &action_next_item_in_hand,
+        &action_fly_mode_toggle,
+        &action_previous_item_in_hand,
+        &action_pick_item_in_hand,
+        &action_crouch,
+        &action_remove_block,
+        &action_jump,
+        &action_add_block,
+        &action_zoom,
+        &action_menu,
+        &action_ortho,
+        &action_zoom,
+    };
+    static const int two_stick_gamepad_count = sizeof(two_stick_gamepad) / sizeof(action_t);
+
+    action = NULL;
+
+    if (local->gamepad_bindings[button] != NULL) {
+        action = local->gamepad_bindings[button];
+    } else if (j->axis_count < 4) {
+        if (button < no_stick_gamepad_count) {
+            action = no_stick_gamepad[button];
         }
     } else {
-        if (button == 0) {
-            if (state) {
-                cycle_item_in_hand_up(local);
-            }
-        } else if (button == 2) {
-            if (state) {
-                cycle_item_in_hand_down(local);
-            }
-        } else if (button == 3) {
-            if (state) {
-                set_item_in_hand_to_item_under_crosshair(local);
-            }
-        } else if (button == 1) {
-            if (state) {
-                local->flying = !local->flying;
-            }
-        } else if (button == 5) {
-            if (state) {
-                clear_block_under_crosshair(local);
-            }
-        } else if (button == 4) {
-            local->crouch_is_pressed = state;
-        } else if (button == 6) {
-            local->jump_is_pressed = state;
-        } else if (button == 7) {
-            if (state) {
-                set_block_under_crosshair(local);
-            }
-        } else if (button == 8) {
-            local->zoom_is_pressed = state;
-        } else if (button == 9) {
-            if (state) {
-                if (local->active_menu) {
-                    close_menu(local);
-                } else {
-                    open_menu(local, &local->menu);
-                }
-            }
-        } else if (button == 10) {
-            local->ortho_is_pressed = state;
-        } else if (button == 11) {
-            local->zoom_is_pressed = state;
+        if (button < two_stick_gamepad_count) {
+            action = two_stick_gamepad[button];
         }
     }
+
+    if (action != NULL) {
+        action(local, &event);
+        return;
+    }
+}
+
+void user_input_init(void)
+{
+    // Setup default key and other bindings
+    hmput(default_key_bindings, XK_Up, &action_view_up);
+    hmput(default_key_bindings, XK_Down, &action_view_down);
+    hmput(default_key_bindings, XK_Left, &action_view_left);
+    hmput(default_key_bindings, XK_Right, &action_view_right);
+    hmput(default_key_bindings, XK_w, &action_move_forward);
+    hmput(default_key_bindings, XK_a, &action_move_left);
+    hmput(default_key_bindings, XK_s, &action_move_back);
+    hmput(default_key_bindings, XK_d, &action_move_right);
+    hmput(default_key_bindings, XK_Escape, &action_menu);
+    hmput(default_key_bindings, XK_i, &action_open_item_in_hand_menu);
+    hmput(default_key_bindings, XK_F1, &action_set_mouse_absolute);
+    hmput(default_key_bindings, XK_F2, &action_set_mouse_relative);
+    hmput(default_key_bindings, XK_F8, &action_move_local_player_keyboard_and_mouse_to_next_active_player);
+    hmput(default_key_bindings, XK_F11, &action_fullscreen_toggle);
+    hmput(default_key_bindings, XK_space, &action_jump);
+    hmput(default_key_bindings, XK_c, &action_crouch);
+    hmput(default_key_bindings, XK_z, &action_zoom);
+    hmput(default_key_bindings, XK_f, &action_ortho);
+    hmput(default_key_bindings, XK_Tab, &action_fly_mode_toggle);
+    hmput(default_key_bindings, XK_1, &action_set_item_index_from_keysym_number);
+    hmput(default_key_bindings, XK_2, &action_set_item_index_from_keysym_number);
+    hmput(default_key_bindings, XK_3, &action_set_item_index_from_keysym_number);
+    hmput(default_key_bindings, XK_4, &action_set_item_index_from_keysym_number);
+    hmput(default_key_bindings, XK_5, &action_set_item_index_from_keysym_number);
+    hmput(default_key_bindings, XK_6, &action_set_item_index_from_keysym_number);
+    hmput(default_key_bindings, XK_7, &action_set_item_index_from_keysym_number);
+    hmput(default_key_bindings, XK_8, &action_set_item_index_from_keysym_number);
+    hmput(default_key_bindings, XK_9, &action_set_item_index_from_keysym_number);
+    hmput(default_key_bindings, XK_0, &action_set_item_index_from_keysym_number);
+    hmput(default_key_bindings, XK_e, &action_next_item_in_hand);
+    hmput(default_key_bindings, XK_r, &action_previous_item_in_hand);
+    hmput(default_key_bindings, XK_g, &action_pick_item_in_hand);
+    hmput(default_key_bindings, XK_o, &action_observe_view_toggle);
+    hmput(default_key_bindings, XK_p, &action_picture_in_picture_observe_view_toggle);
+    hmput(default_key_bindings, XK_t, &action_open_chat_command_line);
+    hmput(default_key_bindings, XK_u, &action_undo);
+    hmput(default_key_bindings, XK_slash, &action_open_action_command_line);
+    hmput(default_key_bindings, XK_dollar, &action_open_lua_command_line);
+    hmput(default_key_bindings, XK_grave, &action_open_sign_command_line);
+    hmput(default_key_bindings, XK_Return, &action_primary);
+}
+
+void user_input_deinit(void)
+{
+    hmfree(default_key_bindings);
 }

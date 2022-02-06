@@ -4,6 +4,7 @@
 
 void local_player_handle_key_press(LocalPlayer *local, int mods, int keysym);
 void local_player_handle_key_release(LocalPlayer *local, int keysym);
+void local_player_handle_mouse_press(LocalPlayer *local, int b, int mods);
 void local_player_handle_mouse_release(LocalPlayer *local, int b, int mods);
 void local_player_handle_mouse_motion(LocalPlayer *local, float x, float y);
 void local_player_handle_joystick_axis(LocalPlayer *local, PG_Joystick *j,
@@ -11,3 +12,7 @@ void local_player_handle_joystick_axis(LocalPlayer *local, PG_Joystick *j,
 void local_player_handle_joystick_button(LocalPlayer *local, PG_Joystick *j,
     int button, int state);
 
+void handle_key_press_typing(LocalPlayer *local, int mods, int keysym);
+
+void user_input_init(void);
+void user_input_deinit(void);

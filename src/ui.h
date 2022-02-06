@@ -62,4 +62,9 @@ int menu_handle_key_press(Menu *menu, int mods, int keysym);
 void menu_handle_joystick_axis(Menu *menu, int axis, float value);
 int menu_handle_joystick_button(Menu *menu, int button, int state);
 
+void menu_highlight_left(Menu *menu);
+void menu_highlight_right(Menu *menu);
+void menu_highlight_up(Menu *menu);
+void menu_highlight_down(Menu *menu);
+
 void menu_render(Menu *menu, int view_width, int view_height, float scale);

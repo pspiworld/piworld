@@ -57,6 +57,7 @@ void reset_config() {
     config->worldgen_path[sizeof(WORLDGEN_PATH)] = '\0';
     config->ignore_gamepad = 0;
     config->always_use_osk = 0;
+    config->bindings[0] = '\0';
 }
 
 void get_config_path(char *path)
@@ -120,6 +121,7 @@ void parse_startup_config(int argc, char **argv) {
             {"worldgen",          required_argument, 0,  0 },
             {"ignore-gamepad",    no_argument,       0,  0 },
             {"always-use-osk",    no_argument,       0,  0 },
+            {"bind",              required_argument, 0,  0 },
             {0,                   0,                 0,  0 }
         };
 
@@ -205,6 +207,10 @@ void parse_startup_config(int argc, char **argv) {
                 config->ignore_gamepad = 1;
             } else if (strncmp(opt_name, "always-use-osk", 14) == 0) {
                 config->always_use_osk = 1;
+            } else if (strncmp(opt_name, "bind", 4) == 0 &&
+                       sscanf(optarg, "%256c", config->bindings) == 1) {
+                config->bindings[MIN(strlen(optarg),
+                                 MAX_PATH_LENGTH - 1)] = '\0';
             } else {
                 printf("Bad argument for: --%s: %s\n", opt_name, optarg);
                 exit(1);

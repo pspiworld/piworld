@@ -334,6 +334,20 @@ void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state)
     local_player_handle_joystick_button(local, j, button, state);
 }
 
+void handle_mouse_press(int mouse_id, int b)
+{
+    if (!relative_mouse_in_use()) {
+        return;
+    }
+    LocalPlayer *local = player_for_mouse(mouse_id);
+    int mods = 0;
+    if (local->keyboard_id != UNASSIGNED) {
+        mods = pg_get_mods(local->keyboard_id);
+    }
+    local_player_handle_mouse_press(local, b, mods);
+}
+
+
 void handle_mouse_release(int mouse_id, int b)
 {
     if (!relative_mouse_in_use()) {

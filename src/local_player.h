@@ -14,6 +14,10 @@
 #define NUM_HISTORIES 5
 #define NOT_IN_HISTORY -1
 
+#define MAX_MOUSE_BUTTONS 10
+#define MAX_GAMEPAD_BUTTONS 16
+#define MAX_GAMEPAD_AXES 6
+
 typedef struct {
     char lines[MAX_HISTORY_SIZE][MAX_TEXT_LENGTH];
     int size;
@@ -41,7 +45,29 @@ typedef struct {
     int has_sign;
 } UndoBlock;
 
+typedef enum {
+    MOUSE_BUTTON,
+    MOUSE_MOTION,
+    KEYBOARD,
+    JOYSTICK_BUTTON,
+    JOYSTICK_AXIS
+} EventType;
+
 typedef struct {
+    EventType type;
+    int button;  // mouse button, joystick button, axis or keysym
+    int state;   // button/key up/down state
+    float x;     // axis value or mouse x
+    float y;     // mouse y
+    int mods;    // keyboard mods at time of event
+} Event;
+
+struct LocalPlayer;
+typedef void (*action_t)(struct LocalPlayer *, Event *);
+
+typedef struct { int key; action_t value; } KeyBinding;
+
+typedef struct LocalPlayer {
     Player *player;
     int item_index;
     int flying;
@@ -174,6 +200,11 @@ typedef struct {
     int mouse_id;
     int keyboard_id;
     int joystick_id;
+
+    action_t mouse_bindings[MAX_MOUSE_BUTTONS];
+    action_t gamepad_bindings[MAX_GAMEPAD_BUTTONS];
+    action_t gamepad_axes_bindings[MAX_GAMEPAD_AXES];
+    KeyBinding* key_bindings;
 } LocalPlayer;
 
 void local_player_init(LocalPlayer *local, Player *player, int player_id);

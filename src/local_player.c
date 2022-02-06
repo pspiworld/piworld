@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "action.h"
 #include "chunk.h"
 #include "chunks.h"
 #include "client.h"
@@ -15,6 +16,7 @@
 #include "local_player.h"
 #include "pg.h"
 #include "pw.h"
+#include "stb_ds.h"
 #include "x11_event_handler.h"
 
 void create_menus(LocalPlayer *local);
@@ -31,6 +33,9 @@ void local_player_init(LocalPlayer *local, Player *player, int player_id)
     create_menus(local);
     local->player = player;
     local->player->id = player_id;
+
+    local->key_bindings = NULL;
+    action_apply_bindings(local, config->bindings);
 }
 
 void local_player_reset(LocalPlayer *local)
@@ -100,6 +105,7 @@ void local_player_clear(LocalPlayer *local)
     if (local->lua_shell != NULL) {
         pwlua_remove(local->lua_shell);
     }
+    hmfree(local->key_bindings);
 }
 
 void open_menu(LocalPlayer *local, Menu *menu)

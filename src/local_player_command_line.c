@@ -1,8 +1,10 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include "action.h"
 #include "chunks.h"
 #include "client.h"
+#include "action.h"
 #include "db.h"
 #include "item.h"
 #include "local_player.h"
@@ -477,6 +479,9 @@ void parse_command(LocalPlayer *local, const char *buffer, int forward) {
         if (!is_online() && int_option >= 0 && int_option <= 24) {
             pw_set_time(int_option);
         }
+    }
+    else if (sscanf(buffer, "/bind %512s", path) == 1) {
+        action_apply_bindings(local, path);
     }
     else if (forward) {
         client_talk(buffer);

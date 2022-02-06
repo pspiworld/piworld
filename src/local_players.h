@@ -20,6 +20,7 @@ void handle_key_press(int keyboard_id, int mods, int keysym);
 void handle_key_release(int keyboard_id, int keysym);
 void handle_joystick_axis(PG_Joystick *j, int j_num, int axis, float value);
 void handle_joystick_button(PG_Joystick *j, int j_num, int button, int state);
+void handle_mouse_press(int mouse_id, int b);
 void handle_mouse_release(int mouse_id, int b);
 void handle_window_close(void);
 void handle_focus_out(void);

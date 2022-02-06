@@ -86,6 +86,7 @@ typedef struct {
     int day_length;
     int ignore_gamepad;
     int always_use_osk;
+    char bindings[MAX_PATH_LENGTH];
 } Config;
 
 extern Config *config;
