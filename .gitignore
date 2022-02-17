@@ -4,7 +4,7 @@
 /*.history
 /core
 /gmon.out
-Makefile
+/Makefile
 CMakeCache.txt
 CMakeFiles
 cmake_install.cmake
