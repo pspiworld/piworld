@@ -10,6 +10,7 @@
 #include "pw.h"
 #include "stb_ds.h"
 #include "user_input.h"
+#include "vt.h"
 #include "x11_event_handler.h"
 
 KeyBinding* default_key_bindings;
@@ -31,9 +32,14 @@ void insert_into_typing_buffer(LocalPlayer *local, unsigned char c) {
 
 void handle_key_press_typing(LocalPlayer *local, int mods, int keysym)
 {
+    if (local->vt_open) {
+        vt_handle_key_press(local->pwt, mods, keysym);
+        return;
+    }
+
     switch (keysym) {
     case XK_Escape:
-        local->typing = 0;
+        local->typing = GameFocus;
         local->history_position = NOT_IN_HISTORY;
         break;
     case XK_BackSpace:
@@ -54,7 +60,7 @@ void handle_key_press_typing(LocalPlayer *local, int mods, int keysym)
         if (mods & ShiftMask) {
             insert_into_typing_buffer(local, '\r');
         } else {
-            local->typing = 0;
+            local->typing = GameFocus;
             if (local->typing_buffer[0] == CRAFT_KEY_SIGN) {
                 int x, y, z, face;
                 if (hit_test_face(local->player, &x, &y, &z, &face)) {
@@ -124,7 +130,7 @@ void local_player_handle_key_press(LocalPlayer *local, int mods, int keysym)
     event.mods = mods;
     event.state = 1;
 
-    if (local->typing) {
+    if (local->typing != GameFocus) {
         if (&local->osk == local->active_menu) {
             // Enable testing of OSK using keyboard with only the cursor keys,
             // return and escape.
@@ -136,12 +142,30 @@ void local_player_handle_key_press(LocalPlayer *local, int mods, int keysym)
 
                 // extra Escape: close command line as well as OSK
                 if (keysym == XK_Escape) {
-                    handle_key_press_typing(local, mods, keysym);
+                    if (local->typing != VTFocus) {
+                        handle_key_press_typing(local, mods, keysym);
+                    }
                 }
             } else { // handle key press as usual for command line
                 handle_key_press_typing(local, mods, keysym);
             }
-        } else {
+        } else if (local->typing == VTFocus) {
+            action_t action = hmget(local->key_bindings, keysym);
+            if (action == NULL) {
+                action = hmget(default_key_bindings, keysym);
+            }
+            if (action == &action_vt) {
+                if (!local->vt_open) {
+                    local->vt_open = 1;
+                    local->typing = VTFocus;
+                } else {
+                    local->vt_open = 0;
+                    local->typing = GameFocus;
+                }
+            } else {
+                vt_handle_key_press(local->pwt, mods, keysym);
+            }
+        } else {  // CommandLineFocus
             handle_key_press_typing(local, mods, keysym);
         }
         return;
@@ -222,7 +246,7 @@ void local_player_handle_mouse_release(LocalPlayer *local, int b, int mods)
         int r = menu_handle_mouse_release(local->active_menu, local->mouse_x,
                                           local->mouse_y, b);
         handle_menu_event(local, local->active_menu, r);
-        if (local->keyboard_id == UNASSIGNED || config->always_use_osk) {
+        if (use_osk(local)) {
             open_osk_for_menu_line_edit(local, r);
         }
         return;
@@ -443,6 +467,7 @@ void user_input_init(void)
     hmput(default_key_bindings, XK_s, &action_move_back);
     hmput(default_key_bindings, XK_d, &action_move_right);
     hmput(default_key_bindings, XK_Escape, &action_menu);
+    hmput(default_key_bindings, XK_Menu, &action_menu);
     hmput(default_key_bindings, XK_i, &action_open_item_in_hand_menu);
     hmput(default_key_bindings, XK_F1, &action_set_mouse_absolute);
     hmput(default_key_bindings, XK_F2, &action_set_mouse_relative);

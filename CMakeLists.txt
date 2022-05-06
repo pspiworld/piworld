@@ -11,7 +11,13 @@ FILE(GLOB SOURCE_FILES
     src/local_player.c src/local_players.c src/local_player_command_line.c
     src/main.c src/map.c src/matrix.c src/pw.c src/pwlua_api.c
     src/pwlua_standalone.c src/pwlua_worldgen.c src/pwlua.c src/render.c
-    src/ring.c src/sign.c src/ui.c src/user_input.c src/util.c src/world.c
+    src/ring.c src/sign.c src/ui.c src/user_input.c src/util.c src/vt.c
+    src/world.c
+    deps/libvterm/src/encoding.c deps/libvterm/src/keyboard.c
+    deps/libvterm/src/mouse.c deps/libvterm/src/parser.c
+    deps/libvterm/src/pen.c deps/libvterm/src/screen.c
+    deps/libvterm/src/state.c deps/libvterm/src/unicode.c
+    deps/libvterm/src/vterm.c
     deps/linenoise/linenoise.c
     deps/lodepng/lodepng.c
     deps/noise/noise.c
@@ -27,7 +33,7 @@ if(RASPI)
         )
 endif()
 
-set(COMMON_LIBS dl m pthread X11 Xcursor Xi
+set(COMMON_LIBS dl m pthread util X11 Xcursor Xi
      ${CMAKE_SOURCE_DIR}/deps/luajit/src/libluajit.a)
 
 if(SQLITE_BUILTIN)
@@ -90,6 +96,7 @@ else()
     add_definitions(-DRELEASE_BUILD=0)
 endif()
 
+include_directories(deps/libvterm/include)
 include_directories(deps/linenoise)
 include_directories(deps/lodepng)
 include_directories(deps/luajit/src)

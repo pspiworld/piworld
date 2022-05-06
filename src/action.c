@@ -130,6 +130,7 @@ action_t get_action_from_name(char *name)
         "crouch_toggle",
         "ortho_toggle",
         "zoom_toggle",
+        "vt",
     };
     static const int action_count = sizeof(action_names) / sizeof(char *);
     static const action_t actions[] = {
@@ -185,6 +186,7 @@ action_t get_action_from_name(char *name)
         &action_crouch_toggle,
         &action_ortho_toggle,
         &action_zoom_toggle,
+        &action_vt,
     };
 
     for (int i=0; i<action_count; i++) {
@@ -637,3 +639,13 @@ void action_zoom_toggle(LocalPlayer *local, Event *e)
     }
 }
 
+void action_vt(LocalPlayer *local, Event *e)
+{
+    if (e->state) {
+        if (!local->vt_open) {
+            open_vt(local);
+        } else {
+            close_vt(local);
+        }
+    }
+}

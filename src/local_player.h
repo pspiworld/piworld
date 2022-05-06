@@ -3,6 +3,7 @@
 #include "pwlua.h"
 #include "sign.h"
 #include "ui.h"
+#include "vt.h"
 
 #define MAX_HISTORY_SIZE 20
 
@@ -67,6 +68,8 @@ typedef void (*action_t)(struct LocalPlayer *, Event *);
 
 typedef struct { int key; action_t value; } KeyBinding;
 
+enum Focus { GameFocus, CommandLineFocus, VTFocus };
+
 typedef struct LocalPlayer {
     Player *player;
     int item_index;
@@ -75,7 +78,7 @@ typedef struct LocalPlayer {
     char messages[MAX_MESSAGES][MAX_TEXT_LENGTH];
     int message_index;
 
-    int typing;
+    enum Focus typing;
     char typing_buffer[MAX_TEXT_LENGTH];
     TextLineHistory typing_history[NUM_HISTORIES];
     int history_position;
@@ -144,6 +147,7 @@ typedef struct LocalPlayer {
     int menu_id_chat;
     int menu_id_lua;
     int menu_id_sign;
+    int menu_id_vt;
     Menu osk;
     int osk_id_ok;
     int osk_id_cancel;
@@ -205,6 +209,12 @@ typedef struct LocalPlayer {
     action_t gamepad_bindings[MAX_GAMEPAD_BUTTONS];
     action_t gamepad_axes_bindings[MAX_GAMEPAD_AXES];
     KeyBinding* key_bindings;
+
+    int vt_open;
+    float vt_scale;
+    PiWorldTerm *pwt;
+
+    int show_world;
 } LocalPlayer;
 
 void local_player_init(LocalPlayer *local, Player *player, int player_id);
@@ -237,3 +247,8 @@ void open_lua_command_line(LocalPlayer* local);
 void open_sign_command_line(LocalPlayer* local);
 void open_menu_line_edit_command_line(LocalPlayer* local);
 void open_osk_for_menu_line_edit(LocalPlayer *local, int item);
+void local_player_set_vt_size(LocalPlayer* local);
+void open_vt(LocalPlayer* local);
+void close_vt(LocalPlayer* local);
+void destroy_vt(LocalPlayer* local);
+int use_osk(LocalPlayer *local);

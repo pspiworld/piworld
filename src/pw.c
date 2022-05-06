@@ -34,6 +34,7 @@
 #include "tinycthread.h"
 #include "ui.h"
 #include "util.h"
+#include "vt.h"
 #include "world.h"
 #include "x11_event_handler.h"
 
@@ -68,8 +69,14 @@ typedef struct {
 static Model model;
 static Model *g = &model;
 
+static int prev_width, prev_height;
+static int prev_player_count;
+
 void pw_init(void)
 {
+    prev_width = 0;
+    prev_height = 0;
+    prev_player_count = 0;
     if (config->use_hfloat) {
         g->gl_float_type = GL_HALF_FLOAT_OES;
         g->float_size = sizeof(hfloat);
@@ -116,7 +123,13 @@ void pw_setup_window(void)
     g->scale = get_scale_factor();
     pg_get_window_size(&g->width, &g->height);
     glViewport(0, 0, g->width, g->height);
-    set_players_view_size(g->width, g->height);
+    if (prev_width != g->width || prev_height != g->height ||
+        prev_player_count != config->players) {
+        set_players_view_size(g->width, g->height);
+        prev_width = g->width;
+        prev_height = g->height;
+        prev_player_count = config->players;;
+    }
 }
 
 int check_time_changed(void)
@@ -680,31 +693,14 @@ void reset_model(void)
     ring_alloc(&g->edit_ring, 1024);
 }
 
-void render_player_world(LocalPlayer *local, FPS fps)
+int render_3D_scene(LocalPlayer *local, Player* player, float ts)
 {
-    Player *player = local->player;
     State *s = &player->state;
-
-    glViewport(local->view_x, local->view_y, local->view_width,
-               local->view_height);
-    g->width = local->view_width;
-    g->height = local->view_height;
-    g->ortho = local->ortho_is_pressed ? 64 : 0;
-    g->fov = local->zoom_is_pressed ? 15 : 65;
-    render_set_state(s, local->view_width, local->view_height, g->render_radius,
-        g->sign_radius, g->ortho, g->fov, g->scale, g->gl_float_type,
-        g->float_size);
-
-    if (local->observe1 > 0 && find_client(local->observe1_client_id)) {
-        player = find_client(local->observe1_client_id)->players +
-                 (local->observe1 - 1);
-    }
-
-    // RENDER 3-D SCENE //
+    int face_count = 0;
     render_sky();
     glClear(GL_DEPTH_BUFFER_BIT);
     ensure_chunks(player);
-    int face_count = render_chunks();
+    face_count = render_chunks();
     render_signs();
     if (local->typing && local->typing_buffer[0] == CRAFT_KEY_SIGN) {
         int x, y, z, face;
@@ -729,8 +725,20 @@ void render_player_world(LocalPlayer *local, FPS fps)
             render_wireframe(hx, hy, hz, color, item_height(shape));
         }
     }
+    if (config->show_player_names) {
+        Player *other = player_crosshair(player);
+        if (other) {
+            render_text(ALIGN_CENTER,
+                g->width / 2, g->height / 2 - ts - 24, ts,
+                other->name);
+        }
+    }
+    return face_count;
+}
 
-    // RENDER HUD //
+void render_HUD(LocalPlayer *local, Player* player)
+{
+    State *s = &player->state;
     glClear(GL_DEPTH_BUFFER_BIT);
     if (config->show_crosshairs && local->active_menu == NULL) {
         int hx, hy, hz;
@@ -746,10 +754,56 @@ void render_player_world(LocalPlayer *local, FPS fps)
     if (config->show_item) {
         render_item(items[local->item_index]);
     }
+}
 
-    // RENDER TEXT //
+void render_picture_in_picture(LocalPlayer *local, Player* player, float ts)
+{
+    if (local->observe2 && find_client(local->observe2_client_id)) {
+        player = (find_client(local->observe2_client_id))->players +
+                 (local->observe2 - 1);
+
+        int pw = local->view_width / 4 * g->scale;
+        int ph = local->view_height / 3 * g->scale;
+        int offset = 32 * g->scale;
+        int pad = 3 * g->scale;
+        int sw = pw + pad * 2;
+        int sh = ph + pad * 2;
+
+        glEnable(GL_SCISSOR_TEST);
+        glScissor(g->width - sw - offset + pad + local->view_x,
+                  offset - pad + local->view_y, sw, sh);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glDisable(GL_SCISSOR_TEST);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glViewport(g->width - pw - offset + local->view_x,
+                   offset + local->view_y, pw, ph);
+
+        g->width = pw;
+        g->height = ph;
+        g->ortho = 0;
+        g->fov = 65;
+        render_set_state(&player->state, pw, ph, g->render_radius,
+            g->sign_radius, g->ortho, g->fov, g->scale, g->gl_float_type,
+            g->float_size);
+
+        render_sky();
+        glClear(GL_DEPTH_BUFFER_BIT);
+        ensure_chunks(player);
+        render_chunks();
+        render_signs();
+        render_players(player);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        if (config->show_player_names) {
+            render_text(ALIGN_CENTER,
+                pw / 2, ts, ts, player->name);
+        }
+    }
+}
+
+void render_HUD_text(LocalPlayer *local, Player* player, float ts, FPS fps, int face_count)
+{
+    State *s = &player->state;
     char text_buffer[1024];
-    float ts = 8 * g->scale;
     float tx = ts / 2;
     float ty = g->height - ts;
     if (config->show_info_text) {
@@ -794,74 +848,73 @@ void render_player_world(LocalPlayer *local, FPS fps)
             }
         }
     }
-    if (local->typing) {
+    if (local->typing == CommandLineFocus) {
         snprintf(text_buffer, 1024, "> %s", local->typing_buffer);
         render_text(ALIGN_LEFT, tx, ty, ts, text_buffer);
         glClear(GL_DEPTH_BUFFER_BIT);
         render_text_cursor(tx + ts * (local->text_cursor+1) + ts/2, ty);
         ty -= ts * 2;
     }
-    if (config->show_player_names) {
-        Player *other = player_crosshair(player);
-        if (other) {
-            render_text(ALIGN_CENTER,
-                g->width / 2, g->height / 2 - ts - 24, ts,
-                other->name);
-        }
-    }
     if (config->players > 1) {
         // Render player name if more than 1 local player
         snprintf(text_buffer, 1024, "%s", player->name);
         render_text(ALIGN_CENTER, g->width/2, ts, ts, text_buffer);
     }
+}
+
+void render_player_world(LocalPlayer *local, FPS fps)
+{
+    Player *player = local->player;
+    State *s = &player->state;
+    float ts = 8 * g->scale;
+    int face_count = 0;
+
+    glViewport(local->view_x, local->view_y, local->view_width,
+               local->view_height);
+    g->width = local->view_width;
+    g->height = local->view_height;
+    g->ortho = local->ortho_is_pressed ? 64 : 0;
+    g->fov = local->zoom_is_pressed ? 15 : 65;
+    render_set_state(s, local->view_width, local->view_height, g->render_radius,
+        g->sign_radius, g->ortho, g->fov, g->scale, g->gl_float_type,
+        g->float_size);
+
+    if (local->observe1 > 0 && find_client(local->observe1_client_id)) {
+        player = find_client(local->observe1_client_id)->players +
+                 (local->observe1 - 1);
+    }
+
+    if (local->show_world == 1) {
+        face_count = render_3D_scene(local, player, ts);
+        if (local->vt_open == 0) {
+            render_HUD(local, player);
+        }
+        render_picture_in_picture(local, player, ts);
+    }
+    if (local->vt_open == 0) {
+        render_HUD_text(local, player, ts, fps, face_count);
+    }
+
+    // RENDER VIRTUAL TERMINAL //
+    if (local->pwt) {
+        int r = vt_process(local->pwt);
+        if (r == false) {
+            destroy_vt(local);
+        }
+        if (local->vt_open) {
+            float x = 0;
+            float y = local->view_height;
+            glClear(GL_DEPTH_BUFFER_BIT);
+            vt_draw(local->pwt, x, y, local->vt_scale);
+        }
+    }
+
     if (local->active_menu) {
         glClear(GL_DEPTH_BUFFER_BIT);
         menu_render(local->active_menu, g->width, g->height, g->scale);
         glClear(GL_DEPTH_BUFFER_BIT);
         render_mouse_cursor(local->mouse_x, local->mouse_y,
                             local->player->id);
-    }
-
-    // RENDER PICTURE IN PICTURE //
-    if (local->observe2 && find_client(local->observe2_client_id)) {
-        player = (find_client(local->observe2_client_id))->players +
-                 (local->observe2 - 1);
-
-        int pw = local->view_width / 4 * g->scale;
-        int ph = local->view_height / 3 * g->scale;
-        int offset = 32 * g->scale;
-        int pad = 3 * g->scale;
-        int sw = pw + pad * 2;
-        int sh = ph + pad * 2;
-
-        glEnable(GL_SCISSOR_TEST);
-        glScissor(g->width - sw - offset + pad + local->view_x,
-                  offset - pad + local->view_y, sw, sh);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glDisable(GL_SCISSOR_TEST);
-        glClear(GL_DEPTH_BUFFER_BIT);
-        glViewport(g->width - pw - offset + local->view_x,
-                   offset + local->view_y, pw, ph);
-
-        g->width = pw;
-        g->height = ph;
-        g->ortho = 0;
-        g->fov = 65;
-        render_set_state(&player->state, pw, ph, g->render_radius,
-            g->sign_radius, g->ortho, g->fov, g->scale, g->gl_float_type,
-            g->float_size);
-
-        render_sky();
-        glClear(GL_DEPTH_BUFFER_BIT);
-        ensure_chunks(player);
-        render_chunks();
-        render_signs();
-        render_players(player);
-        glClear(GL_DEPTH_BUFFER_BIT);
-        if (config->show_player_names) {
-            render_text(ALIGN_CENTER,
-                pw / 2, ts, ts, player->name);
-        }
     }
 }
 

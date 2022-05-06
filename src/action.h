@@ -58,4 +58,5 @@ void action_open_menu_on_release(LocalPlayer *local, Event *e);
 void action_crouch_toggle(LocalPlayer *local, Event *e);
 void action_ortho_toggle(LocalPlayer *local, Event *e);
 void action_zoom_toggle(LocalPlayer *local, Event *e);
+void action_vt(LocalPlayer *local, Event *e);
 

@@ -240,6 +240,9 @@ void set_players_view_size(int w, int h)
                     local->view_height = h / 2 - (view_margin/2);
                 }
             }
+            if (local->pwt) {
+                local_player_set_vt_size(local);
+            }
         }
     }
 }

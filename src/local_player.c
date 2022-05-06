@@ -17,6 +17,7 @@
 #include "pg.h"
 #include "pw.h"
 #include "stb_ds.h"
+#include "user_input.h"
 #include "x11_event_handler.h"
 
 void create_menus(LocalPlayer *local);
@@ -34,8 +35,17 @@ void local_player_init(LocalPlayer *local, Player *player, int player_id)
     local->player = player;
     local->player->id = player_id;
 
+    local->mouse_id = UNASSIGNED;
+    local->keyboard_id = UNASSIGNED;
+    local->joystick_id = UNASSIGNED;
+
     local->key_bindings = NULL;
     action_apply_bindings(local, config->bindings);
+
+    local->pwt = NULL;
+    local->vt_open = config->open_vt;
+    local->vt_scale = 1.0;
+    local->show_world = config->show_world;
 }
 
 void local_player_reset(LocalPlayer *local)
@@ -43,7 +53,7 @@ void local_player_reset(LocalPlayer *local)
     int i = local->player->id - 1;
     local->flying = 0;
     local->item_index = 0;
-    local->typing = 0;
+    local->typing = GameFocus;
     local->observe1 = 0;
     local->observe1_client_id = 0;
     local->observe2 = 0;
@@ -79,6 +89,10 @@ void local_player_reset(LocalPlayer *local)
     }
 
     history_load(local);
+
+    if (local->vt_open) {
+        open_vt(local);
+    }
 }
 
 void local_player_clear_menus(LocalPlayer *local)
@@ -106,6 +120,11 @@ void local_player_clear(LocalPlayer *local)
         pwlua_remove(local->lua_shell);
     }
     hmfree(local->key_bindings);
+    if (local->pwt) {
+        vt_deinit(local->pwt);
+        free(local->pwt);
+        local->pwt = NULL;
+    }
 }
 
 void open_menu(LocalPlayer *local, Menu *menu)
@@ -124,6 +143,8 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
 {
     if (event == MENU_CANCELLED) {
         close_menu(local);
+    } else if (event == MENU_REMAINS_OPEN) {
+        // ignore
     } else if (menu == &local->menu) {
         if (event == local->menu_id_resume) {
             close_menu(local);
@@ -317,30 +338,41 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
         } else if (event == local->menu_id_sign) {
             close_menu(local);
             open_sign_command_line(local);
+        } else if (event == local->menu_id_vt) {
+            close_menu(local);
+            if (!local->vt_open) {
+                open_vt(local);
+            } else {
+                close_vt(local);
+            }
         }
-    } else if (menu == &local->osk) {
+    } else if (menu == &local->osk && event > 0) {
         MenuItem* item = &local->osk.items[event-1];
         if (event == local->osk_id_ok) {
             handle_key_press_typing(local, 0, XK_Return);
-            close_menu(local);
-            if (local->osk_open_for_menu) {
-                Menu *osk_open_for_menu = local->osk_open_for_menu;
-                MenuItem *line_edit = &osk_open_for_menu->items[local->osk_open_for_menu_line_edit_id - 1];
-                local->osk_open_for_menu = NULL;
-                open_menu(local, osk_open_for_menu);
-                strncpy(line_edit->text, local->typing_buffer + 1,
-                        MAX_TEXT_LENGTH - 1);
-                // Fake event to confirm changes to the menu item that the OSK
-                // was opened for.
-                handle_menu_event(local, osk_open_for_menu,
-                    local->osk_open_for_menu_line_edit_id);
+            if (!local->vt_open) {
+                close_menu(local);
+                if (local->osk_open_for_menu) {
+                    Menu *osk_open_for_menu = local->osk_open_for_menu;
+                    MenuItem *line_edit = &osk_open_for_menu->items[local->osk_open_for_menu_line_edit_id - 1];
+                    local->osk_open_for_menu = NULL;
+                    open_menu(local, osk_open_for_menu);
+                    strncpy(line_edit->text, local->typing_buffer + 1,
+                            MAX_TEXT_LENGTH - 1);
+                    // Fake event to confirm changes to the menu item that the OSK
+                    // was opened for.
+                    handle_menu_event(local, osk_open_for_menu,
+                        local->osk_open_for_menu_line_edit_id);
+                }
             }
         } else if (event == local->osk_id_cancel) {
             handle_key_press_typing(local, 0, XK_Escape);
-            close_menu(local);
-            if (local->osk_open_for_menu) {
-                open_menu(local, local->osk_open_for_menu);
-                local->osk_open_for_menu = NULL;
+            if (!local->vt_open) {
+                close_menu(local);
+                if (local->osk_open_for_menu) {
+                    open_menu(local, local->osk_open_for_menu);
+                    local->osk_open_for_menu = NULL;
+                }
             }
         } else if (event == local->osk_id_space) {
             handle_key_press_typing(local, 0, XK_space);
@@ -644,6 +676,7 @@ void create_menus(LocalPlayer *local)
     local->menu_id_chat = menu_add(menu, "Chat");
     local->menu_id_lua = menu_add(menu, "Lua");
     local->menu_id_sign = menu_add(menu, "Sign");
+    local->menu_id_vt = menu_add(menu, "VT");
 
     // OSK
     menu = &local->osk;
@@ -1138,7 +1171,7 @@ void handle_movement(double dt, LocalPlayer *local)
     int stay_in_crouch = 0;
     float sz = 0;
     float sx = 0;
-    if (!local->typing) {
+    if (local->typing == GameFocus) {
         float m1 = dt * local->view_speed_left_right;
         float m2 = dt * local->view_speed_up_down;
 
@@ -1156,7 +1189,7 @@ void handle_movement(double dt, LocalPlayer *local)
     }
     float vx, vy, vz;
     get_motion_vector(local->flying, sz, sx, s->rx, s->ry, &vx, &vy, &vz);
-    if (!local->typing) {
+    if (local->typing == GameFocus) {
         if (local->jump_is_pressed) {
             if (local->flying) {
                 vy = 1;
@@ -1238,42 +1271,42 @@ void open_on_screen_keyboard(LocalPlayer* local)
 
 void open_chat_command_line(LocalPlayer* local)
 {
-    local->typing = 1;
+    local->typing = CommandLineFocus;
     local->typing_buffer[0] = '\0';
     local->typing_start = local->typing_history[CHAT_HISTORY].line_start;
     local->text_cursor = local->typing_start;
-    if (local->keyboard_id == UNASSIGNED || config->always_use_osk) {
+    if (use_osk(local)) {
         open_on_screen_keyboard(local);
     }
 }
 
 void open_action_command_line(LocalPlayer* local)
 {
-    local->typing = 1;
+    local->typing = CommandLineFocus;
     local->typing_buffer[0] = CRAFT_KEY_COMMAND;
     local->typing_buffer[1] = '\0';
     local->typing_start = local->typing_history[COMMAND_HISTORY].line_start;
     local->text_cursor = local->typing_start;
-    if (local->keyboard_id == UNASSIGNED || config->always_use_osk) {
+    if (use_osk(local)) {
         open_on_screen_keyboard(local);
     }
 }
 
 void open_lua_command_line(LocalPlayer* local)
 {
-    local->typing = 1;
+    local->typing = CommandLineFocus;
     local->typing_buffer[0] = PW_KEY_LUA;
     local->typing_buffer[1] = '\0';
     local->typing_start = local->typing_history[LUA_HISTORY].line_start;
     local->text_cursor = local->typing_start;
-    if (local->keyboard_id == UNASSIGNED || config->always_use_osk) {
+    if (use_osk(local)) {
         open_on_screen_keyboard(local);
     }
 }
 
 void open_sign_command_line(LocalPlayer* local)
 {
-    local->typing = 1;
+    local->typing = CommandLineFocus;
     local->typing_buffer[0] = CRAFT_KEY_SIGN;
     local->typing_buffer[1] = '\0';
     int x, y, z, face;
@@ -1288,19 +1321,19 @@ void open_sign_command_line(LocalPlayer* local)
     }
     local->typing_start = local->typing_history[SIGN_HISTORY].line_start;
     local->text_cursor = local->typing_start;
-    if (local->keyboard_id == UNASSIGNED || config->always_use_osk) {
+    if (use_osk(local)) {
         open_on_screen_keyboard(local);
     }
 }
 
 void open_menu_line_edit_command_line(LocalPlayer* local)
 {
-    local->typing = 1;
+    local->typing = CommandLineFocus;
     local->typing_buffer[0] = '>';
     local->typing_buffer[1] = '\0';
     local->typing_start = local->typing_history[MENU_LINE_EDIT_HISTORY].line_start;
     local->text_cursor = local->typing_start;
-    if (local->keyboard_id == UNASSIGNED || config->always_use_osk) {
+    if (use_osk(local)) {
         open_on_screen_keyboard(local);
     }
 }
@@ -1309,7 +1342,7 @@ void open_osk_for_menu_line_edit(LocalPlayer *local, int item)
 {
     if (local->active_menu && item > 0 &&
         local->active_menu->items[item-1].type == MENU_LINE_EDIT &&
-        (local->keyboard_id == UNASSIGNED || config->always_use_osk)) {
+        use_osk(local)) {
         local->osk_open_for_menu = local->active_menu;
         local->osk_open_for_menu_line_edit_id = item;
         open_menu_line_edit_command_line(local);
@@ -1319,4 +1352,63 @@ void open_osk_for_menu_line_edit(LocalPlayer *local, int item)
           MAX_TEXT_LENGTH - 1);
         local->typing_buffer[MAX_TEXT_LENGTH - 1] = '\0';
     }
+}
+
+void local_player_set_vt_size(LocalPlayer* local)
+{
+    int target_column_count = 80;
+    local->vt_scale =
+        MAX(1.0, floorf(local->view_width / target_column_count / FONT_WIDTH));
+    int rows = (local->view_height / FONT_HEIGHT / local->vt_scale);
+    int cols = (local->view_width / FONT_WIDTH / local->vt_scale);
+    if (local->pwt == NULL) {
+        // Create the VT if it does not exist
+        local->pwt = malloc(sizeof(PiWorldTerm));
+        vt_init(local->pwt, cols, rows);
+    } else {
+        vt_set_size(local->pwt, cols, rows);
+    }
+}
+
+void open_vt(LocalPlayer* local)
+{
+    local_player_set_vt_size(local);
+    local->vt_open = 1;
+    local->typing = VTFocus;
+    if (use_osk(local)) {
+        open_on_screen_keyboard(local);
+    }
+}
+
+void close_vt(LocalPlayer* local)
+{
+    local->vt_open = 0;
+    local->typing = GameFocus;
+}
+
+void destroy_vt(LocalPlayer* local)
+{
+    if (local->pwt) {
+        vt_deinit(local->pwt);
+        free(local->pwt);
+        local->pwt = NULL;
+        local->vt_open = 0;
+        local->typing = GameFocus;
+
+        // Close osk if open
+        close_menu(local);
+
+        if (config->exit_on_vt_close) {
+            remove_player(local);
+            if (config->players <= 0) {
+                pw_exit();
+            }
+        }
+    }
+}
+
+int use_osk(LocalPlayer *local)
+{
+    return (local->keyboard_id == UNASSIGNED || config->always_use_osk)
+      && !config->hide_osk;
 }

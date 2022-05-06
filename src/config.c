@@ -58,6 +58,10 @@ void reset_config() {
     config->ignore_gamepad = 0;
     config->always_use_osk = 0;
     config->bindings[0] = '\0';
+    config->show_world = 1;
+    config->open_vt = 0;
+    config->hide_osk = 0;
+    config->exit_on_vt_close = 0;
 }
 
 void get_config_path(char *path)
@@ -122,6 +126,10 @@ void parse_startup_config(int argc, char **argv) {
             {"ignore-gamepad",    no_argument,       0,  0 },
             {"always-use-osk",    no_argument,       0,  0 },
             {"bind",              required_argument, 0,  0 },
+            {"show-world",        required_argument, 0,  0 },
+            {"vt",                no_argument,       0,  0 },
+            {"hide-osk",          no_argument,       0,  0 },
+            {"exit-on-vt-close",  no_argument,       0,  0 },
             {0,                   0,                 0,  0 }
         };
 
@@ -211,6 +219,14 @@ void parse_startup_config(int argc, char **argv) {
                        sscanf(optarg, "%256c", config->bindings) == 1) {
                 config->bindings[MIN(strlen(optarg),
                                  MAX_PATH_LENGTH - 1)] = '\0';
+            } else if (strncmp(opt_name, "show-world", 10) == 0 &&
+                       sscanf(optarg, "%d", &config->show_world) == 1) {
+            } else if (strncmp(opt_name, "vt", 2) == 0) {
+                config->open_vt = 1;
+            } else if (strncmp(opt_name, "hide-osk", 8) == 0) {
+                config->hide_osk = 1;
+            } else if (strncmp(opt_name, "exit-on-vt-close", 16) == 0) {
+                config->exit_on_vt_close = 1;
             } else {
                 printf("Bad argument for: --%s: %s\n", opt_name, optarg);
                 exit(1);

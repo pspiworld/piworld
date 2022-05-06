@@ -483,6 +483,12 @@ void parse_command(LocalPlayer *local, const char *buffer, int forward) {
     else if (sscanf(buffer, "/bind %512s", path) == 1) {
         action_apply_bindings(local, path);
     }
+    else if (sscanf(buffer, "/show-world %d", &int_option) == 1) {
+        local->show_world = int_option;
+    }
+    else if (strcmp(buffer, "/vt") == 0) {
+        open_vt(local);
+    }
     else if (forward) {
         client_talk(buffer);
     }

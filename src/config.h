@@ -48,6 +48,9 @@
 #define HFLOAT_CONFIG 1
 #endif
 
+#define FONT_WIDTH 8.0
+#define FONT_HEIGHT 16.0
+
 typedef struct {
     char path[MAX_DIR_LENGTH];
     char db_path[MAX_PATH_LENGTH];
@@ -87,6 +90,10 @@ typedef struct {
     int ignore_gamepad;
     int always_use_osk;
     char bindings[MAX_PATH_LENGTH];
+    int show_world;
+    int open_vt;
+    int hide_osk;
+    int exit_on_vt_close;
 } Config;
 
 extern Config *config;
