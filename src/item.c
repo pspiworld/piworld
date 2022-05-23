@@ -318,6 +318,14 @@ int is_destructable(int w) {
     }
 }
 
+int is_door_material(int w)
+{
+    if ((w >= COLOR_00 && w<= COLOR_31) || w == PLANK || w == GLASS) {
+        return 1;
+    }
+    return 0;
+}
+
 int is_control(int w) {
     w = ABS(w);
     return (w & EXTRA_BIT_CONTROL) ? 1 : 0;

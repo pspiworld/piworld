@@ -6,6 +6,7 @@
 #include "action.h"
 #include "chunks.h"
 #include "local_players.h"
+#include "local_player_command_line.h"
 #include "pw.h"
 #include "stb_ds.h"
 #include "user_input.h"
@@ -131,6 +132,7 @@ action_t get_action_from_name(char *name)
         "ortho_toggle",
         "zoom_toggle",
         "vt",
+        "door",
     };
     static const int action_count = sizeof(action_names) / sizeof(char *);
     static const action_t actions[] = {
@@ -187,6 +189,7 @@ action_t get_action_from_name(char *name)
         &action_ortho_toggle,
         &action_zoom_toggle,
         &action_vt,
+        &action_door,
     };
 
     for (int i=0; i<action_count; i++) {
@@ -647,5 +650,12 @@ void action_vt(LocalPlayer *local, Event *e)
         } else {
             close_vt(local);
         }
+    }
+}
+
+void action_door(LocalPlayer *local, Event *e)
+{
+    if (e->state) {
+        door(local);
     }
 }

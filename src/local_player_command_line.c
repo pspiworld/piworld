@@ -261,6 +261,69 @@ void tree(Block *block) {
     }
 }
 
+void door(LocalPlayer *local)
+{
+    // Place a door at the players crosshair.
+    State *s = &local->player->state;
+    int hx, hy, hz;
+    int hw = hit_test(1, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
+    if (hy > 0 && hy < 256 - 1 &&  // do not place new block out of range
+        is_obstacle(hw, 0, 0) &&   // new block has a solid block to attach to
+        // upper door will not overwrite any existing block
+        get_block(hx, hy + 1, hz) == EMPTY &&
+        // player will not get caught inside the new block
+        !player_intersects_block(2, s->x, s->y, s->z, hx, hy, hz)) {
+
+        // Pick door material type.
+        // Use item in hand if it is in door material type,
+        // otherwise use the default door material.
+        int door_w = PLANK;
+        if (is_door_material(items[local->item_index])) {
+            door_w = items[local->item_index];
+        }
+
+        // Rotate the door so that it will face the player with the door handle
+        // closer to the player.
+        int door_t = DOOR_X;
+        int dx, dy, dz, face;
+        hit_test_face(local->player, &dx, &dy, &dz, &face);
+        if (face == 0 || face == 7) {
+            door_t = DOOR_X;
+            if (s->z < dz) {
+                // Place door handle closer to player.
+                door_t = DOOR_X_FLIP;
+            }
+            door_t = (s->z < dz) ? DOOR_X : DOOR_X_FLIP;
+        } else if (face == 1 || face == 5) {
+            door_t = DOOR_X_PLUS;
+            if (s->z > dz) {
+                door_t = DOOR_X_PLUS_FLIP;
+            }
+        } else if (face == 2 || face == 6) {
+            door_t = DOOR_Z;
+            if (s->x > dx) {
+                door_t = DOOR_Z_FLIP;
+            }
+        } else if (face == 3 || face == 4) {
+            door_t = DOOR_Z_PLUS;
+            if (s->x < dx) {
+                door_t = DOOR_Z_PLUS_FLIP;
+            }
+        }
+
+        // Lower door
+        set_block(hx, hy, hz, door_w);
+        set_shape(hx, hy, hz, LOWER_DOOR);
+        set_transform(hx, hy, hz, door_t);
+
+        // Upper door
+        hy++;
+        set_block(hx, hy, hz, door_w);
+        set_shape(hx, hy, hz, UPPER_DOOR);
+        set_transform(hx, hy, hz, door_t);
+    }
+}
+
 void parse_command(LocalPlayer *local, const char *buffer, int forward) {
     char server_addr[MAX_ADDR_LENGTH];
     int server_port = DEFAULT_PORT;
@@ -488,6 +551,9 @@ void parse_command(LocalPlayer *local, const char *buffer, int forward) {
     }
     else if (strcmp(buffer, "/vt") == 0) {
         open_vt(local);
+    }
+    else if (strcmp(buffer, "/door") == 0) {
+        door(local);
     }
     else if (forward) {
         client_talk(buffer);

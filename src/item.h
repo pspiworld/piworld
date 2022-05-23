@@ -111,6 +111,7 @@ int is_plant(int w);
 int is_obstacle(int w, int shape, int extra);
 int is_transparent(int w);
 int is_destructable(int w);
+int is_door_material(int w);
 
 int is_control(int w);
 int is_open(int w);

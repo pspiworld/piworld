@@ -59,4 +59,5 @@ void action_crouch_toggle(LocalPlayer *local, Event *e);
 void action_ortho_toggle(LocalPlayer *local, Event *e);
 void action_zoom_toggle(LocalPlayer *local, Event *e);
 void action_vt(LocalPlayer *local, Event *e);
+void action_door(LocalPlayer *local, Event *e);
 
