@@ -189,8 +189,8 @@ void pi_set_window_geometry(int *x, int *y, uint32_t *w, uint32_t *h)
 
     // Account for screen offset
     screen = DefaultScreenOfDisplay(pi_state->x11_display);
-    *x += (pi_state->screen_w - WidthOfScreen(screen)) / 2;
-    *y += (pi_state->screen_h - HeightOfScreen(screen)) / 2;
+    *x += ((int)pi_state->screen_w - WidthOfScreen(screen)) / 2;
+    *y += ((int)pi_state->screen_h - HeightOfScreen(screen)) / 2;
 
     int reduction = get_reduction_factor(*w, *h);
 
