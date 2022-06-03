@@ -62,6 +62,7 @@ void pg_toggle_fullscreen(void);
 void pg_set_fullscreen_size(int fullscreen_width, int fullscreen_height);
 void pg_restore_original_fullscreen_size(void);
 int pg_get_mods(int keyboard_id);
+int pg_is_fullscreen(void);
 
 void _pg_fatal(char *format, ...);
 

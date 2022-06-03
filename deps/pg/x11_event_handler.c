@@ -610,6 +610,11 @@ void _xrandr_set_size(int w, int h, const char *output_name)
 }
 #endif
 
+int pg_is_fullscreen(void)
+{
+    return x11_event_state->fullscreen;
+}
+
 int pg_get_mods(int keyboard_id)
 {
     if (keyboard_id < 0 || keyboard_id >= MAX_DEVICE_COUNT) {

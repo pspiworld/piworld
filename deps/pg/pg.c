@@ -148,7 +148,7 @@ void pg_set_window_geometry(int x, int y, uint32_t width, uint32_t height)
 {
     #ifndef MESA
     // Call extra setup function for brcm driver
-    pi_set_window_geometry(&x, &y, &width, &height);
+    pi_set_window_geometry(&x, &y, &width, &height, pg_is_fullscreen());
     #endif
     pg_state->window_x = x;
     pg_state->window_y = y;

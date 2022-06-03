@@ -33,5 +33,5 @@ EGLNativeWindowType get_egl_window_id(EGLConfig config, EGLDisplay display,
                                       uint32_t *w, uint32_t *h, char *title);
 void platform_exit(void);
 EGLNativeDisplayType get_x11_display(void);
-void pi_set_window_geometry(int *x, int *y, uint32_t *w, uint32_t *h);
+void pi_set_window_geometry(int *x, int *y, uint32_t *w, uint32_t *h, int fullscreen);
 

@@ -181,16 +181,23 @@ int pg_get_gpu_mem_size(void)
     return gpu_mem;
 }
 
-void pi_set_window_geometry(int *x, int *y, uint32_t *w, uint32_t *h)
+void pi_set_window_geometry(int *x, int *y, uint32_t *w, uint32_t *h, int fullscreen)
 {
     DISPMANX_UPDATE_HANDLE_T dispman_update;
     VC_RECT_T src_rect;
     Screen *screen;
 
-    // Account for screen offset
-    screen = DefaultScreenOfDisplay(pi_state->x11_display);
-    *x += ((int)pi_state->screen_w - WidthOfScreen(screen)) / 2;
-    *y += ((int)pi_state->screen_h - HeightOfScreen(screen)) / 2;
+    if (fullscreen) {
+        // Use the screen size reported by the brcm driver, instead of that
+        // from X11.
+        *w = pi_state->screen_w;
+        *h = pi_state->screen_h;
+    } else {
+        // Account for screen offset
+        screen = DefaultScreenOfDisplay(pi_state->x11_display);
+        *x += ((int)pi_state->screen_w - WidthOfScreen(screen)) / 2;
+        *y += ((int)pi_state->screen_h - HeightOfScreen(screen)) / 2;
+    }
 
     int reduction = get_reduction_factor(*w, *h);
 
