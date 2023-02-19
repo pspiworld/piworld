@@ -3,7 +3,7 @@
 #include "local_player.h"
 
 void action_apply_bindings(LocalPlayer *local, char *bindings_str);
-action_t get_action_from_name(char *name);
+Action *get_action_from_name(char *name);
 
 void action_view_up(LocalPlayer *local, Event *e);
 void action_view_down(LocalPlayer *local, Event *e);

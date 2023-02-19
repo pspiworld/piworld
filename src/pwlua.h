@@ -3,6 +3,7 @@
 #include <lua.h>
 
 #define LUA_MAXINPUT 1024
+#define ERROR_ARG_COUNT (luaL_error(L, "incorrect argument count"))
 
 typedef struct LuaThreadState LuaThreadState;
 

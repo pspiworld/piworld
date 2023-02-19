@@ -16,6 +16,7 @@
 #include "local_player.h"
 #include "pg.h"
 #include "pw.h"
+#include "pwlua_startup.h"
 #include "stb_ds.h"
 #include "user_input.h"
 #include "x11_event_handler.h"
@@ -46,6 +47,8 @@ void local_player_init(LocalPlayer *local, Player *player, int player_id)
     local->vt_open = config->open_vt;
     local->vt_scale = 1.0;
     local->show_world = config->show_world;
+
+    pwlua_on_player_init(local);
 }
 
 void local_player_reset(LocalPlayer *local)
@@ -97,20 +100,20 @@ void local_player_reset(LocalPlayer *local)
 
 void local_player_clear_menus(LocalPlayer *local)
 {
-    menu_clear_items(&local->menu);
-    menu_clear_items(&local->menu_options);
-    menu_clear_items(&local->menu_new);
-    menu_clear_items(&local->menu_load);
-    menu_clear_items(&local->menu_item_in_hand);
-    menu_clear_items(&local->menu_block_edit);
-    menu_clear_items(&local->menu_texture);
-    menu_clear_items(&local->menu_shape);
-    menu_clear_items(&local->menu_script);
-    menu_clear_items(&local->menu_script_run);
-    menu_clear_items(&local->menu_worldgen);
-    menu_clear_items(&local->menu_worldgen_select);
-    menu_clear_items(&local->menu_command_lines);
-    menu_clear_items(&local->osk);
+    menu_clear_items(local->menu);
+    menu_clear_items(local->menu_options);
+    menu_clear_items(local->menu_new);
+    menu_clear_items(local->menu_load);
+    menu_clear_items(local->menu_item_in_hand);
+    menu_clear_items(local->menu_block_edit);
+    menu_clear_items(local->menu_texture);
+    menu_clear_items(local->menu_shape);
+    menu_clear_items(local->menu_script);
+    menu_clear_items(local->menu_script_run);
+    menu_clear_items(local->menu_worldgen);
+    menu_clear_items(local->menu_worldgen_select);
+    menu_clear_items(local->menu_command_lines);
+    menu_clear_items(local->osk);
 }
 
 void local_player_clear(LocalPlayer *local)
@@ -145,47 +148,56 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
         close_menu(local);
     } else if (event == MENU_REMAINS_OPEN) {
         // ignore
-    } else if (menu == &local->menu) {
+    } else if (pwlua_on_menu_event(local, menu, event)) {
+        // Allow lua code to open another menu, while also closing previous one.
+        if (local->active_menu == menu) {
+            // Only close menu if it was the one that this event originated from.
+            // Otherwise the open menu will of been opened by the lua menu
+            // event processing code.
+            close_menu(local);
+        }
+        return;  // Lua on_menu event handled this menu event
+    } else if (menu == local->menu) {
         if (event == local->menu_id_resume) {
             close_menu(local);
         } else if (event == local->menu_id_options) {
-            open_menu(local, &local->menu_options);
+            open_menu(local, local->menu_options);
         } else if (event == local->menu_id_new) {
-            open_menu(local, &local->menu_new);
-            menu_set_highlighted_item(&local->menu_new,
+            open_menu(local, local->menu_new);
+            menu_set_highlighted_item(local->menu_new,
                 local->menu_id_new_game_name);
         } else if (event == local->menu_id_load) {
             populate_load_menu(local);
-            open_menu(local, &local->menu_load);
+            open_menu(local, local->menu_load);
         } else if (event == local->menu_id_exit) {
             pw_exit();
         }
-    } else if (menu == &local->menu_options) {
+    } else if (menu == local->menu_options) {
         if (event == local->menu_id_options_resume) {
             close_menu(local);
         } else if (event == local->menu_id_script) {
-            open_menu(local, &local->menu_script);
+            open_menu(local, local->menu_script);
         } else if (event == local->menu_id_worldgen) {
-            open_menu(local, &local->menu_worldgen);
+            open_menu(local, local->menu_worldgen);
         } else if (event == local->menu_id_fullscreen) {
             pg_toggle_fullscreen();
         } else if (event == local->menu_id_crosshairs) {
-            config->show_crosshairs = menu_get_option(&local->menu_options,
+            config->show_crosshairs = menu_get_option(local->menu_options,
                 local->menu_id_crosshairs);
         } else if (event == local->menu_id_verbose) {
-            config->verbose = menu_get_option(&local->menu_options,
+            config->verbose = menu_get_option(local->menu_options,
                 local->menu_id_verbose);
         } else if (event == local->menu_id_wireframe) {
-            config->show_wireframe = menu_get_option(&local->menu_options,
+            config->show_wireframe = menu_get_option(local->menu_options,
                 local->menu_id_wireframe);
         } else if (event == local->menu_id_options_command_lines) {
-            open_menu(local, &local->menu_command_lines);
+            open_menu(local, local->menu_command_lines);
         } else if (event == local->menu_id_options_edit_block) {
             open_menu_for_item_under_crosshair(local);
         } else if (event == local->menu_id_options_item_in_hand) {
-            open_menu(local, &local->menu_item_in_hand);
+            open_menu(local, local->menu_item_in_hand);
         }
-    } else if (menu == &local->menu_new) {
+    } else if (menu == local->menu_new) {
         if (event == local->menu_id_new_cancel) {
             close_menu(local);
         } else if (event == local->menu_id_new_ok ||
@@ -207,7 +219,7 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             }
             pw_new_game(new_game_path);
         }
-    } else if (menu == &local->menu_load) {
+    } else if (menu == local->menu_load) {
         if (event == local->menu_id_load_cancel) {
             close_menu(local);
         } else if (event > 0) {
@@ -222,20 +234,20 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             pw_load_game(game_path);
             close_menu(local);
         }
-    } else if (menu == &local->menu_item_in_hand) {
+    } else if (menu == local->menu_item_in_hand) {
         if (event == local->menu_id_item_in_hand_cancel) {
             close_menu(local);
         } else if (event > 0) {
             local->item_index = event - 1;
             close_menu(local);
         }
-    } else if (menu == &local->menu_block_edit) {
+    } else if (menu == local->menu_block_edit) {
         if (event == local->menu_id_block_edit_resume) {
             close_menu(local);
         } else if (event == local->menu_id_texture) {
-            open_menu(local, &local->menu_texture);
+            open_menu(local, local->menu_texture);
         } else if (event == local->menu_id_shape) {
-            open_menu(local, &local->menu_shape);
+            open_menu(local, local->menu_shape);
         } else if (event == local->menu_id_sign_text) {
             set_sign(local->edit_x, local->edit_y, local->edit_z,
                      local->edit_face, menu_get_line_edit(menu, event));
@@ -265,7 +277,7 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             }
             set_extra(local->edit_x, local->edit_y, local->edit_z, w);
         }
-    } else if (menu == &local->menu_texture) {
+    } else if (menu == local->menu_texture) {
         if (event == local->menu_id_texture_cancel) {
             close_menu(local);
         } else if (event > 0) {
@@ -273,7 +285,7 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
                       items[event - 1]);
             close_menu(local);
         }
-    } else if (menu == &local->menu_shape) {
+    } else if (menu == local->menu_shape) {
         if (event == local->menu_id_shape_cancel) {
             close_menu(local);
         } else if (event > 0) {
@@ -281,21 +293,21 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
                       shapes[event - 1]);
             close_menu(local);
         }
-    } else if (menu == &local->menu_script) {
+    } else if (menu == local->menu_script) {
         if (event == local->menu_id_script_cancel) {
             close_menu(local);
         } else if (event == local->menu_id_script_run) {
             populate_script_run_menu(local);
-            open_menu(local, &local->menu_script_run);
+            open_menu(local, local->menu_script_run);
         }
-    } else if (menu == &local->menu_worldgen) {
+    } else if (menu == local->menu_worldgen) {
         if (event == local->menu_id_worldgen_cancel) {
             close_menu(local);
         } else if (event == local->menu_id_worldgen_select) {
             populate_worldgen_select_menu(local);
-            open_menu(local, &local->menu_worldgen_select);
+            open_menu(local, local->menu_worldgen_select);
         }
-    } else if (menu == &local->menu_script_run) {
+    } else if (menu == local->menu_script_run) {
         if (event == local->menu_id_script_run_cancel) {
             close_menu(local);
         } else if (event > 0) {
@@ -310,7 +322,7 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             if (S_ISDIR(sb.st_mode)) {
                 snprintf(local->menu_script_run_dir, MAX_DIR_LENGTH, path);
                 populate_script_run_menu(local);
-                open_menu(local, &local->menu_script_run);
+                open_menu(local, local->menu_script_run);
                 return;
             }
             char lua_code[LUA_MAXINPUT];
@@ -318,14 +330,14 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
             LuaThreadState* new_lua_instance = pwlua_new(local->player->id);
             pwlua_parse_line(new_lua_instance, lua_code);
         }
-    } else if (menu == &local->menu_worldgen_select) {
+    } else if (menu == local->menu_worldgen_select) {
         if (event == local->menu_id_worldgen_select_cancel) {
             close_menu(local);
         } else if (event > 0) {
             set_worldgen(menu_get_name(menu, event));
             db_set_option("worldgen", menu_get_name(menu, event));
         }
-    } else if (menu == &local->menu_command_lines) {
+    } else if (menu == local->menu_command_lines) {
         if (event == local->menu_id_action) {
             close_menu(local);
             open_action_command_line(local);
@@ -346,8 +358,8 @@ void handle_menu_event(LocalPlayer *local, Menu *menu, int event)
                 close_vt(local);
             }
         }
-    } else if (menu == &local->osk && event > 0) {
-        MenuItem* item = &local->osk.items[event-1];
+    } else if (menu == local->osk && event > 0) {
+        MenuItem* item = &local->osk->items[event-1];
         if (event == local->osk_id_ok) {
             handle_key_press_typing(local, 0, XK_Return);
             if (!local->vt_open) {
@@ -579,13 +591,33 @@ void history_save(LocalPlayer *local)
     }
 }
 
+Menu *get_menu(LocalPlayer *local, int menu_id)
+{
+    if (arrlen(local->menus) == 0 ||
+        menu_id < 0 || menu_id >= arrlen(local->menus)) {
+        return NULL;
+    }
+    return local->menus[menu_id];
+}
+
+Menu* create_menu(LocalPlayer *local)
+{
+    Menu *menu = menu_create();
+    arrput(local->menus, menu);
+    menu->id = arrlen(local->menus) - 1;
+    return menu;
+}
+
 void create_menus(LocalPlayer *local)
 {
     Menu *menu;
     local_player_clear_menus(local);
 
+    local->menus = NULL;
+
     // Main menu
-    menu = &local->menu;
+    local->menu = create_menu(local);
+    menu = local->menu;
     menu_set_title(menu, "PIWORLD");
     local->menu_id_resume = menu_add(menu, "Resume");
     local->menu_id_options = menu_add(menu, "Options");
@@ -594,7 +626,8 @@ void create_menus(LocalPlayer *local)
     local->menu_id_exit = menu_add(menu, "Exit");
 
     // Options menu
-    menu = &local->menu_options;
+    local->menu_options = create_menu(local);
+    menu = local->menu_options;
     menu_set_title(menu, "OPTIONS");
     local->menu_id_script = menu_add(menu, "Script");
     local->menu_id_crosshairs = menu_add_option(menu, "Crosshairs");
@@ -612,65 +645,76 @@ void create_menus(LocalPlayer *local)
     menu_set_option(menu, local->menu_id_wireframe, config->show_wireframe);
 
     // New menu
-    menu = &local->menu_new;
+    local->menu_new = create_menu(local);
+    menu = local->menu_new;
     menu_set_title(menu, "NEW GAME");
     local->menu_id_new_game_name = menu_add_line_edit(menu, "Name");
     local->menu_id_new_ok = menu_add(menu, "OK");
     local->menu_id_new_cancel = menu_add(menu, "Cancel");
 
     // Load menu
-    menu = &local->menu_load;
+    local->menu_load = create_menu(local);
+    menu = local->menu_load;
     menu_set_title(menu, "LOAD GAME");
 
     // Item in hand menu
-    menu = &local->menu_item_in_hand;
+    local->menu_item_in_hand = create_menu(local);
+    menu = local->menu_item_in_hand;
     menu_set_title(menu, "ITEM IN HAND");
     populate_texture_menu(menu);
     local->menu_id_item_in_hand_cancel = menu_add(menu, "Cancel");
 
     // Block edit menu
-    menu = &local->menu_block_edit;
+    local->menu_block_edit = create_menu(local);
+    menu = local->menu_block_edit;
     menu_set_title(menu, "EDIT BLOCK");
 
     // Texture menu
-    menu = &local->menu_texture;
+    local->menu_texture = create_menu(local);
+    menu = local->menu_texture;
     menu_set_title(menu, "TEXTURE");
     populate_texture_menu(menu);
     local->menu_id_texture_cancel = menu_add(menu, "Cancel");
 
     // Shape menu
-    menu = &local->menu_shape;
+    local->menu_shape = create_menu(local);
+    menu = local->menu_shape;
     menu_set_title(menu, "SHAPE");
     populate_shape_menu(menu);
     local->menu_id_shape_cancel = menu_add(menu, "Cancel");
 
     // Script menu
-    menu = &local->menu_script;
+    local->menu_script = create_menu(local);
+    menu = local->menu_script;
     menu_set_title(menu, "SCRIPT");
     local->menu_id_script_run = menu_add(menu, "Run");
     local->menu_id_script_cancel = menu_add(menu, "Cancel");
 
     // Run script menu
-    menu = &local->menu_script_run;
+    local->menu_script_run = create_menu(local);
+    menu = local->menu_script_run;
     char *path = realpath(".", NULL);
     snprintf(local->menu_script_run_dir, MAX_DIR_LENGTH, path);
     free(path);
     menu_set_title(menu, "RUN SCRIPT");
 
     // Worldgen menu
-    menu = &local->menu_worldgen;
+    local->menu_worldgen = create_menu(local);
+    menu = local->menu_worldgen;
     menu_set_title(menu, "WORLDGEN");
     local->menu_id_worldgen_select = menu_add(menu, "Select");
     local->menu_id_worldgen_cancel = menu_add(menu, "Cancel");
 
     // Worldgen select menu
-    menu = &local->menu_worldgen_select;
+    local->menu_worldgen_select = create_menu(local);
+    menu = local->menu_worldgen_select;
     snprintf(local->menu_worldgen_dir, MAX_DIR_LENGTH, "%s/worldgen",
              get_data_dir());
     menu_set_title(menu, "SELECT WORLDGEN");
 
     // Command Lines menu
-    menu = &local->menu_command_lines;
+    local->menu_command_lines = create_menu(local);
+    menu = local->menu_command_lines;
     menu_set_title(menu, "COMMAND LINES");
     local->menu_id_action = menu_add(menu, "Action");
     local->menu_id_chat = menu_add(menu, "Chat");
@@ -679,7 +723,8 @@ void create_menus(LocalPlayer *local)
     local->menu_id_vt = menu_add(menu, "VT");
 
     // OSK
-    menu = &local->osk;
+    local->osk = create_menu(local);
+    menu = local->osk;
     menu_set_title(menu, "KEYBOARD");
     // line 1: abcde ABCDE 12345   OK
     menu_start_hbox(menu);
@@ -809,7 +854,7 @@ void create_menus(LocalPlayer *local)
 void populate_block_edit_menu(LocalPlayer *local, int w, char *sign_text,
     int light, int extra, int shape, int transform)
 {
-    Menu *menu = &local->menu_block_edit;
+    Menu *menu = local->menu_block_edit;
     menu_clear_items(menu);
     char text[MAX_TEXT_LENGTH];
     snprintf(text, MAX_TEXT_LENGTH, "Texture: %s", item_names[w - 1]);
@@ -855,7 +900,7 @@ void populate_shape_menu(Menu *menu)
 
 void populate_load_menu(LocalPlayer *local)
 {
-    Menu *menu = &local->menu_load;
+    Menu *menu = local->menu_load;
     menu_clear_items(menu);
     DIR *dir = opendir(config->path);
     struct dirent *dp;
@@ -880,7 +925,7 @@ void populate_load_menu(LocalPlayer *local)
 
 void populate_script_run_menu(LocalPlayer *local)
 {
-    Menu *menu = &local->menu_script_run;
+    Menu *menu = local->menu_script_run;
     menu_clear_items(menu);
     menu_add(menu, "..");
     DIR *dir = opendir(local->menu_script_run_dir);
@@ -916,7 +961,7 @@ void populate_script_run_menu(LocalPlayer *local)
 
 void populate_worldgen_select_menu(LocalPlayer *local)
 {
-    Menu *menu = &local->menu_worldgen_select;
+    Menu *menu = local->menu_worldgen_select;
     menu_clear_items(menu);
     DIR *dir = opendir(local->menu_worldgen_dir);
     struct dirent *dp;
@@ -1039,7 +1084,7 @@ void set_block_under_crosshair(LocalPlayer *local)
             door_toggle_open(&chunk->doors, door, hx2, hy2, hz2, chunk->buffer);
             return;
         } else if (is_control(extra)) {
-            open_menu(local, &local->menu);
+            open_menu(local, local->menu);
             return;
         } else if (shape == GATE) {
             // toggle open/close
@@ -1089,7 +1134,7 @@ void open_menu_for_item_under_crosshair(LocalPlayer *local)
     int hx, hy, hz;
     int hw = hit_test(0, s->x, s->y, s->z, s->rx, s->ry, &hx, &hy, &hz);
     if (hw == 0) {
-        open_menu(local, &local->menu_item_in_hand);
+        open_menu(local, local->menu_item_in_hand);
     } else {
         int p, q, x, y, z, face;
         char *sign_text;
@@ -1110,7 +1155,7 @@ void open_menu_for_item_under_crosshair(LocalPlayer *local)
         populate_block_edit_menu(local, i + 1, sign_text,
                                  get_light(p, q, x, y, z), get_extra(x, y, z),
                                  get_shape(x, y, z), get_transform(x, y, z));
-        open_menu(local, &local->menu_block_edit);
+        open_menu(local, local->menu_block_edit);
     }
 }
 
@@ -1266,7 +1311,7 @@ void handle_movement(double dt, LocalPlayer *local)
 
 void open_on_screen_keyboard(LocalPlayer* local)
 {
-    open_menu(local, &local->osk);
+    open_menu(local, local->osk);
 }
 
 void open_chat_command_line(LocalPlayer* local)

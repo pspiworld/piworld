@@ -2,11 +2,14 @@
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>
+#include "action.h"
 #include "config.h"
 #include "chunk.h"
 #include "chunks.h"
 #include "db.h"
 #include "item.h"
+#include "local_player.h"
+#include "local_players.h"
 #include "noise.h"
 #include "pw.h"
 #include "pwlua.h"
@@ -47,6 +50,19 @@ static int pwlua_map_set_sign(lua_State *L);
 static int pwlua_simplex2(lua_State *L);
 static int pwlua_simplex3(lua_State *L);
 
+static int pwlua_menu_add_item(lua_State *L);
+static int pwlua_menu_set_title(lua_State *L);
+static int pwlua_menu_get_title(lua_State *L);
+static int pwlua_menu_set_title_bg(lua_State *L);
+static int pwlua_menu_set_bg(lua_State *L);
+static int pwlua_menu_clear(lua_State *L);
+static int pwlua_menu_open(lua_State *L);
+static int pwlua_menu_create(lua_State *L);
+static int pwlua_menu_get_item_text(lua_State *L);
+
+static int pwlua_bind(lua_State *L);
+static int pwlua_pw_exit(lua_State *L);
+
 void pwlua_api_add_functions(lua_State *L)
 {
     lua_register(L, "echo", pwlua_echo);
@@ -74,6 +90,20 @@ void pwlua_api_add_functions(lua_State *L)
     lua_register(L, "set_open", pwlua_set_open);
     lua_register(L, "set_shell", pwlua_set_shell);
     lua_register(L, "sync_world", pwlua_sync_world);
+
+    // Menu functions
+    lua_register(L, "menu_add_item", pwlua_menu_add_item);
+    lua_register(L, "menu_set_title", pwlua_menu_set_title);
+    lua_register(L, "menu_get_title", pwlua_menu_get_title);
+    lua_register(L, "menu_set_title_bg", pwlua_menu_set_title_bg);
+    lua_register(L, "menu_set_bg", pwlua_menu_set_bg);
+    lua_register(L, "menu_clear", pwlua_menu_clear);
+    lua_register(L, "menu_open", pwlua_menu_open);
+    lua_register(L, "menu_create", pwlua_menu_create);
+    lua_register(L, "menu_get_item_text", pwlua_menu_get_item_text);
+
+    lua_register(L, "bind", pwlua_bind);
+    lua_register(L, "pw_exit", pwlua_pw_exit);
 }
 
 void pwlua_api_add_worldgen_functions(lua_State *L)
@@ -187,8 +217,6 @@ void pwlua_api_add_constants(lua_State *L)
     PUSH_CONST(DOOR_Z_FLIP);
     PUSH_CONST(DOOR_Z_PLUS_FLIP);
 }
-
-#define ERROR_ARG_COUNT (luaL_error(L, "incorrect argument count"))
 
 static int pwlua_echo(lua_State *L)
 {
@@ -764,5 +792,317 @@ static int pwlua_simplex3(lua_State *L)
     float v = simplex3(x, y, z, octaves, persistence, lacunarity);
     lua_pushnumber(L, v);
     return 1;
+}
+
+static int pwlua_menu_set_title(lua_State *L)
+{
+    int player_id = 1;
+    int argcount = lua_gettop(L);
+    int menu_id = 0;  // default to main menu
+    const char *text;
+    if (argcount == 1) {
+        // lua: menu_set_title("Title")
+        text = lua_tolstring(L, 1, NULL);
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+    } else if (argcount == 2) {
+        // lua: menu_set_title(menu_id, "Title")
+        menu_id = luaL_checkint(L, 1);
+        text = lua_tolstring(L, 2, NULL);
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+    } else {
+        return ERROR_ARG_COUNT;
+    }
+    LocalPlayer* local = get_local_player(player_id - 1);
+    if (local == NULL) {
+        return luaL_error(L, "player not found");
+    }
+    Menu *menu = get_menu(local, menu_id);
+    if (menu == NULL) {
+        return luaL_error(L, "menu not found");
+    }
+    menu_set_title(local->menus[menu_id], text);
+    return 0;
+}
+
+static int pwlua_menu_get_title(lua_State *L)
+{
+    int player_id = 1;
+    int argcount = lua_gettop(L);
+    int menu_id = 0;  // default to root menu
+    if (argcount == 0) {
+        // lua: root_title = menu_get_title()
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+    } else if (argcount == 1) {
+        // lua: title = menu_get_title(menu_id)
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+        menu_id = luaL_checkint(L, 1);
+    } else if (argcount == 2) {
+        // lua: menu_get_title(player_id, menu_id)
+        player_id = luaL_checkint(L, 1);
+        menu_id = luaL_checkint(L, 2);
+    } else {
+        return ERROR_ARG_COUNT;
+    }
+    LocalPlayer* local = get_local_player(player_id - 1);
+    if (local == NULL) {
+        return luaL_error(L, "player not found");
+    }
+    Menu *menu = get_menu(local, menu_id);
+    if (menu == NULL) {
+        return luaL_error(L, "menu not found");
+    }
+    lua_pushstring(L, menu->title);
+    return 1;
+}
+
+static int pwlua_menu_set_title_bg(lua_State *L)
+{
+    int player_id = 1;
+    int argcount = lua_gettop(L);
+    int menu_id = 0;  // default to main menu
+    float r, g, b, a;
+    if (argcount == 5) {
+        // lua: menu_set_title_bg(menu_id, r, g, b, a)
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+        menu_id = luaL_checkint(L, 1);
+        r = luaL_checknumber(L, 2);
+        g = luaL_checknumber(L, 3);
+        b = luaL_checknumber(L, 4);
+        a = luaL_checknumber(L, 5);
+    } else {
+        return ERROR_ARG_COUNT;
+    }
+    LocalPlayer* local = get_local_player(player_id - 1);
+    if (local == NULL) {
+        return luaL_error(L, "player not found");
+    }
+    Menu *menu = get_menu(local, menu_id);
+    if (menu == NULL) {
+        return luaL_error(L, "menu not found");
+    }
+    menu_set_title_bg(menu, r, g, b, a);
+    return 0;
+}
+
+static int pwlua_menu_set_bg(lua_State *L)
+{
+    int player_id = 1;
+    int argcount = lua_gettop(L);
+    int menu_id = 0;  // default to main menu
+    float r, g, b, a;
+    if (argcount == 5) {
+        // lua: menu_set_bg(menu_id, r, g, b, a)
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+        menu_id = luaL_checkint(L, 1);
+        r = luaL_checknumber(L, 2);
+        g = luaL_checknumber(L, 3);
+        b = luaL_checknumber(L, 4);
+        a = luaL_checknumber(L, 5);
+    } else {
+        return ERROR_ARG_COUNT;
+    }
+    LocalPlayer* local = get_local_player(player_id - 1);
+    if (local == NULL) {
+        return luaL_error(L, "player not found");
+    }
+    Menu *menu = get_menu(local, menu_id);
+    if (menu == NULL) {
+        return luaL_error(L, "menu not found");
+    }
+    menu_set_bg(menu, r, g, b, a);
+    return 0;
+}
+
+static int pwlua_menu_add_item(lua_State *L)
+{
+    int player_id = 1;
+    int argcount = lua_gettop(L);
+    int menu_id = 0;  // default to main menu
+    const char *text;
+    if (argcount == 1) {
+        // lua: item_id = menu_add_item("Item")
+        text = lua_tolstring(L, 1, NULL);
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+    } else if (argcount == 2) {
+        // lua: item_id = menu_add_item(menu_id, "Item")
+        menu_id = luaL_checkint(L, 1);
+        text = lua_tolstring(L, 2, NULL);
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+    } else if (argcount == 3) {
+        // lua: item_id = menu_add_item(player_id, menu_id, "Item")
+        player_id = luaL_checkint(L, 1);
+        menu_id = luaL_checkint(L, 2);
+        text = lua_tolstring(L, 3, NULL);
+    } else {
+        return ERROR_ARG_COUNT;
+    }
+    LocalPlayer* local = get_local_player(player_id - 1);
+    if (local == NULL) {
+        return luaL_error(L, "player not found");
+    }
+    Menu *menu = get_menu(local, menu_id);
+    if (menu == NULL) {
+        return luaL_error(L, "menu not found");
+    }
+    int index = menu_add(menu, text);
+    lua_pushnumber(L, index); // return menu item index to Lua
+    return 1;
+}
+
+static int pwlua_menu_clear(lua_State *L)
+{
+    int player_id = 1;
+    int argcount = lua_gettop(L);
+    int menu_id = 0;  // default to main menu
+    if (argcount == 0) {
+        // lua: menu_clear()
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+    } else if (argcount == 1) {
+        // lua: menu_clear(menu_id)
+        menu_id = luaL_checkint(L, 1);
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+    } else if (argcount == 2) {
+        // lua: menu_clear(player_id, menu_id)
+        player_id = luaL_checkint(L, 1);
+        menu_id = luaL_checkint(L, 2);
+    } else {
+        return ERROR_ARG_COUNT;
+    }
+    LocalPlayer* local = get_local_player(player_id - 1);
+    if (local == NULL) {
+        return luaL_error(L, "player not found");
+    }
+    Menu *menu = get_menu(local, menu_id);
+    if (menu == NULL) {
+        return luaL_error(L, "menu not found");
+    }
+    menu_clear_items(menu);
+    return 0;
+}
+
+static int pwlua_menu_open(lua_State *L)
+{
+    int player_id = 1;
+    int argcount = lua_gettop(L);
+    int menu_id = 0;  // default to main menu
+    if (argcount == 0) {
+        // lua: menu_open()
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+    } else if (argcount == 1) {
+        // lua: menu_open(menu_id)
+        menu_id = luaL_checkint(L, 1);
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+    } else if (argcount == 2) {
+        // lua: menu_open(player_id, menu_id)
+        player_id = luaL_checkint(L, 1);
+        menu_id = luaL_checkint(L, 2);
+    } else {
+        return ERROR_ARG_COUNT;
+    }
+    LocalPlayer* local = get_local_player(player_id - 1);
+    if (local == NULL) {
+        return luaL_error(L, "player not found");
+    }
+    Menu *menu = get_menu(local, menu_id);
+    if (menu == NULL) {
+        return luaL_error(L, "menu not found");
+    }
+    open_menu(local, menu);
+    return 0;
+}
+
+static int pwlua_menu_create(lua_State *L)
+{
+    int player_id = 1;
+    int argcount = lua_gettop(L);
+    if (argcount == 0) {
+        // lua: menu_create()
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+    } else if (argcount == 1) {
+        // lua: menu_create(player_id)
+        player_id = luaL_checkint(L, 1);
+    } else {
+        return ERROR_ARG_COUNT;
+    }
+    LocalPlayer* local = get_local_player(player_id - 1);
+    if (local == NULL) {
+        return luaL_error(L, "player not found");
+    }
+    Menu *menu = create_menu(local);
+    lua_pushnumber(L, menu->id);   // Return new menu ID
+    return 1;
+}
+
+static int pwlua_menu_get_item_text(lua_State *L)
+{
+    int player_id = 1;
+    int argcount = lua_gettop(L);
+    int menu_id = 0;  // default to main menu
+    int item_id = 0;
+    if (argcount == 2) {
+        // lua: menu_get_item_text(menu_id, item_id)
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+        menu_id = luaL_checkint(L, 1);
+        item_id = luaL_checkint(L, 2);
+    } else if (argcount == 3) {
+        // lua: menu_get_item_text(player_id, menu_id, item_id)
+        player_id = luaL_checkint(L, 1);
+        menu_id = luaL_checkint(L, 2);
+        item_id = luaL_checkint(L, 3);
+    } else {
+        return ERROR_ARG_COUNT;
+    }
+    LocalPlayer* local = get_local_player(player_id - 1);
+    if (local == NULL) {
+        return luaL_error(L, "player not found");
+    }
+    Menu *menu = get_menu(local, menu_id);
+    if (menu == NULL) {
+        return luaL_error(L, "menu not found");
+    }
+    MenuItem *item = menu->items + item_id - 1;  // title 'item' is item 0
+    lua_pushstring(L, item->name); // return item text
+    return 1;
+}
+
+static int pwlua_bind(lua_State *L)
+{
+    int player_id = 1;
+    int argcount = lua_gettop(L);
+    const char *text;
+    if (argcount == 1) {
+        // lua: bind("input1:action1,input2:action2")
+        text = lua_tolstring(L, 1, NULL);
+        lua_getglobal(L, "player_id");
+        player_id = luaL_checkint(L, -1);
+    } else {
+        return ERROR_ARG_COUNT;
+    }
+    LocalPlayer* local = get_local_player(player_id - 1);
+    if (local == NULL) {
+        return luaL_error(L, "player not found");
+    }
+    action_apply_bindings(local, text);
+    return 0;
+}
+
+static int pwlua_pw_exit(lua_State *L)
+{
+    pw_exit();
+    return 0;
 }
 

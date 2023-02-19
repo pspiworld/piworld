@@ -35,6 +35,9 @@ void local_players_init(void)
 
 LocalPlayer *get_local_player(int p)
 {
+    if (p < 0 || p > MAX_LOCAL_PLAYERS - 1) {
+        return NULL;
+    }
     return local_players + p;
 }
 

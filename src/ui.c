@@ -8,13 +8,43 @@
 
 #define INITIAL_MENU_SIZE 8
 
+Menu *menu_create(void)
+{
+    Menu *menu;
+    menu = malloc(sizeof(Menu));
+    menu->item_count = 0;
+    menu->allocated_item_count = 0;
+    menu->highlighted_item = 0;
+    menu->first_item_shown = 0;
+    menu->open_box = NULL;
+    menu->title_bg_color[0] = 0.8;
+    menu->title_bg_color[1] = 0.2;
+    menu->title_bg_color[2] = 0.2;
+    menu->title_bg_color[3] = 1.0;
+    menu->bg_color[0] = 0.4;
+    menu->bg_color[1] = 0.4;
+    menu->bg_color[2] = 0.4;
+    menu->bg_color[3] = 0.8;
+    return menu;
+}
+
+void menu_destroy(Menu *menu)
+{
+    menu_clear_items(menu);
+    free(menu);
+}
+
 void menu_clear_items(Menu *menu)
 {
+    if (menu == NULL) {
+        return;
+    }
     if (menu->allocated_item_count > 0) {
         free(menu->items);
     }
     menu->item_count = 0;
     menu->allocated_item_count = 0;
+    menu->highlighted_item = 0;
     menu->first_item_shown = 0;
     menu->open_box = NULL;
 }
@@ -22,6 +52,22 @@ void menu_clear_items(Menu *menu)
 void menu_set_title(Menu *menu, char *title)
 {
     snprintf(menu->title, MAX_TEXT_LENGTH, title);
+}
+
+void menu_set_title_bg(Menu *menu, float r, float g, float b, float a)
+{
+    menu->title_bg_color[0] = r;
+    menu->title_bg_color[1] = g;
+    menu->title_bg_color[2] = b;
+    menu->title_bg_color[3] = a;
+}
+
+void menu_set_bg(Menu *menu, float r, float g, float b, float a)
+{
+    menu->bg_color[0] = r;
+    menu->bg_color[1] = g;
+    menu->bg_color[2] = b;
+    menu->bg_color[3] = a;
 }
 
 static int cmp_menu_name(const void *p1, const void *p2)
@@ -589,9 +635,7 @@ void menu_render(Menu *menu, int view_width, int view_height, float scale)
     }
     menu_height = MIN(menu_height,
                      (menu->max_menu_row_count + 1) * menu_text_size * 2);
-    float menu_title_bg_color[4] = {0.8, 0.2, 0.2, 1.0};
     float menu_title_text_color[4] = {0.15, 0.15, 0.15, 1.0};
-    float menu_bg_color[4] = {0.4, 0.4, 0.4, 0.8};
     float menu_text_color[4] = {0.85, 0.85, 0.85, 1.0};
     float highlighted_color[4] = {0.85, 0.0, 0.0, 1.0};
     float hover_color[4] = {0.85, 0.85, 0.0, 1.0};
@@ -606,7 +650,7 @@ void menu_render(Menu *menu, int view_width, int view_height, float scale)
     snprintf(text_buffer, 1024, " %s%*.*s ", menu->title, pad_len, pad_len, "");
     render_text_rgba(ALIGN_CENTER, view_width/2,
                 view_height/2 + menu_height/2 - menu_text_size,
-                menu_text_size, text_buffer, menu_title_bg_color,
+                menu_text_size, text_buffer, menu->title_bg_color,
                 menu_title_text_color);
 
     // Items
@@ -682,13 +726,13 @@ void menu_render(Menu *menu, int view_width, int view_height, float scale)
             text_color = line_edit_color;
             render_text_rgba(ALIGN_CENTER, view_width/2,
                 item->y - menu_text_size, menu_text_size, text_buffer,
-                menu_bg_color, text_color);
+                menu->bg_color, text_color);
             // Label
             if (strlen(item->text) == 0) {
                 glClear(GL_DEPTH_BUFFER_BIT);
                 render_text_rgba(ALIGN_CENTER, view_width/2,
                     item->y - menu_text_size, menu_text_size, item->name,
-                    menu_bg_color, line_edit_label_color);
+                    menu->bg_color, line_edit_label_color);
             }
             // Text cursor
             glClear(GL_DEPTH_BUFFER_BIT);
@@ -697,11 +741,11 @@ void menu_render(Menu *menu, int view_width, int view_height, float scale)
             if (!in_hbox) {
                 render_text_rgba(ALIGN_CENTER, view_width/2,
                     item->y - menu_text_size, menu_text_size, text_buffer,
-                    menu_bg_color, text_color);
+                    menu->bg_color, text_color);
             } else {
                 render_text_rgba(ALIGN_LEFT, item->x + menu_text_size/2,
                     item->y - menu_text_size, menu_text_size, text_buffer,
-                    menu_bg_color, text_color);
+                    menu->bg_color, text_color);
             }
         }
         if (!in_hbox) {

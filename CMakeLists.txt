@@ -10,9 +10,9 @@ FILE(GLOB SOURCE_FILES
     src/config.c src/cube.c src/db.c src/door.c src/item.c src/fence.c
     src/local_player.c src/local_players.c src/local_player_command_line.c
     src/main.c src/map.c src/matrix.c src/pw.c src/pwlua_api.c
-    src/pwlua_standalone.c src/pwlua_worldgen.c src/pwlua.c src/render.c
-    src/ring.c src/sign.c src/ui.c src/user_input.c src/util.c src/vt.c
-    src/world.c
+    src/pwlua_startup.c src/pwlua_standalone.c src/pwlua_worldgen.c
+    src/pwlua.c src/render.c src/ring.c src/sign.c src/ui.c src/user_input.c
+    src/util.c src/vt.c src/world.c
     deps/libvterm/src/encoding.c deps/libvterm/src/keyboard.c
     deps/libvterm/src/mouse.c deps/libvterm/src/parser.c
     deps/libvterm/src/pen.c deps/libvterm/src/screen.c

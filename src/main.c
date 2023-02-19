@@ -11,6 +11,7 @@
 #include "local_players.h"
 #include "pg.h"
 #include "pw.h"
+#include "pwlua_startup.h"
 #include "pwlua_standalone.h"
 #include "render.h"
 #include "user_input.h"
@@ -55,6 +56,8 @@ int main(int argc, char **argv)
 
     // SHAPE INITIALIZATION //
     fence_init();
+
+    pwlua_startup_init();
 
     // WINDOW INITIALIZATION //
     pg_start(config->window_title, config->window_x, config->window_y,
@@ -286,6 +289,8 @@ int main(int argc, char **argv)
         LocalPlayer *local = &local_players[i];
         local_player_clear(local);
     }
+
+    pwlua_startup_deinit();
 
     pg_terminate_joysticks();
     pg_end();

@@ -29,11 +29,16 @@ const char *shoulder_button_modes[SHOULDER_BUTTON_MODE_COUNT] = {
     "Zoom/Ortho"
 };
 
+typedef struct { char *key; Action *value; } UnboundAction; // key is action name
+UnboundAction *unbound_actions;
+
 void action_apply_bindings(LocalPlayer *local, char *bindings_str)
 {
     char *key1, *key2;
-    char *binding = tokenize(bindings_str, ",", &key1);
-    action_t action = NULL;
+    char *text = malloc(sizeof(char) * (strlen(bindings_str) + 1));
+    strcpy(text, bindings_str);
+    char *binding = tokenize(text, ",", &key1);
+    Action *action = NULL;
     while (binding) {
         char *token = tokenize(binding, ":", &key2);
 
@@ -74,131 +79,92 @@ void action_apply_bindings(LocalPlayer *local, char *bindings_str)
 
         binding = tokenize(NULL, ",", &key1);
     }
+    free(text);
 }
 
-action_t get_action_from_name(char *name)
+Action *get_action_from_name(char *name)
 {
-    static const char *action_names[] = {
-        "add_block",
-        "crouch",
-        "fly_mode_toggle",
-        "jump",
-        "menu",
-        "mode1",
-        "mode2",
-        "next_item_in_hand",
-        "next_mode",
-        "ortho",
-        "pick_item_in_hand",
-        "previous_item_in_hand",
-        "remove_block",
-        "view_down",
-        "view_left",
-        "view_right",
-        "view_up",
-        "zoom",
-        "move_left_right",
-        "move_forward_back",
-        "view_left_right",
-        "view_up_down",
-        "move_right_left",
-        "move_back_forward",
-        "view_right_left",
-        "view_down_up",
-        "move_forward",
-        "move_back",
-        "move_left",
-        "move_right",
-        "open_item_in_hand_menu",
-        "undo",
-        "set_mouse_absolute",
-        "set_mouse_relative",
-        "move_local_player_keyboard_and_mouse_to_next_active_player",
-        "fullscreen_toggle",
-        "observe_view_toggle",
-        "picture_in_picture_observe_view_toggle",
-        "open_chat_command_line",
-        "open_action_command_line",
-        "open_lua_command_line",
-        "open_sign_command_line",
-        "primary",
-        "secondary",
-        "primary_mouse_action",
-        "secondary_mouse_action",
-        "tertiary_mouse_action",
-        "open_menu_on_release",
-        "show_input_event",
-        "crouch_toggle",
-        "ortho_toggle",
-        "zoom_toggle",
-        "vt",
-        "door",
+    static const Action default_actions[] = {
+        {"add_block", &action_add_block},
+        {"crouch", &action_crouch},
+        {"fly_mode_toggle", &action_fly_mode_toggle},
+        {"jump", &action_jump},
+        {"menu", &action_menu},
+        {"mode1", &action_mode1},
+        {"mode2", &action_mode2},
+        {"next_item_in_hand", &action_next_item_in_hand},
+        {"next_mode", &action_next_mode},
+        {"ortho", &action_ortho},
+        {"pick_item_in_hand", &action_pick_item_in_hand},
+        {"previous_item_in_hand", &action_previous_item_in_hand},
+        {"set_item_index_from_keysym_number", &action_set_item_index_from_keysym_number},
+        {"remove_block", &action_remove_block},
+        {"view_down", &action_view_down},
+        {"view_left", &action_view_left},
+        {"view_right", &action_view_right},
+        {"view_up", &action_view_up},
+        {"zoom", &action_zoom},
+        {"move_left_right", &action_move_left_right},
+        {"move_forward_back", &action_move_forward_back},
+        {"view_left_right", &action_view_left_right},
+        {"view_up_down", &action_view_up_down},
+        {"move_right_left", &action_move_right_left},
+        {"move_back_forward", &action_move_back_forward},
+        {"view_right_left", &action_view_right_left},
+        {"view_down_up", &action_view_down_up},
+        {"move_forward", &action_move_forward},
+        {"move_back", &action_move_back},
+        {"move_left", &action_move_left},
+        {"move_right", &action_move_right},
+        {"open_item_in_hand_menu", &action_open_item_in_hand_menu},
+        {"undo", &action_undo},
+        {"set_mouse_absolute", &action_set_mouse_absolute},
+        {"set_mouse_relative", &action_set_mouse_relative},
+        {"move_local_player_keyboard_and_mouse_to_next_active_player", &action_move_local_player_keyboard_and_mouse_to_next_active_player},
+        {"fullscreen_toggle", &action_fullscreen_toggle},
+        {"observe_view_toggle", &action_observe_view_toggle},
+        {"picture_in_picture_observe_view_toggle", &action_picture_in_picture_observe_view_toggle},
+        {"open_chat_command_line", &action_open_chat_command_line},
+        {"open_action_command_line", &action_open_action_command_line},
+        {"open_lua_command_line", &action_open_lua_command_line},
+        {"open_sign_command_line", &action_open_sign_command_line},
+        {"primary", &action_primary},
+        {"secondary", &action_secondary},
+        {"primary_mouse_action", &action_primary_mouse_action},
+        {"secondary_mouse_action", &action_secondary_mouse_action},
+        {"tertiary_mouse_action", &action_tertiary_mouse_action},
+        {"open_menu_on_release", &action_open_menu_on_release},
+        {"show_input_event", &action_show_input_event},
+        {"crouch_toggle", &action_crouch_toggle},
+        {"ortho_toggle", &action_ortho_toggle},
+        {"zoom_toggle", &action_zoom_toggle},
+        {"vt", &action_vt},
+        {"door", &action_door},
     };
-    static const int action_count = sizeof(action_names) / sizeof(char *);
-    static const action_t actions[] = {
-        &action_add_block,
-        &action_crouch,
-        &action_fly_mode_toggle,
-        &action_jump,
-        &action_menu,
-        &action_mode1,
-        &action_mode2,
-        &action_next_item_in_hand,
-        &action_next_mode,
-        &action_ortho,
-        &action_pick_item_in_hand,
-        &action_previous_item_in_hand,
-        &action_remove_block,
-        &action_view_down,
-        &action_view_left,
-        &action_view_right,
-        &action_view_up,
-        &action_zoom,
-        &action_move_left_right,
-        &action_move_forward_back,
-        &action_view_left_right,
-        &action_view_up_down,
-        &action_move_right_left,
-        &action_move_back_forward,
-        &action_view_right_left,
-        &action_view_down_up,
-        &action_move_forward,
-        &action_move_back,
-        &action_move_left,
-        &action_move_right,
-        &action_open_item_in_hand_menu,
-        &action_undo,
-        &action_set_mouse_absolute,
-        &action_set_mouse_relative,
-        &action_move_local_player_keyboard_and_mouse_to_next_active_player,
-        &action_fullscreen_toggle,
-        &action_observe_view_toggle,
-        &action_picture_in_picture_observe_view_toggle,
-        &action_open_chat_command_line,
-        &action_open_action_command_line,
-        &action_open_lua_command_line,
-        &action_open_sign_command_line,
-        &action_primary,
-        &action_secondary,
-        &action_primary_mouse_action,
-        &action_secondary_mouse_action,
-        &action_tertiary_mouse_action,
-        &action_open_menu_on_release,
-        &action_show_input_event,
-        &action_crouch_toggle,
-        &action_ortho_toggle,
-        &action_zoom_toggle,
-        &action_vt,
-        &action_door,
-    };
+    static const int default_action_count = sizeof(default_actions) / sizeof(Action);
 
-    for (int i=0; i<action_count; i++) {
-        if (strcmp(name, action_names[i]) == 0) {
-            return actions[i];
+    // Look for the named action in the fixed set of default actions from above.
+    for (int i=0; i<default_action_count; i++) {
+        if (strcmp(name, default_actions[i].name) == 0) {
+            return &default_actions[i];
         }
     }
 
-    return NULL;
+    // Look for the named action in previously new actions.
+    Action *action = hmget(unbound_actions, name);
+    if (action != NULL) {
+        return action;
+    }
+
+    // Create a new Action instance with the action name and a NULL function -
+    // for late binding on first use.
+    Action *new_action;
+    new_action = malloc(sizeof(Action));
+    strncpy(new_action->name, name, MAX_TEXT_LENGTH-1);
+    new_action->function = NULL;
+    hmput(unbound_actions, name, new_action);
+
+    return new_action;
 }
 
 void action_view_up(LocalPlayer *local, Event *e)
@@ -387,7 +353,7 @@ void action_menu(LocalPlayer *local, Event *e)
         if (local->active_menu) {
             close_menu(local);
         } else {
-            open_menu(local, &local->menu);
+            open_menu(local, local->menu);
         }
     }
 }
@@ -395,7 +361,7 @@ void action_menu(LocalPlayer *local, Event *e)
 void action_open_item_in_hand_menu(LocalPlayer *local, Event *e)
 {
     if (e->state) {
-        open_menu(local, &local->menu_item_in_hand);
+        open_menu(local, local->menu_item_in_hand);
     }
 }
 
@@ -617,7 +583,7 @@ void action_tertiary_mouse_action(LocalPlayer *local, Event *e)
 void action_open_menu_on_release(LocalPlayer *local, Event *e)
 {
     if (e->state == 0) {  // activate on mouse button release
-        open_menu(local, &local->menu);
+        open_menu(local, local->menu);
     }
 }
 

@@ -30,6 +30,7 @@ typedef struct MenuItem {
 
 typedef struct {
     char title[MAX_TEXT_LENGTH];
+    int id;
     MenuItem *items;
     int item_count;
     int allocated_item_count;
@@ -39,10 +40,16 @@ typedef struct {
     int first_item_shown;
     int max_menu_row_count;
     MenuItem *open_box;
+    float title_bg_color[4];
+    float bg_color[4];
 } Menu;
 
+Menu *menu_create(void);
+void menu_destroy(Menu *menu);
 void menu_clear_items(Menu *menu);
 void menu_set_title(Menu *menu, char *title);
+void menu_set_title_bg(Menu *menu, float r, float g, float b, float a);
+void menu_set_bg(Menu *menu, float r, float g, float b, float a);
 void menu_sort(Menu *menu);
 int menu_add(Menu *menu, char *item);
 int menu_add_option(Menu *menu, char *item);
