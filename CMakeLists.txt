@@ -46,15 +46,16 @@ endif()
 if(MESA)
     # The MESA driver is only for the pi2/3.
     add_definitions(-DMESA=1)
-    add_executable(piworld ${SOURCE_FILES})
-    target_link_libraries(piworld ${COMMON_LIBS} EGL GLESv2)
+    set(COMMON_LIBS ${COMMON_LIBS} EGL GLESv2)
 else()
     include_directories(/opt/vc/include)
     link_directories(/opt/vc/lib)
-    add_executable(piworld ${SOURCE_FILES})
-    target_link_libraries(piworld ${COMMON_LIBS} brcmEGL brcmGLESv2
-        bcm_host openmaxil vcos vchiq_arm)
+    set(COMMON_LIBS ${COMMON_LIBS} brcmEGL brcmGLESv2 bcm_host openmaxil vcos
+        vchiq_arm)
 endif()
+
+add_executable(piworld ${SOURCE_FILES})
+target_link_libraries(piworld ${COMMON_LIBS})
 
 include(ExternalProject)
 ExternalProject_Add(
