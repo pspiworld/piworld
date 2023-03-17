@@ -170,7 +170,7 @@ void local_player_handle_key_press(LocalPlayer *local, int mods, int keysym)
             if (action == NULL) {
                 action = hmget(default_key_bindings, keysym);
             }
-            if (action->function == &action_vt) {
+            if (action && action->function == &action_vt) {
                 if (!local->vt_open) {
                     local->vt_open = 1;
                     local->typing = VTFocus;
