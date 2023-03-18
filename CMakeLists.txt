@@ -33,8 +33,9 @@ if(RASPI)
         )
 endif()
 
-set(COMMON_LIBS dl m pthread util X11 Xcursor Xi
-     ${CMAKE_SOURCE_DIR}/deps/luajit/src/libluajit.a)
+option(LUAJIT_BUILTIN "Use local copy of luajit" ON)
+
+set(COMMON_LIBS dl m pthread util X11 Xcursor Xi)
 
 if(SQLITE_BUILTIN)
     list(APPEND SOURCE_FILES deps/sqlite/sqlite3.c)
@@ -100,18 +101,29 @@ else()
 endif()
 
 add_executable(piworld ${SOURCE_FILES})
-target_link_libraries(piworld ${COMMON_LIBS})
 
-include(ExternalProject)
-ExternalProject_Add(
-    luajit
-    SOURCE_DIR ./deps/luajit
-    BUILD_IN_SOURCE TRUE
-    CONFIGURE_COMMAND ""
-    INSTALL_COMMAND ""
-    BUILD_COMMAND make
-)
-add_dependencies(piworld luajit)
+if(LUAJIT_BUILTIN)
+    include(ExternalProject)
+    ExternalProject_Add(
+        luajit
+        SOURCE_DIR ./deps/luajit
+        BUILD_IN_SOURCE TRUE
+        CONFIGURE_COMMAND ""
+        INSTALL_COMMAND ""
+        BUILD_COMMAND make
+    )
+    add_dependencies(piworld luajit)
+    include_directories(deps/luajit/src)
+    set(COMMON_LIBS ${COMMON_LIBS}
+        ${CMAKE_SOURCE_DIR}/deps/luajit/src/libluajit.a)
+else()
+    include(FindPkgConfig)
+    pkg_check_modules(LUAJIT REQUIRED luajit)
+    include_directories(${LUAJIT_INCLUDE_DIRS})
+    list(APPEND COMMON_LIBS ${LUAJIT_LINK_LIBRARIES})
+endif()
+
+target_link_libraries(piworld ${COMMON_LIBS})
 
 add_definitions(-Wall -Wextra -Wstrict-prototypes)
 
@@ -145,7 +157,6 @@ endif()
 include_directories(deps/libvterm/include)
 include_directories(deps/linenoise)
 include_directories(deps/lodepng)
-include_directories(deps/luajit/src)
 include_directories(deps/noise)
 include_directories(deps/pg)
 include_directories(deps/RPi.GPIO/source)
