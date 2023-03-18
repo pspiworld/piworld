@@ -43,8 +43,53 @@ else()
     list(APPEND COMMON_LIBS sqlite3)
 endif()
 
+set(is_arm32 0)
+set(is_vc4 0)
+set(is_closed_vc4 0)
+
+set(uname_machine "")
+execute_process(COMMAND uname --machine
+  OUTPUT_VARIABLE uname_machine)
+string(FIND "${uname_machine}" "armv" armv_matched)
+if(${armv_matched} GREATER -1)
+    message("  arm 32-bit cpu")
+    set(is_arm32 1)
+endif()
+
+set(grep_bcm_vc4 "")
+execute_process(COMMAND grep BCM /proc/cpuinfo
+  OUTPUT_VARIABLE grep_bcm_vc4)
+string(REGEX MATCH "BCM2710|BCM283[567]" vc4_matched "${grep_bcm_vc4}")
+string(LENGTH "${vc4_matched}" str_len)
+if(${str_len} GREATER 0)
+    message("  vc4 found")
+    set(is_vc4 1)
+    set(is_closed_vc4 1)
+endif()
+
+set(lsmod_output "")
+execute_process(COMMAND lsmod
+  OUTPUT_VARIABLE lsmod_output)
+string(FIND "${lsmod_output}" "vc4" vc4_mesa_matched)
+if(${vc4_mesa_matched} GREATER -1)
+    message("  vc4 mesa found")
+    set(is_closed_vc4 0)
+endif()
+
+# Default to using MESA for all but Pi models that have vc4 and not running
+# mesa.
+if(NOT DEFINED MESA)
+    message("Checking if MESA should be used:")
+    if(${is_arm32} AND ${is_vc4} AND ${is_closed_vc4})
+        option(MESA "Link to MESA OpenGL libraries, if OFF link to brcmGLESv2 instead" OFF)
+        message("  do not use MESA")
+    else()
+        message("  use MESA")
+    endif()
+endif()
+option(MESA "Link to MESA OpenGL libraries, if OFF link to brcmGLESv2 instead" ON)
+
 if(MESA)
-    # The MESA driver is only for the pi2/3.
     add_definitions(-DMESA=1)
     set(COMMON_LIBS ${COMMON_LIBS} EGL GLESv2)
 else()
