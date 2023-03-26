@@ -44,7 +44,7 @@
 mtx_t edit_ring_mtx;
 
 typedef struct {
-    Worker workers[WORKERS];
+    Worker workers[MAX_WORKERS];
     int create_radius;
     int render_radius;
     int delete_radius;
@@ -384,7 +384,7 @@ void map_set_func(int x, int y, int z, int w, void *arg)
 
 void check_workers(void)
 {
-    for (int i = 0; i < WORKERS; i++) {
+    for (int i = 0; i < config->worker_count; i++) {
         Worker *worker = g->workers + i;
         mtx_lock(&worker->mtx);
         if (worker->state == WORKER_DONE) {
@@ -465,7 +465,7 @@ void ensure_chunks(Player *player)
 {
     check_workers();
     force_chunks(player, g->float_size);
-    for (int i = 0; i < WORKERS; i++) {
+    for (int i = 0; i < config->worker_count; i++) {
         Worker *worker = g->workers + i;
         mtx_lock(&worker->mtx);
         if (worker->state == WORKER_IDLE) {
@@ -1105,7 +1105,7 @@ void drain_edit_queue(size_t max_items, double max_time, double now)
 
 void initialize_worker_threads(void)
 {
-    for (int i = 0; i < WORKERS; i++) {
+    for (int i = 0; i < config->worker_count; i++) {
         Worker *worker = g->workers + i;
         worker->index = i;
         worker->state = WORKER_IDLE;
@@ -1119,13 +1119,13 @@ void initialize_worker_threads(void)
 void deinitialize_worker_threads(void)
 {
     // Stop thread processing
-    for (int i = 0; i < WORKERS; i++) {
+    for (int i = 0; i < config->worker_count; i++) {
         Worker *worker = g->workers + i;
         worker->exit_requested = True;
         cnd_signal(&worker->cnd);
     }
     // Wait for worker threads to exit
-    for (int i = 0; i < WORKERS; i++) {
+    for (int i = 0; i < config->worker_count; i++) {
         Worker *worker = g->workers + i;
         thrd_join(worker->thrd, NULL);
         cnd_destroy(&worker->cnd);

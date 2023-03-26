@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/sysinfo.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include "x11_event_handler.h"
@@ -62,6 +63,7 @@ void reset_config() {
     config->open_vt = 0;
     config->hide_osk = 0;
     config->exit_on_vt_close = 0;
+    config->worker_count = MIN(get_nprocs(), MAX_WORKERS);
 }
 
 void get_config_path(char *path)

@@ -51,6 +51,8 @@
 #define FONT_WIDTH 8.0
 #define FONT_HEIGHT 16.0
 
+#define MAX_WORKERS 4
+
 typedef struct {
     char path[MAX_DIR_LENGTH];
     char db_path[MAX_PATH_LENGTH];
@@ -94,6 +96,7 @@ typedef struct {
     int open_vt;
     int hide_osk;
     int exit_on_vt_close;
+    int worker_count;
 } Config;
 
 extern Config *config;

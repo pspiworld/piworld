@@ -575,7 +575,7 @@ void ensure_chunks_worker(Player *player, Worker *worker, int width,
         for (int dq = -r; dq <= r; dq++) {
             int a = p + dp;
             int b = q + dq;
-            int index = (ABS(a) ^ ABS(b)) % WORKERS;
+            int index = (ABS(a) ^ ABS(b)) % config->worker_count;
             if (index != worker->index) {
                 continue;
             }

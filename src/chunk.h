@@ -8,8 +8,6 @@
 #include "sign.h"
 #include "tinycthread.h"
 
-#define WORKERS 1
-
 #define WORKER_IDLE 0
 #define WORKER_BUSY 1
 #define WORKER_DONE 2
