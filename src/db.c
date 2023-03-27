@@ -636,6 +636,7 @@ void db_load_signs(SignList *list, int p, int q) {
     if (!db_enabled) {
         return;
     }
+    mtx_lock(&load_mtx);
     sqlite3_reset(load_signs_stmt);
     sqlite3_bind_int(load_signs_stmt, 1, p);
     sqlite3_bind_int(load_signs_stmt, 2, q);
@@ -648,6 +649,7 @@ void db_load_signs(SignList *list, int p, int q) {
             load_signs_stmt, 4);
         sign_list_add(list, x, y, z, face, text);
     }
+    mtx_unlock(&load_mtx);
 }
 
 const unsigned char *db_get_sign(int p, int q, int x, int y, int z, int face) {
